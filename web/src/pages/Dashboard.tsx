@@ -1,0 +1,123 @@
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Banknote, Landmark, Receipt, Truck, type LucideIcon } from 'lucide-react'
+import { dmy, rm, supabase, todayMY, type Profile } from '../lib'
+
+type BalanceRow = { code: string; type: string; date: string; debit: number; credit: number }
+type Recent = { id: number; date: string; description: string; source: string; journal_lines: { debit: number }[] }
+
+function Kpi({ icon: Icon, label, value, note, tone }: { icon: LucideIcon; label: string; value: string; note?: string; tone: string }) {
+  return (
+    <div className="card flex items-start gap-4 p-4 sm:p-5">
+      <div className={`hidden size-10 shrink-0 place-items-center rounded-lg sm:grid ${tone}`}><Icon className="size-5" /></div>
+      <div className="min-w-0">
+        <div className="muted">{label}</div>
+        <div className="mt-0.5 text-lg font-semibold tracking-tight tabular-nums sm:text-2xl">{value}</div>
+        {note && <div className="mt-0.5 text-xs text-slate-500">{note}</div>}
+      </div>
+    </div>
+  )
+}
+
+function Action({ to, icon: Icon, label }: { to: string; icon: LucideIcon; label: string }) {
+  return (
+    <Link to={to} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium shadow-xs transition hover:border-brand hover:text-brand">
+      <Icon className="size-4" />{label}
+    </Link>
+  )
+}
+
+export function Dashboard({ profile }: { profile: Profile }) {
+  const office = profile.role !== 'staff'
+  const [rows, setRows] = useState<BalanceRow[]>([])
+  const [claims, setClaims] = useState<{ status: string; amount: number; staff_id: string }[]>([])
+  const [recent, setRecent] = useState<Recent[]>([])
+
+  useEffect(() => {
+    supabase.from('claims').select('status, amount, staff_id').in('status', ['pending', 'approved'])
+      .then(({ data }) => setClaims(data ?? []))
+    if (!office) return
+    // ponytail: sums all history in the browser; move to a SQL view when entries reach tens of thousands.
+    supabase.from('account_balances').select('code, type, date, debit, credit')
+      .then(({ data }) => setRows(data ?? []))
+    supabase.from('journals').select('id, date, description, source, journal_lines(debit)')
+      .order('date', { ascending: false }).order('id', { ascending: false }).limit(6)
+      .then(({ data }) => setRecent((data as Recent[]) ?? []))
+  }, [office])
+
+  const bal = (codes: string[], sign = 1) =>
+    rows.filter(r => codes.includes(r.code)).reduce((s, r) => s + sign * (Number(r.debit) - Number(r.credit)), 0)
+  const monthStart = todayMY().slice(0, 7) + '-01'
+  const month = (type: string) => rows.filter(r => r.type === type && r.date >= monthStart)
+    .reduce((s, r) => s + (type === 'income' ? Number(r.credit) - Number(r.debit) : Number(r.debit) - Number(r.credit)), 0)
+  const income = month('income'), expense = month('expense')
+  const openClaims = office ? claims : claims.filter(c => c.staff_id === profile.id)
+  const claimsTotal = openClaims.reduce((s, c) => s + Number(c.amount), 0)
+  const monthName = new Date().toLocaleDateString('en-MY', { month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
+
+  if (!office) return (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Kpi icon={Receipt} label="My claims in progress" value={rm(claimsTotal)} note={`${openClaims.length} waiting`} tone="bg-amber-50 text-amber-600" />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3"><Action to="/claims" icon={Receipt} label="Submit a claim" /></div>
+    </div>
+  )
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <Kpi icon={Landmark} label="Bank balance" value={rm(bal(['1100']))} tone="bg-indigo-50 text-indigo-600" />
+        <Kpi icon={Banknote} label="Cash on hand" value={rm(bal(['1000', '1010']))} note="Drawer + petty cash" tone="bg-emerald-50 text-emerald-600" />
+        <Kpi icon={Truck} label="Owed to suppliers" value={rm(bal(['2000'], -1))} tone="bg-rose-50 text-rose-600" />
+        <Kpi icon={Receipt} label="Claims to settle" value={rm(claimsTotal)} note={`${openClaims.length} pending or approved`} tone="bg-amber-50 text-amber-600" />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="card lg:col-span-2">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold">Recent entries</h3>
+            <Link to="/entries" className="link">View all</Link>
+          </div>
+          <div className="-mx-5 mt-3">
+            {recent.length === 0 && <p className="muted px-5 py-6">No entries yet. Start with Money In or Money Out.</p>}
+            {recent.length > 0 && (
+              <table>
+                <tbody>
+                  {recent.map(r => (
+                    <tr key={r.id}>
+                      <td className="w-28 text-slate-500">{dmy(r.date)}</td>
+                      <td className="font-medium">{r.description}</td>
+                      <td className="hidden sm:table-cell"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{r.source}</span></td>
+                      <td className="text-right font-medium">{rm(r.journal_lines.reduce((s, l) => s + Number(l.debit), 0))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="card">
+            <h3 className="font-semibold">{monthName}</h3>
+            <dl className="mt-4 space-y-3 text-sm">
+              <div className="flex justify-between"><dt className="text-slate-500">Income</dt><dd className="font-medium tabular-nums">{rm(income)}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">Expenses</dt><dd className="font-medium tabular-nums">{rm(expense)}</dd></div>
+              <div className="flex justify-between border-t border-slate-100 pt-3">
+                <dt className="font-medium">Profit so far</dt>
+                <dd className={`font-semibold tabular-nums ${income - expense < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{rm(income - expense)}</dd>
+              </div>
+            </dl>
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-slate-500">Quick actions</h3>
+            <Action to="/money-out" icon={ArrowUpRight} label="Record money out" />
+            <Action to="/money-in" icon={ArrowDownLeft} label="Record money in" />
+            <Action to="/transfer" icon={ArrowLeftRight} label="Transfer between accounts" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

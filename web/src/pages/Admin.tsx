@@ -18,9 +18,8 @@ export function Users({ me }: { me: string }) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-semibold">Users</h2>
-      <p className="text-sm text-stone-500">To add someone: Supabase dashboard → Authentication → Invite user. They appear here as Staff.</p>
-      <div className="card">
+      <p className="muted">To add someone: Supabase dashboard → Authentication → Invite user. They appear here as Staff.</p>
+      <div className="card overflow-x-auto p-0">
         <table>
           <thead><tr><th>Name</th><th>Role</th></tr></thead>
           <tbody>

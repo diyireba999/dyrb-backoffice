@@ -40,8 +40,8 @@ function NewClaim({ onSaved }: { onSaved: () => void }) {
   }
 
   return (
-    <form onSubmit={submit} className="card space-y-4">
-      <h3 className="text-lg font-semibold">New claim</h3>
+    <form onSubmit={submit} className="card space-y-4 p-6">
+      <h3 className="font-semibold">New claim</h3>
       <div className="grid md:grid-cols-2 gap-3">
         <div><label>Date spent</label><input type="date" value={f.date} max={todayMY()} onChange={e => set('date', e.target.value)} required /></div>
         <div>
@@ -55,7 +55,7 @@ function NewClaim({ onSaved }: { onSaved: () => void }) {
         <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required /></div>
       </div>
       <div><label>Receipt photo</label><input type="file" accept="image/*" capture="environment" onChange={e => setPhoto(e.target.files?.[0] ?? null)} /></div>
-      {error && <p className="text-red-700 text-sm">{error}</p>}
+      {error && <p className="alert-error">{error}</p>}
       <button className="btn w-full md:w-auto" disabled={busy}>{busy ? 'Sending…' : 'Submit claim'}</button>
     </form>
   )
@@ -67,14 +67,14 @@ function ClaimCard({ c, actions }: { c: Claim; actions?: React.ReactNode }) {
       <div className="flex flex-wrap gap-2 items-baseline">
         <span className="font-semibold">{rm(c.amount)}</span>
         <span>{c.description}</span>
-        <span className={`text-xs rounded px-1.5 py-0.5 ${STATUS_STYLE[c.status]}`}>{c.status}</span>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLE[c.status]}`}>{c.status}</span>
       </div>
-      <div className="text-sm text-stone-500 flex flex-wrap gap-3">
+      <div className="text-sm text-slate-500 flex flex-wrap gap-3">
         <span>{dmy(c.date)}</span><span>{c.staff.full_name}</span><span>{c.accounts.name}</span>
-        {c.receipt && <button className="text-brand underline" onClick={() => openReceipt(c.receipt!)}>Receipt</button>}
+        {c.receipt && <button className="link" onClick={() => openReceipt(c.receipt!)}>Receipt</button>}
       </div>
       {c.review_note && <p className="text-sm">Note: {c.review_note}</p>}
-      {actions && <div className="flex flex-wrap gap-2 pt-2">{actions}</div>}
+      <div className="flex flex-wrap gap-2 pt-2 empty:hidden">{actions}</div>
     </div>
   )
 }
@@ -120,20 +120,19 @@ export function Claims({ profile }: { profile: Profile }) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-semibold">Claims</h2>
       <NewClaim onSaved={() => { setTab('mine'); load() }} />
 
       {office && (
-        <div className="flex flex-wrap gap-2">
+        <div className="inline-flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
           {tabs.map(t => (
-            <button key={t} onClick={() => setTab(t)} className={tab === t ? 'btn' : 'btn-light'}>
+            <button key={t} onClick={() => setTab(t)} className={`tab ${tab === t ? 'tab-active' : ''}`}>
               {t === 'mine' ? 'My claims' : t[0].toUpperCase() + t.slice(1)}
               {t !== 'mine' && ` (${claims.filter(c => c.status === t).length})`}
             </button>
           ))}
         </div>
       )}
-      {!office && <h3 className="text-lg font-semibold">My claims</h3>}
+      {!office && <h3 className="font-semibold">My claims</h3>}
 
       {tab === 'approved' && canPay && shown.length > 0 && (
         <div className="card flex flex-wrap items-end gap-3">
@@ -147,7 +146,7 @@ export function Claims({ profile }: { profile: Profile }) {
         </div>
       )}
 
-      {shown.length === 0 && <p className="text-stone-500">Nothing here.</p>}
+      {shown.length === 0 && <p className="card muted py-10 text-center">Nothing here.</p>}
       {shown.map(c => (
         <ClaimCard key={c.id} c={c} actions={<>
           {c.status === 'pending' && canReview(c) && <>

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
+import { CheckCircle2, Paperclip, Trash2 } from 'lucide-react'
 import { MONEY_ACCOUNTS, dmy, openReceipt, postJournal, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, type Account } from '../lib'
 
 function Done({ msg, again }: { msg: string; again: () => void }) {
   return (
-    <div className="card space-y-3">
-      <p className="text-green-700 font-semibold">{msg}</p>
+    <div className="card max-w-xl flex flex-col items-center gap-3 py-10 text-center">
+      <CheckCircle2 className="size-10 text-emerald-500" />
+      <p className="font-semibold">{msg}</p>
       <button className="btn" onClick={again}>Add another</button>
     </div>
   )
@@ -80,14 +82,13 @@ export function MoneyOut() {
   const owedNow = suppliers.find(s => s.name === f.payee)?.owed ?? 0
   if (done) return <Done msg={done} again={() => setDone('')} />
   return (
-    <form onSubmit={submit} className="card space-y-4 max-w-lg">
-      <h2 className="text-xl font-semibold">Money Out</h2>
+    <form onSubmit={submit} className="card max-w-xl space-y-5 p-6">
       <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
       <div>
         <label>Paid to</label>
         <input list="suppliers" value={f.payee} onChange={e => pickPayee(e.target.value)} placeholder="Supplier or shop name" />
         <datalist id="suppliers">{suppliers.map(s => <option key={s.id} value={s.name} />)}</datalist>
-        {owedNow !== 0 && <p className="text-sm text-stone-500 mt-1">Currently owed to {f.payee}: {rm(owedNow)}</p>}
+        {owedNow !== 0 && <p className="text-sm text-slate-500 mt-1">Currently owed to {f.payee}: {rm(owedNow)}</p>}
       </div>
       <div>
         <label>What for</label>
@@ -106,7 +107,7 @@ export function MoneyOut() {
       </div>
       <div><label>Note (optional)</label><input value={f.note} onChange={e => set('note', e.target.value)} placeholder="Invoice no., items" /></div>
       <div><label>Receipt photo (optional)</label><input type="file" accept="image/*" capture="environment" onChange={e => setPhoto(e.target.files?.[0] ?? null)} /></div>
-      {error && <p className="text-red-700 text-sm">{error}</p>}
+      {error && <p className="alert-error">{error}</p>}
       <button className="btn w-full" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
     </form>
   )
@@ -138,9 +139,8 @@ export function MoneyIn() {
 
   if (done) return <Done msg={done} again={() => setDone('')} />
   return (
-    <form onSubmit={submit} className="card space-y-4 max-w-lg">
-      <h2 className="text-xl font-semibold">Money In</h2>
-      <p className="text-sm text-stone-500">Daily sales come from Upload Sales. Use this for anything else.</p>
+    <form onSubmit={submit} className="card max-w-xl space-y-5 p-6">
+      <p className="rounded-lg bg-brand-soft px-3 py-2 text-sm text-brand-dark">Daily sales will come from Upload Sales. Use this for anything else.</p>
       <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
       <div><label>Received from</label><input value={f.from} onChange={e => set('from', e.target.value)} placeholder="e.g. event deposit, owner" /></div>
       <div>
@@ -153,7 +153,7 @@ export function MoneyIn() {
         <label>Received into</label>
         <AccountSelect accounts={accounts} value={f.into} onChange={v => set('into', v)} filter={a => MONEY_ACCOUNTS.includes(a.code)} />
       </div>
-      {error && <p className="text-red-700 text-sm">{error}</p>}
+      {error && <p className="alert-error">{error}</p>}
       <button className="btn w-full" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
     </form>
   )
@@ -188,13 +188,12 @@ export function Transfer() {
 
   if (done) return <Done msg={done} again={() => setDone('')} />
   return (
-    <form onSubmit={submit} className="card space-y-4 max-w-lg">
-      <h2 className="text-xl font-semibold">Transfer</h2>
+    <form onSubmit={submit} className="card max-w-xl space-y-5 p-6">
       <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
       <div><label>From</label><AccountSelect accounts={accounts} value={f.from} onChange={v => set('from', v)} filter={money} /></div>
       <div><label>To</label><AccountSelect accounts={accounts} value={f.to} onChange={v => set('to', v)} filter={money} /></div>
       <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required /></div>
-      {error && <p className="text-red-700 text-sm">{error}</p>}
+      {error && <p className="alert-error">{error}</p>}
       <button className="btn w-full" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
     </form>
   )
@@ -228,35 +227,33 @@ export function Entries({ isOwner }: { isOwner: boolean }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-end gap-3">
-        <h2 className="text-xl font-semibold mr-auto">All Entries</h2>
-        <div><label>Month</label><input type="month" value={month} onChange={e => setMonth(e.target.value)} /></div>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <p className="muted">{rows.length} {rows.length === 1 ? 'entry' : 'entries'} this month</p>
+        <div className="w-44"><label>Month</label><input type="month" value={month} onChange={e => setMonth(e.target.value)} /></div>
       </div>
-      {rows.length === 0 && <p className="text-stone-500">No entries this month.</p>}
-      {rows.map(r => (
-        <div key={r.id} className="card">
-          <div className="flex gap-2 items-baseline">
-            <span className="text-stone-500 text-sm">{dmy(r.date)}</span>
-            <span className="font-semibold">{r.description}</span>
-            <span className="text-xs rounded bg-stone-100 px-1.5 py-0.5">{r.source}</span>
-            <span className="ml-auto flex gap-3 text-sm">
-              {r.attachment && <button className="text-brand underline" onClick={() => openReceipt(r.attachment!)}>Receipt</button>}
-              {(r.source === 'manual' || isOwner) && <button className="text-red-700 underline" onClick={() => remove(r.id)}>Delete</button>}
-            </span>
-          </div>
-          <table className="mt-2">
+      <div className="card overflow-x-auto p-0">
+        {rows.length === 0 && <p className="muted px-5 py-10 text-center">No entries this month.</p>}
+        {rows.length > 0 && (
+          <table>
+            <thead><tr><th className="w-28">Date</th><th>Description</th><th>Account</th><th className="text-right">In / Debit</th><th className="text-right">Out / Credit</th><th></th></tr></thead>
             <tbody>
-              {r.journal_lines.map((l, i) => (
-                <tr key={i}>
-                  <td>{l.accounts.name}</td>
-                  <td className="text-right w-32">{l.debit ? rm(l.debit) : ''}</td>
-                  <td className="text-right w-32">{l.credit ? rm(l.credit) : ''}</td>
+              {rows.map(r => (
+                <tr key={r.id} className="align-top hover:bg-slate-50/60">
+                  <td className="text-slate-500">{dmy(r.date)}</td>
+                  <td><div className="font-medium">{r.description}</div><span className="badge mt-1">{r.source}</span></td>
+                  <td>{r.journal_lines.map((l, i) => <div key={i} className={l.credit ? 'pl-4 text-slate-600' : ''}>{l.accounts.name}</div>)}</td>
+                  <td className="text-right">{r.journal_lines.map((l, i) => <div key={i}>{l.debit ? rm(l.debit) : '\u00a0'}</div>)}</td>
+                  <td className="text-right">{r.journal_lines.map((l, i) => <div key={i}>{l.credit ? rm(l.credit) : '\u00a0'}</div>)}</td>
+                  <td className="whitespace-nowrap text-right">
+                    {r.attachment && <button title="View receipt" className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-brand" onClick={() => openReceipt(r.attachment!)}><Paperclip className="size-4" /></button>}
+                    {(r.source === 'manual' || isOwner) && <button title="Delete" className="rounded-md p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600" onClick={() => remove(r.id)}><Trash2 className="size-4" /></button>}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-      ))}
+        )}
+      </div>
     </div>
   )
 }
@@ -295,9 +292,9 @@ export function Suppliers() {
 
   const acctName = (c: string | null) => accounts.find(a => a.code === c)?.name ?? ''
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-semibold">Suppliers</h2>
-      <form onSubmit={add} className="card grid md:grid-cols-3 gap-3 items-end">
+    <div className="space-y-6">
+      <form onSubmit={add} className="card grid items-end gap-4 md:grid-cols-3">
+        <h3 className="font-semibold md:col-span-3">Add supplier</h3>
         <div><label>Name</label><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} required /></div>
         <div><label>Phone</label><input value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} /></div>
         <div><label>Usually for</label>
@@ -309,21 +306,22 @@ export function Suppliers() {
         <div><label>Already owe them? (RM, optional)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.opening} onChange={e => setF({ ...f, opening: e.target.value })} /></div>
         {Number(f.opening) > 0 && <div><label>Owed as at</label><input type="date" value={f.opening_date} onChange={e => setF({ ...f, opening_date: e.target.value })} required /></div>}
         <button className="btn">Add supplier</button>
-        {error && <p className="text-red-700 text-sm md:col-span-3">{error}</p>}
+        {error && <p className="alert-error md:col-span-3">{error}</p>}
       </form>
-      <div className="card">
-        <table>
+      <div className="card overflow-x-auto p-0">
+        {list.length === 0 && <p className="muted px-5 py-10 text-center">No suppliers yet.</p>}
+        {list.length > 0 && <table>
           <thead><tr><th>Name</th><th>Phone</th><th>Usually for</th><th className="text-right">We owe</th><th></th></tr></thead>
           <tbody>
             {list.map(s => (
               <tr key={s.id}>
-                <td>{s.name}</td><td>{s.phone}</td><td>{acctName(s.default_account)}</td>
-                <td className={`text-right ${s.owed > 0 ? 'font-semibold text-brand' : ''}`}>{rm(s.owed)}</td>
-                <td className="text-right"><button className="text-red-700 underline text-sm" onClick={() => remove(s.id)}>Remove</button></td>
+                <td className="font-medium">{s.name}</td><td className="text-slate-600">{s.phone}</td><td className="text-slate-600">{acctName(s.default_account)}</td>
+                <td className={`text-right ${s.owed > 0 ? 'font-semibold text-rose-600' : 'text-slate-400'}`}>{rm(s.owed)}</td>
+                <td className="text-right"><button title="Remove" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => remove(s.id)}><Trash2 className="size-4" /></button></td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </table>}
       </div>
     </div>
   )
