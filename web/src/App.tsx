@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BookOpen, BookText, CalendarClock, FileText, HandCoins, KeyRound, LayoutDashboard,
-  ListTree, LogOut, Menu, NotebookPen, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
+  ListTree, LogOut, Menu, NotebookPen, Search as SearchIcon, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
 import { arrivedFromEmail, supabase, type Profile, type Role } from './lib'
@@ -13,6 +13,7 @@ import { BalanceSheet, ProfitAndLoss, TrialBalance } from './pages/Reports'
 import { Users } from './pages/Admin'
 import { Claims } from './pages/Claims'
 import { Dashboard } from './pages/Dashboard'
+import { SearchDialog } from './Search'
 
 const OFFICE: Role[] = ['owner', 'manager', 'accountant']
 const EVERYONE: Role[] = [...OFFICE, 'staff']
@@ -40,13 +41,17 @@ const PAGES: Page[] = [
   { to: '/users', label: 'Users', subtitle: 'Who can sign in and what they can do', icon: UsersIcon, group: 'Settings', roles: ['owner'] },
 ]
 
-function Logo({ dark = false }: { dark?: boolean }) {
+// Put your logo at web/public/logo.png and it replaces the "DY" mark automatically.
+function Logo() {
+  const [img, setImg] = useState(true)
   return (
     <div className="flex items-center gap-3">
-      <div className="grid size-9 place-items-center rounded-lg bg-brand text-sm font-bold text-white">DY</div>
+      {img
+        ? <img src="/logo.png" alt="" className="size-9 rounded-lg object-contain" onError={() => setImg(false)} />
+        : <div className="grid size-9 place-items-center rounded-lg bg-gradient-to-br from-brand to-brand-dark text-sm font-bold text-white shadow-sm">DY</div>}
       <div className="leading-tight">
-        <div className={`font-semibold ${dark ? 'text-white' : 'text-slate-900'}`}>DYRB</div>
-        <div className={`text-xs ${dark ? 'text-slate-400' : 'text-slate-500'}`}>Back Office</div>
+        <div className="font-semibold text-slate-900">DYRB</div>
+        <div className="text-xs text-slate-500">Back Office</div>
       </div>
     </div>
   )
@@ -113,39 +118,45 @@ function SetPassword({ done }: { done: () => void }) {
   )
 }
 
-function Sidebar({ profile, pages, onNavigate, onPassword }: {
-  profile: Profile; pages: Page[]; onNavigate: () => void; onPassword: () => void
+function Sidebar({ profile, pages, onNavigate, onPassword, onSearch }: {
+  profile: Profile; pages: Page[]; onNavigate: () => void; onPassword: () => void; onSearch: () => void
 }) {
   const groups = [...new Set(pages.map(p => p.group))]
   const initials = profile.full_name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
   return (
-    <div className="flex h-full flex-col bg-slate-900">
-      <div className="px-5 py-5"><Logo dark /></div>
-      <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-2">
+    <div className="flex h-full flex-col border-r border-slate-200 bg-white">
+      <div className="px-5 pb-3 pt-5"><Logo /></div>
+      <div className="px-3 pb-2">
+        <button onClick={onSearch} className="flex h-9 w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-500 hover:border-slate-300">
+          <SearchIcon className="size-4" />Search
+          <kbd className="ml-auto rounded border border-slate-200 bg-white px-1.5 text-[10px]">Ctrl K</kbd>
+        </button>
+      </div>
+      <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-2">
         {groups.map(g => (
           <div key={g}>
-            <div className="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">{g}</div>
-            <div className="space-y-0.5">
+            <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{g}</div>
+            <div className="space-y-px">
               {pages.filter(p => p.group === g).map(p => (
                 <NavLink key={p.to} to={p.to} end onClick={onNavigate}
-                  className={({ isActive }) => `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                    isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/60 hover:text-white'}`}>
-                  <p.icon className="size-4" />{p.label}
+                  className={({ isActive }) => `group flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition ${
+                    isActive ? 'bg-brand-soft font-medium text-brand-dark' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
+                  {({ isActive }) => <><p.icon className={`size-4 ${isActive ? 'text-brand' : 'text-slate-400 group-hover:text-slate-600'}`} />{p.label}</>}
                 </NavLink>
               ))}
             </div>
           </div>
         ))}
       </nav>
-      <div className="border-t border-slate-800 p-3">
-        <div className="flex items-center gap-3 px-2 py-2">
-          <div className="grid size-9 place-items-center rounded-full bg-slate-700 text-xs font-semibold text-white">{initials}</div>
+      <div className="border-t border-slate-100 p-3">
+        <div className="flex items-center gap-3 rounded-lg px-2 py-2">
+          <div className="grid size-9 place-items-center rounded-full bg-gradient-to-br from-slate-100 to-slate-200 text-xs font-semibold text-slate-700">{initials}</div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-white">{profile.full_name}</div>
-            <div className="text-xs capitalize text-slate-400">{profile.role}</div>
+            <div className="truncate text-sm font-medium text-slate-900">{profile.full_name}</div>
+            <div className="text-xs capitalize text-slate-500">{profile.role}</div>
           </div>
-          <button title="Change password" onClick={onPassword} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"><KeyRound className="size-4" /></button>
-          <button title="Sign out" onClick={() => supabase.auth.signOut()} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"><LogOut className="size-4" /></button>
+          <button title="Change password" onClick={onPassword} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><KeyRound className="size-4" /></button>
+          <button title="Sign out" onClick={() => supabase.auth.signOut()} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><LogOut className="size-4" /></button>
         </div>
       </div>
     </div>
@@ -154,37 +165,41 @@ function Sidebar({ profile, pages, onNavigate, onPassword }: {
 
 function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => void }) {
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState(false)
   const { pathname } = useLocation()
   const pages = PAGES.filter(p => p.roles.includes(profile.role))
   const page = pages.find(p => p.to === pathname) ?? pages[0]
   const office = profile.role !== 'staff'
   const today = new Date().toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
+  const hour = Number(new Date().toLocaleString('en-MY', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kuala_Lumpur' }))
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
   return (
     <div className="min-h-screen">
       <aside className="no-print fixed inset-y-0 left-0 hidden w-64 lg:block">
-        <Sidebar profile={profile} pages={pages} onNavigate={() => {}} onPassword={onPassword} />
+        <Sidebar profile={profile} pages={pages} onNavigate={() => {}} onPassword={onPassword} onSearch={() => setSearch(true)} />
       </aside>
       {open && (
         <div className="no-print fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-slate-900/50" onClick={() => setOpen(false)} />
+          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={() => setOpen(false)} />
           <div className="absolute inset-y-0 left-0 w-72">
-            <Sidebar profile={profile} pages={pages} onNavigate={() => setOpen(false)} onPassword={onPassword} />
+            <Sidebar profile={profile} pages={pages} onNavigate={() => setOpen(false)} onPassword={onPassword} onSearch={() => { setOpen(false); setSearch(true) }} />
           </div>
-          <button className="absolute left-72 top-3 ml-2 rounded-md p-2 text-white" onClick={() => setOpen(false)} aria-label="Close menu"><X className="size-5" /></button>
+          <button className="absolute left-72 top-3 ml-2 rounded-md bg-white p-2 text-slate-700 shadow" onClick={() => setOpen(false)} aria-label="Close menu"><X className="size-5" /></button>
         </div>
       )}
 
       <div className="lg:pl-64">
-        <header className="no-print sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6">
+        <header className="no-print sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200/70 bg-slate-50/80 px-4 backdrop-blur-md sm:px-8">
           <button className="-ml-1 rounded-md p-2 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu"><Menu className="size-5" /></button>
           <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold">{pathname === '/' ? `Welcome back, ${profile.full_name.split(' ')[0]}` : page.label}</h1>
-            <p className="hidden truncate text-xs text-slate-500 sm:block">{page.subtitle}</p>
+            <h1 className="truncate text-lg font-semibold tracking-tight">{pathname === '/' ? `${greeting}, ${profile.full_name.split(' ')[0]}` : page.label}</h1>
+            <p className="hidden truncate text-xs text-slate-500 sm:block">{pathname === '/' ? today : page.subtitle}</p>
           </div>
-          <div className="ml-auto hidden text-sm text-slate-500 md:block">{today}</div>
+          <button onClick={() => setSearch(true)} className="ml-auto rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden" aria-label="Search"><SearchIcon className="size-5" /></button>
         </header>
-        <main className="mx-auto max-w-7xl p-4 sm:p-6">
+        <SearchDialog pages={pages} canSeeDocs={office} open={search} setOpen={setSearch} />
+        <main className="mx-auto max-w-7xl p-4 sm:p-8">
           <Routes>
             <Route path="/" element={<Dashboard profile={profile} />} />
             <Route path="/claims" element={<Claims profile={profile} />} />

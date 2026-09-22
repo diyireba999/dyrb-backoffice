@@ -18,7 +18,7 @@ export type Line = { account: string; debit?: number; credit?: number; memo?: st
 export const MONEY_ACCOUNTS = ['1000', '1010', '1100']
 
 export const rm = (n: number | null | undefined) =>
-  'RM ' + (n ?? 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  'RM ' + (Math.round((n ?? 0) * 100) / 100 || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 export const round2 = (n: number) => Math.round(n * 100) / 100
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Paperclip, Trash2 } from 'lucide-react'
 import { MONEY_ACCOUNTS, dmy, downloadCsv, openReceipt, postJournal, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, type Account } from '../lib'
 import { AccountSelect, Done, Empty, ReportBar } from '../ui'
@@ -170,17 +171,23 @@ export function JournalListing({ isOwner }: { isOwner: boolean }) {
   const [month, setMonth] = useState(todayMY().slice(0, 7))
   const [type, setType] = useState('')
   const [rows, setRows] = useState<EntryRow[]>([])
+  // ?doc=PV-000001 (from search or dashboard) shows just that document.
+  const [params, setParams] = useSearchParams()
+  const doc = params.get('doc')
 
   useEffect(() => {
     const [y, m] = month.split('-').map(Number)
     const end = new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10)
     let q = supabase.from('journals')
       .select('id, doc_no, date, description, reference, source, attachment, journal_lines(account, debit, credit, accounts(name))')
-      .gte('date', `${month}-01`).lt('date', end)
-    if (type) q = q.eq('source', type)
+    if (doc) q = q.eq('doc_no', doc)
+    else {
+      q = q.gte('date', `${month}-01`).lt('date', end)
+      if (type) q = q.eq('source', type)
+    }
     q.order('date', { ascending: false }).order('id', { ascending: false })
       .then(({ data }) => setRows((data as unknown as EntryRow[]) ?? []))
-  }, [month, type])
+  }, [month, type, doc])
 
   async function remove(id: number) {
     if (!confirm('Delete this document? This cannot be undone.')) return
@@ -196,13 +203,17 @@ export function JournalListing({ isOwner }: { isOwner: boolean }) {
 
   return (
     <div className="space-y-4">
-      <ReportBar title="Journal Listing" period={month} onCsv={csv}>
-        <div className="w-44"><label>Month</label><input type="month" value={month} onChange={e => setMonth(e.target.value)} /></div>
+      <ReportBar title="Journal Listing" period={doc ?? month} onCsv={csv}>
+        {doc && <div className="flex h-10 items-center gap-2 rounded-lg bg-brand-soft px-3 text-sm text-brand-dark">
+          Showing <b className="font-mono">{doc}</b>
+          <button className="link" onClick={() => setParams({})}>Show all</button>
+        </div>}
+        {!doc && <><div className="w-44"><label>Month</label><input type="month" value={month} onChange={e => setMonth(e.target.value)} /></div>
         <div className="w-52"><label>Type</label>
           <select value={type} onChange={e => setType(e.target.value)}>
             {Object.entries(TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
-        </div>
+        </div></>}
       </ReportBar>
       <div className="card overflow-x-auto p-0">
         {rows.length === 0 && <Empty text="No documents for this month." />}
