@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Banknote, Landmark, Receipt, Truck, type LucideIcon } from 'lucide-react'
-import { dmy, rm, supabase, todayMY, type Profile } from '../lib'
+import { ArrowDownLeft, ArrowUpRight, Banknote, FileText, Landmark, Receipt, Truck, type LucideIcon } from 'lucide-react'
+import { accountTotals, dmy, monthStart, rm, supabase, todayMY, useAccounts, type Profile } from '../lib'
 
-type BalanceRow = { code: string; type: string; date: string; debit: number; credit: number }
-type Recent = { id: number; date: string; description: string; source: string; journal_lines: { debit: number }[] }
+type Recent = { id: number; doc_no: string; date: string; description: string; journal_lines: { debit: number }[] }
 
 function Kpi({ icon: Icon, label, value, note, tone }: { icon: LucideIcon; label: string; value: string; note?: string; tone: string }) {
   return (
@@ -29,7 +28,9 @@ function Action({ to, icon: Icon, label }: { to: string; icon: LucideIcon; label
 
 export function Dashboard({ profile }: { profile: Profile }) {
   const office = profile.role !== 'staff'
-  const [rows, setRows] = useState<BalanceRow[]>([])
+  const accounts = useAccounts(true)
+  const [all, setAll] = useState<Map<string, number>>(new Map())
+  const [month, setMonth] = useState<Map<string, number>>(new Map())
   const [claims, setClaims] = useState<{ status: string; amount: number; staff_id: string }[]>([])
   const [recent, setRecent] = useState<Recent[]>([])
 
@@ -37,20 +38,16 @@ export function Dashboard({ profile }: { profile: Profile }) {
     supabase.from('claims').select('status, amount, staff_id').in('status', ['pending', 'approved'])
       .then(({ data }) => setClaims(data ?? []))
     if (!office) return
-    // ponytail: sums all history in the browser; move to a SQL view when entries reach tens of thousands.
-    supabase.from('account_balances').select('code, type, date, debit, credit')
-      .then(({ data }) => setRows(data ?? []))
-    supabase.from('journals').select('id, date, description, source, journal_lines(debit)')
+    accountTotals(null, todayMY()).then(setAll)
+    accountTotals(monthStart(), todayMY()).then(setMonth)
+    supabase.from('journals').select('id, doc_no, date, description, journal_lines(debit)')
       .order('date', { ascending: false }).order('id', { ascending: false }).limit(6)
       .then(({ data }) => setRecent((data as Recent[]) ?? []))
   }, [office])
 
-  const bal = (codes: string[], sign = 1) =>
-    rows.filter(r => codes.includes(r.code)).reduce((s, r) => s + sign * (Number(r.debit) - Number(r.credit)), 0)
-  const monthStart = todayMY().slice(0, 7) + '-01'
-  const month = (type: string) => rows.filter(r => r.type === type && r.date >= monthStart)
-    .reduce((s, r) => s + (type === 'income' ? Number(r.credit) - Number(r.debit) : Number(r.debit) - Number(r.credit)), 0)
-  const income = month('income'), expense = month('expense')
+  const bal = (codes: string[], sign = 1) => codes.reduce((s, c) => s + sign * (all.get(c) ?? 0), 0)
+  const monthOf = (type: string) => accounts.filter(a => a.type === type).reduce((s, a) => s + (month.get(a.code) ?? 0), 0)
+  const income = -monthOf('income'), expense = monthOf('expense')
   const openClaims = office ? claims : claims.filter(c => c.staff_id === profile.id)
   const claimsTotal = openClaims.reduce((s, c) => s + Number(c.amount), 0)
   const monthName = new Date().toLocaleDateString('en-MY', { month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
@@ -77,10 +74,10 @@ export function Dashboard({ profile }: { profile: Profile }) {
         <div className="card lg:col-span-2">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Recent entries</h3>
-            <Link to="/entries" className="link">View all</Link>
+            <Link to="/gl/listing" className="link">View all</Link>
           </div>
           <div className="-mx-5 mt-3">
-            {recent.length === 0 && <p className="muted px-5 py-6">No entries yet. Start with Money In or Money Out.</p>}
+            {recent.length === 0 && <p className="muted px-5 py-6">No documents yet. Start with a Payment Voucher or Purchase Invoice.</p>}
             {recent.length > 0 && (
               <table>
                 <tbody>
@@ -88,7 +85,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
                     <tr key={r.id}>
                       <td className="w-28 text-slate-500">{dmy(r.date)}</td>
                       <td className="font-medium">{r.description}</td>
-                      <td className="hidden sm:table-cell"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{r.source}</span></td>
+                      <td className="hidden font-mono text-xs sm:table-cell">{r.doc_no}</td>
                       <td className="text-right font-medium">{rm(r.journal_lines.reduce((s, l) => s + Number(l.debit), 0))}</td>
                     </tr>
                   ))}
@@ -112,9 +109,9 @@ export function Dashboard({ profile }: { profile: Profile }) {
           </div>
           <div className="space-y-2">
             <h3 className="text-sm font-semibold text-slate-500">Quick actions</h3>
-            <Action to="/money-out" icon={ArrowUpRight} label="Record money out" />
-            <Action to="/money-in" icon={ArrowDownLeft} label="Record money in" />
-            <Action to="/transfer" icon={ArrowLeftRight} label="Transfer between accounts" />
+            <Action to="/cash/payment" icon={ArrowUpRight} label="Payment Voucher" />
+            <Action to="/cash/receipt" icon={ArrowDownLeft} label="Official Receipt" />
+            <Action to="/ap/invoices" icon={FileText} label="Purchase Invoice" />
           </div>
         </div>
       </div>

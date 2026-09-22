@@ -45,3 +45,4 @@ tr:last-child td { @apply border-b-0; }
 }
 .alert-error { @apply rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700; }
 .badge { @apply inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600; }
+input[type="checkbox"] { @apply h-4 w-4 p-0 shadow-none accent-brand cursor-pointer; }

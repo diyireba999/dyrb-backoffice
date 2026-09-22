@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import {
-  ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BookOpen, KeyRound, LayoutDashboard, LogOut, Menu, Receipt, Truck, Users as UsersIcon, X,
+  ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BookOpen, BookText, CalendarClock, FileText, HandCoins, KeyRound, LayoutDashboard,
+  ListTree, LogOut, Menu, NotebookPen, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
 import { arrivedFromEmail, supabase, type Profile, type Role } from './lib'
-import { Entries, MoneyIn, MoneyOut, Suppliers, Transfer } from './pages/Books'
+import { JournalListing, OfficialReceipt, PaymentVoucher, Transfer } from './pages/Books'
+import { AccountLedger, BankReconciliation, ChartOfAccounts, JournalEntry } from './pages/Ledger'
+import { ApAging, PurchaseInvoices, Suppliers, SupplierPayments } from './pages/Purchase'
+import { BalanceSheet, ProfitAndLoss, TrialBalance } from './pages/Reports'
 import { Users } from './pages/Admin'
 import { Claims } from './pages/Claims'
 import { Dashboard } from './pages/Dashboard'
@@ -16,12 +20,23 @@ const EVERYONE: Role[] = [...OFFICE, 'staff']
 type Page = { to: string; label: string; subtitle: string; icon: LucideIcon; group: string; roles: Role[] }
 const PAGES: Page[] = [
   { to: '/', label: 'Dashboard', subtitle: 'Overview of money and tasks', icon: LayoutDashboard, group: 'Overview', roles: EVERYONE },
-  { to: '/money-out', label: 'Money Out', subtitle: 'Supplier bills and expenses', icon: ArrowUpRight, group: 'Books', roles: OFFICE },
-  { to: '/money-in', label: 'Money In', subtitle: 'Income other than daily sales', icon: ArrowDownLeft, group: 'Books', roles: OFFICE },
-  { to: '/transfer', label: 'Transfer', subtitle: 'Move money between cash and bank', icon: ArrowLeftRight, group: 'Books', roles: OFFICE },
-  { to: '/entries', label: 'All Entries', subtitle: 'Every record, by month', icon: BookOpen, group: 'Books', roles: OFFICE },
-  { to: '/suppliers', label: 'Suppliers', subtitle: 'Supplier list and amounts owed', icon: Truck, group: 'Books', roles: OFFICE },
+  { to: '/gl/accounts', label: 'Chart of Accounts', subtitle: 'Account list and balances', icon: ListTree, group: 'General Ledger', roles: OFFICE },
+  { to: '/gl/journal', label: 'Journal Entry', subtitle: 'Manual debit / credit entry (JV)', icon: NotebookPen, group: 'General Ledger', roles: OFFICE },
+  { to: '/gl/listing', label: 'Journal Listing', subtitle: 'All documents by month', icon: BookOpen, group: 'General Ledger', roles: OFFICE },
+  { to: '/gl/ledger', label: 'General Ledger', subtitle: 'Transactions and running balance of one account', icon: BookText, group: 'General Ledger', roles: OFFICE },
+  { to: '/cash/payment', label: 'Payment Voucher', subtitle: 'Pay out from cash or bank (PV)', icon: ArrowUpRight, group: 'Cash Book', roles: OFFICE },
+  { to: '/cash/receipt', label: 'Official Receipt', subtitle: 'Money received, other than daily sales (OR)', icon: ArrowDownLeft, group: 'Cash Book', roles: OFFICE },
+  { to: '/cash/transfer', label: 'Bank Transfer', subtitle: 'Move money between cash and bank (TR)', icon: ArrowLeftRight, group: 'Cash Book', roles: OFFICE },
+  { to: '/cash/book', label: 'Cash Book', subtitle: 'Cash and bank movements with running balance', icon: Wallet, group: 'Cash Book', roles: OFFICE },
+  { to: '/cash/bank-rec', label: 'Bank Reconciliation', subtitle: 'Match the books to the bank statement', icon: SquareCheckBig, group: 'Cash Book', roles: OFFICE },
+  { to: '/ap/suppliers', label: 'Suppliers', subtitle: 'Supplier list and balance owed', icon: Truck, group: 'Purchase', roles: OFFICE },
+  { to: '/ap/invoices', label: 'Purchase Invoice', subtitle: 'Supplier bills bought on credit (PI)', icon: FileText, group: 'Purchase', roles: OFFICE },
+  { to: '/ap/payments', label: 'Supplier Payment', subtitle: 'Pay supplier invoices (SP)', icon: HandCoins, group: 'Purchase', roles: OFFICE },
+  { to: '/ap/aging', label: 'Supplier Aging', subtitle: 'Amount owed, by how overdue', icon: CalendarClock, group: 'Purchase', roles: OFFICE },
   { to: '/claims', label: 'Claims', subtitle: 'Staff expense claims', icon: Receipt, group: 'Team', roles: EVERYONE },
+  { to: '/reports/tb', label: 'Trial Balance', subtitle: 'All account balances; debit equals credit', icon: Scale, group: 'Reports', roles: OFFICE },
+  { to: '/reports/pl', label: 'Profit & Loss', subtitle: 'Sales, costs and profit for a period', icon: TrendingUp, group: 'Reports', roles: OFFICE },
+  { to: '/reports/bs', label: 'Balance Sheet', subtitle: 'What the business owns and owes', icon: PieChart, group: 'Reports', roles: OFFICE },
   { to: '/users', label: 'Users', subtitle: 'Who can sign in and what they can do', icon: UsersIcon, group: 'Settings', roles: ['owner'] },
 ]
 
@@ -106,7 +121,7 @@ function Sidebar({ profile, pages, onNavigate, onPassword }: {
   return (
     <div className="flex h-full flex-col bg-slate-900">
       <div className="px-5 py-5"><Logo dark /></div>
-      <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-2">
+      <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-2">
         {groups.map(g => (
           <div key={g}>
             <div className="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">{g}</div>
@@ -169,16 +184,27 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
           </div>
           <div className="ml-auto hidden text-sm text-slate-500 md:block">{today}</div>
         </header>
-        <main className="mx-auto max-w-6xl p-4 sm:p-6">
+        <main className="mx-auto max-w-7xl p-4 sm:p-6">
           <Routes>
             <Route path="/" element={<Dashboard profile={profile} />} />
             <Route path="/claims" element={<Claims profile={profile} />} />
             {office && <>
-              <Route path="/money-out" element={<MoneyOut />} />
-              <Route path="/money-in" element={<MoneyIn />} />
-              <Route path="/transfer" element={<Transfer />} />
-              <Route path="/entries" element={<Entries isOwner={profile.role === 'owner'} />} />
-              <Route path="/suppliers" element={<Suppliers />} />
+              <Route path="/gl/accounts" element={<ChartOfAccounts role={profile.role} />} />
+              <Route path="/gl/journal" element={<JournalEntry />} />
+              <Route path="/gl/listing" element={<JournalListing isOwner={profile.role === 'owner'} />} />
+              <Route path="/gl/ledger" element={<AccountLedger />} />
+              <Route path="/cash/payment" element={<PaymentVoucher />} />
+              <Route path="/cash/receipt" element={<OfficialReceipt />} />
+              <Route path="/cash/transfer" element={<Transfer />} />
+              <Route path="/cash/book" element={<AccountLedger key="cash" moneyOnly />} />
+              <Route path="/cash/bank-rec" element={<BankReconciliation />} />
+              <Route path="/ap/suppliers" element={<Suppliers />} />
+              <Route path="/ap/invoices" element={<PurchaseInvoices role={profile.role} />} />
+              <Route path="/ap/payments" element={<SupplierPayments role={profile.role} />} />
+              <Route path="/ap/aging" element={<ApAging />} />
+              <Route path="/reports/tb" element={<TrialBalance />} />
+              <Route path="/reports/pl" element={<ProfitAndLoss />} />
+              <Route path="/reports/bs" element={<BalanceSheet />} />
             </>}
             {profile.role === 'owner' && <Route path="/users" element={<Users me={profile.id} />} />}
             <Route path="*" element={<Navigate to="/" />} />
