@@ -1,0 +1,10 @@
+// Cloudflare Workers static site config. Serves the built app from dist/;
+// unknown paths fall back to index.html so page refresh works.
+{
+  "name": "dyrb-backoffice",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
