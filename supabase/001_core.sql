@@ -117,6 +117,7 @@ create table journals (
   source text not null default 'manual',  -- manual, sales, fiuu, claim, payroll
   source_ref text,                        -- e.g. sales date, claim id
   attachment text,                        -- storage path of receipt photo
+  supplier_id bigint references suppliers, -- required when the entry touches Suppliers Owed
   created_by uuid references auth.users default auth.uid(),
   created_at timestamptz not null default now(),
   unique (source, source_ref)             -- stops the same sales day / claim being posted twice
@@ -129,7 +130,7 @@ create table journal_lines (
   debit numeric(12,2) not null default 0 check (debit >= 0),
   credit numeric(12,2) not null default 0 check (credit >= 0),
   memo text,
-  check (debit = 0 or credit = 0)
+  check ((debit = 0) <> (credit = 0))   -- exactly one side filled
 );
 create index on journal_lines (journal_id);
 create index on journal_lines (account);
@@ -152,24 +153,46 @@ create constraint trigger journal_balanced after insert or update or delete on j
 
 alter table journals enable row level security;
 alter table journal_lines enable row level security;
-create policy "office all" on journals for all using (is_office()) with check (is_office());
-create policy "office all" on journal_lines for all using (is_office()) with check (is_office());
+create policy "office reads" on journals for select using (is_office());
+create policy "office reads" on journal_lines for select using (is_office());
+-- No direct writes: entries only change through post_journal / delete_journal below,
+-- so nobody can edit amounts on a posted entry or create an empty one.
+revoke insert, update, delete on journals, journal_lines from anon, authenticated;
 
 -- Post a whole entry in one call (one transaction):
 -- select post_journal('2026-09-22', 'TNB bill', 'manual', null, null,
 --   '[{"account":"6110","debit":350},{"account":"1100","credit":350}]');
 create function post_journal(p_date date, p_description text, p_source text, p_ref text,
-                             p_attachment text, p_lines jsonb)
-returns bigint language plpgsql as $$
+                             p_attachment text, p_lines jsonb, p_supplier bigint default null)
+returns bigint language plpgsql security definer set search_path = public as $$
 declare j bigint;
 begin
   if not is_office() then raise exception 'Not allowed'; end if;
-  insert into journals (date, description, source, source_ref, attachment)
-    values (p_date, p_description, coalesce(p_source, 'manual'), p_ref, p_attachment) returning id into j;
+  if jsonb_array_length(p_lines) < 2 then raise exception 'An entry needs at least two lines'; end if;
+  if exists (select 1 from jsonb_array_elements(p_lines) l
+             join accounts a on a.code = l->>'account' where not a.active) then
+    raise exception 'Account is switched off'; end if;
+  if p_supplier is null and exists (select 1 from jsonb_array_elements(p_lines) l where l->>'account' = '2000') then
+    raise exception 'Choose which supplier (add them in Suppliers first)'; end if;
+  insert into journals (date, description, source, source_ref, attachment, supplier_id)
+    values (p_date, p_description, coalesce(p_source, 'manual'), p_ref, p_attachment, p_supplier) returning id into j;
   insert into journal_lines (journal_id, account, debit, credit, memo)
     select j, l->>'account', coalesce((l->>'debit')::numeric, 0), coalesce((l->>'credit')::numeric, 0), l->>'memo'
     from jsonb_array_elements(p_lines) l;
   return j;
+end $$;
+
+-- Office staff may delete their manual entries; entries made by sales upload, claims
+-- or payroll can only be removed by the owner (claims/payroll are also protected by links).
+create function delete_journal(p_id bigint) returns void
+language plpgsql security definer set search_path = public as $$
+declare src text;
+begin
+  select source into src from journals where id = p_id;
+  if src is null then raise exception 'Entry not found'; end if;
+  if not (my_role() = 'owner' or (is_office() and src = 'manual')) then
+    raise exception 'Not allowed to delete this entry'; end if;
+  delete from journals where id = p_id;
 end $$;
 
 -- Balance per account up to a date (for reports and home screen).
@@ -180,6 +203,14 @@ create view account_balances with (security_invoker = true) as
   join journals j on j.id = l.journal_id
   join accounts a on a.code = l.account
   group by a.code, a.name, a.type, j.date;
+
+-- How much we owe each supplier right now.
+create view supplier_balances with (security_invoker = true) as
+  select s.id, s.name, coalesce(sum(l.credit - l.debit), 0) as owed
+  from suppliers s
+  left join journals j on j.supplier_id = s.id
+  left join journal_lines l on l.journal_id = j.id and l.account = '2000'
+  group by s.id, s.name;
 
 -- ---------- Receipt photos ----------
 insert into storage.buckets (id, name, public) values ('receipts', 'receipts', false);

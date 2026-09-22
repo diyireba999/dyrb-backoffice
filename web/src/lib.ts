@@ -38,10 +38,10 @@ export function useAccounts() {
 }
 
 export async function postJournal(date: string, description: string, lines: Line[],
-                                  opts: { source?: string; ref?: string; attachment?: string } = {}) {
+                                  opts: { source?: string; ref?: string; attachment?: string; supplier?: number } = {}) {
   const { data, error } = await supabase.rpc('post_journal', {
     p_date: date, p_description: description, p_source: opts.source ?? 'manual',
-    p_ref: opts.ref ?? null, p_attachment: opts.attachment ?? null, p_lines: lines,
+    p_ref: opts.ref ?? null, p_attachment: opts.attachment ?? null, p_lines: lines, p_supplier: opts.supplier ?? null,
   })
   if (error) throw new Error(error.message)
   return data as number

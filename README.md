@@ -7,7 +7,7 @@ Stack: React (Vite) on Cloudflare Pages + Supabase (database, login, receipt pho
 
 1. **GitHub** – create a free account, create a *private* repo `dyrb-backoffice`, push this folder.
 2. **Supabase** – create a free account and a new project (region: **Singapore**).
-   - SQL Editor → paste `supabase/001_core.sql` → Run.
+   - SQL Editor → paste `supabase/001_core.sql` → Run. Then same for `supabase/002_claims.sql`.
    - Authentication → Sign In / Providers → Email: turn **off** "Allow new users to sign up" (internal only).
    - Authentication → Users → **Invite user** (your own email). Accept the email and set a password.
    - SQL Editor → make yourself owner:
@@ -38,6 +38,6 @@ Supabase → Authentication → Invite user. They appear in **Users** as Staff; 
 - [x] Phase 1 – login, roles, chart of accounts
 - [x] Phase 2 – Money In / Money Out / Transfer / Suppliers / All Entries
 - [ ] Phase 3 – Upload Sales (Zeoniq) + Fiuu settlement — **need sample export files**
-- [ ] Phase 4 – Claims
+- [x] Phase 4 – Claims (staff submit with photo, manager approves, owner/accountant pays)
 - [ ] Phase 5 – Payroll
 - [ ] Phase 6 – Reports, SST, backups

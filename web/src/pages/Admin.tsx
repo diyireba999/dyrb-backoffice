@@ -5,7 +5,7 @@ const ROLES: Role[] = ['owner', 'manager', 'accountant', 'staff']
 
 // New people are added in Supabase > Authentication > Users > "Invite user".
 // They show up here as Staff; owner changes their role.
-export function Users() {
+export function Users({ me }: { me: string }) {
   const [list, setList] = useState<Profile[]>([])
   const load = () => { supabase.from('profiles').select('*').order('full_name').then(({ data }) => setList(data ?? [])) }
   useEffect(load, [])
@@ -28,7 +28,7 @@ export function Users() {
               <tr key={p.id}>
                 <td><input defaultValue={p.full_name} onBlur={e => e.target.value !== p.full_name && update(p.id, { full_name: e.target.value })} /></td>
                 <td className="w-44">
-                  <select value={p.role} onChange={e => update(p.id, { role: e.target.value as Role })}>
+                  <select value={p.role} disabled={p.id === me} title={p.id === me ? 'You cannot change your own role' : ''} onChange={e => update(p.id, { role: e.target.value as Role })}>
                     {ROLES.map(r => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}
                   </select>
                 </td>

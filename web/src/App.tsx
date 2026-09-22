@@ -3,6 +3,7 @@ import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-rou
 import { arrivedFromEmail, supabase, type Profile } from './lib'
 import { Entries, MoneyIn, MoneyOut, Suppliers, Transfer } from './pages/Books'
 import { Users } from './pages/Admin'
+import { Claims } from './pages/Claims'
 
 function Login() {
   const [email, setEmail] = useState('')
@@ -52,6 +53,7 @@ function SetPassword({ done }: { done: () => void }) {
 }
 
 const TILES = [
+  { to: '/claims', title: 'Claims', note: 'Submit and approve staff claims', office: false },
   { to: '/money-out', title: 'Money Out', note: 'Supplier bills, expenses', office: true },
   { to: '/money-in', title: 'Money In', note: 'Other income, owner top-up', office: true },
   { to: '/transfer', title: 'Transfer', note: 'Cash to bank, petty cash', office: true },
@@ -72,7 +74,7 @@ function Home({ profile }: { profile: Profile }) {
           </Link>
         ))}
       </div>
-      {!office && <p className="text-stone-500">Claims and payslips coming soon.</p>}
+      {!office && <p className="text-stone-500">Payslips coming soon.</p>}
     </div>
   )
 }
@@ -107,6 +109,7 @@ export default function App() {
       <header className="no-print bg-brand text-white">
         <div className="max-w-5xl mx-auto flex items-center gap-2 p-3 overflow-x-auto">
           <Link to="/" className="font-bold mr-2 whitespace-nowrap">DYRB</Link>
+          <NavLink to="/claims" className={nav}>Claims</NavLink>
           {office && <NavLink to="/entries" className={nav}>Entries</NavLink>}
           {profile.role === 'owner' && <NavLink to="/users" className={nav}>Users</NavLink>}
           <button className={`${nav} ml-auto whitespace-nowrap`} onClick={() => setNeedPassword(true)}>Password</button>
@@ -116,14 +119,15 @@ export default function App() {
       <main className="max-w-5xl mx-auto p-4">
         <Routes>
           <Route path="/" element={<Home profile={profile} />} />
+          <Route path="/claims" element={<Claims profile={profile} />} />
           {office && <>
             <Route path="/money-out" element={<MoneyOut />} />
             <Route path="/money-in" element={<MoneyIn />} />
             <Route path="/transfer" element={<Transfer />} />
-            <Route path="/entries" element={<Entries />} />
+            <Route path="/entries" element={<Entries isOwner={profile.role === 'owner'} />} />
             <Route path="/suppliers" element={<Suppliers />} />
           </>}
-          {profile.role === 'owner' && <Route path="/users" element={<Users />} />}
+          {profile.role === 'owner' && <Route path="/users" element={<Users me={profile.id} />} />}
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>
