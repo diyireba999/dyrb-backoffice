@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BookOpen, BookText, CalendarClock, FileText, HandCoins, KeyRound, LayoutDashboard,
-  ListTree, LogOut, Menu, NotebookPen, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, CreditCard, IdCard, Package, Tags, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
+  ListTree, LogOut, Menu, NotebookPen, Repeat, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, CreditCard, IdCard, Package, Tags, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
 import { arrivedFromEmail, supabase, type Profile, type Role } from './lib'
@@ -18,6 +18,7 @@ import { SetupWarning } from './ui'
 import { Employees, MyPayslips, PayrollRun, PayrollSettings, PayrollYear } from './pages/Payroll'
 import { CardSettlement, SalesSettings, UploadSales } from './pages/Sales'
 import { ItemCosts, StockCount } from './pages/Stock'
+import { Accruals } from './pages/Accruals'
 
 const OFFICE: Role[] = ['owner', 'manager', 'accountant']
 const EVERYONE: Role[] = [...OFFICE, 'staff']
@@ -28,6 +29,7 @@ const PAGES: Page[] = [
   { to: '/gl/accounts', label: 'Chart of Accounts', subtitle: 'Account list and balances', icon: ListTree, group: 'General Ledger', roles: OFFICE },
   { to: '/gl/journal', label: 'Journal Entry', subtitle: 'Manual debit / credit entry (JV)', icon: NotebookPen, group: 'General Ledger', roles: OFFICE },
   { to: '/gl/listing', label: 'Journal Listing', subtitle: 'All documents by month', icon: BookOpen, group: 'General Ledger', roles: OFFICE },
+  { to: '/gl/accruals', label: 'Monthly Accruals', subtitle: 'Rent and bills charged to the right month', icon: Repeat, group: 'General Ledger', roles: OFFICE },
   { to: '/gl/ledger', label: 'General Ledger', subtitle: 'Transactions and running balance of one account', icon: BookText, group: 'General Ledger', roles: OFFICE },
   { to: '/sales/upload', label: 'Upload Sales', subtitle: 'Daily takings from the Zeoniq Bill Summary', icon: CloudUpload, group: 'Sales', roles: OFFICE },
   { to: '/sales/fiuu', label: 'Card Settlement', subtitle: 'Fiuu payouts into the bank, and the fee', icon: CreditCard, group: 'Sales', roles: OFFICE },
@@ -224,6 +226,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
               <Route path="/gl/journal" element={<JournalEntry />} />
               <Route path="/gl/listing" element={<JournalListing isOwner={profile.role === 'owner'} />} />
               <Route path="/gl/ledger" element={<AccountLedger />} />
+              <Route path="/gl/accruals" element={<Accruals role={profile.role} />} />
               <Route path="/cash/payment" element={<PaymentVoucher />} />
               <Route path="/cash/receipt" element={<OfficialReceipt />} />
               <Route path="/cash/transfer" element={<Transfer />} />

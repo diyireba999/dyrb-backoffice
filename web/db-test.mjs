@@ -205,3 +205,19 @@ await db.query(`select post_stock_count('2026-09-30', '[{"stock_account":"1420",
 stock = await acctBal('1420')
 cost = round(await acctBal('5020') - costBefore)
 console.log(stock === 500 && cost === 500 ? 'stock count ok' : `FAIL stock count ${stock} ${cost}`)
+
+// ---- 014: monthly accruals ----
+await db.exec(fs.readFileSync(new URL('../supabase/013_accruals.sql', import.meta.url), 'utf8'))
+await db.exec(fs.readFileSync(new URL('../supabase/014_recurring.sql', import.meta.url), 'utf8'))
+await db.query(`select post_accruals('2026-09-01',
+  '[{"account":"6100","amount":8000,"name":"Rent"},{"account":"6110","amount":600,"name":"TNB"}]'::jsonb)`)
+let accrued = await acctBal('2600')
+const rentCost = await acctBal('6100')
+console.log(accrued === -8600 && rentCost === 8000 ? 'accruals ok' : `FAIL accruals ${accrued} ${rentCost}`)
+// Posting the month again replaces it.
+await db.query(`select post_accruals('2026-09-20', '[{"account":"6100","amount":8000,"name":"Rent"}]'::jsonb)`)
+accrued = await acctBal('2600')
+console.log(accrued === -8000 ? 'accrual repost ok' : 'FAIL accrual repost ' + accrued)
+// The date used is the last day of that month.
+const accDate = (await db.query(`select date::text d from journals where source='accrual'`)).rows[0].d
+console.log(accDate === '2026-09-30' ? 'accrual date ok' : 'FAIL accrual date ' + accDate)
