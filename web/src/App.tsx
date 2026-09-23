@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BookOpen, BookText, CalendarClock, FileText, HandCoins, KeyRound, LayoutDashboard,
-  ListTree, LogOut, Menu, NotebookPen, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, IdCard, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
+  ListTree, LogOut, Menu, NotebookPen, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, CreditCard, IdCard, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
 import { arrivedFromEmail, supabase, type Profile, type Role } from './lib'
@@ -15,7 +15,7 @@ import { Claims } from './pages/Claims'
 import { Dashboard } from './pages/Dashboard'
 import { SearchDialog } from './Search'
 import { Employees, MyPayslips, PayrollRun, PayrollSettings, PayrollYear } from './pages/Payroll'
-import { SalesSettings, UploadSales } from './pages/Sales'
+import { CardSettlement, SalesSettings, UploadSales } from './pages/Sales'
 
 const OFFICE: Role[] = ['owner', 'manager', 'accountant']
 const EVERYONE: Role[] = [...OFFICE, 'staff']
@@ -28,6 +28,7 @@ const PAGES: Page[] = [
   { to: '/gl/listing', label: 'Journal Listing', subtitle: 'All documents by month', icon: BookOpen, group: 'General Ledger', roles: OFFICE },
   { to: '/gl/ledger', label: 'General Ledger', subtitle: 'Transactions and running balance of one account', icon: BookText, group: 'General Ledger', roles: OFFICE },
   { to: '/sales/upload', label: 'Upload Sales', subtitle: 'Daily takings from the Zeoniq Bill Summary', icon: CloudUpload, group: 'Sales', roles: OFFICE },
+  { to: '/sales/fiuu', label: 'Card Settlement', subtitle: 'Fiuu payouts into the bank, and the fee', icon: CreditCard, group: 'Sales', roles: OFFICE },
   { to: '/sales/settings', label: 'Sales Settings', subtitle: 'Where each payment type and sales figure goes', icon: Settings2, group: 'Sales', roles: OFFICE },
   { to: '/cash/payment', label: 'Payment Voucher', subtitle: 'Pay out from cash or bank (PV)', icon: ArrowUpRight, group: 'Cash Book', roles: OFFICE },
   { to: '/cash/receipt', label: 'Official Receipt', subtitle: 'Money received, other than daily sales (OR)', icon: ArrowDownLeft, group: 'Cash Book', roles: OFFICE },
@@ -231,6 +232,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
               <Route path="/reports/pl" element={<ProfitAndLoss />} />
               <Route path="/reports/bs" element={<BalanceSheet />} />
               <Route path="/sales/upload" element={<UploadSales />} />
+              <Route path="/sales/fiuu" element={<CardSettlement />} />
               <Route path="/sales/settings" element={<SalesSettings role={profile.role} />} />
               <Route path="/payroll/staff" element={<Employees role={profile.role} />} />
               <Route path="/payroll/run" element={<PayrollRun role={profile.role} />} />

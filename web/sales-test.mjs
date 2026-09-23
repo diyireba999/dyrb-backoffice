@@ -33,3 +33,19 @@ if (fs.existsSync(prodFile)) {
     console.log(`${d.date} bill summary ${d.sales} | products ${sum} (diff ${diff}) | ${lines.map(l => `${names[l.account]} ${l.amount}`).join(', ')}`)
   }
 }
+
+// Fiuu settlement grouping
+const fiuuFile = process.argv[4] ?? 'C:/Users/DELL/Downloads/TRANSACTION_LISTING_FROM_DATE_20092026_TO_22092026_MGhaydencafe01.xlsx'
+if (fs.existsSync(fiuuFile)) {
+  const { parseFiuu } = await import('./src/zeoniq.ts')
+  const { settlements, takings, pending, skipped } = parseFiuu(await readXlsxFile(fiuuFile))
+  console.log(`\nFiuu: ${settlements.length} payout day(s), ${pending} not settled yet, ${skipped} other status`)
+  let bad = 0
+  for (const s of settlements) {
+    const ok = Math.abs(s.gross - (s.net + s.fee)) < 0.005
+    if (!ok) bad++
+    console.log(`${ok ? 'OK  ' : 'FAIL'} paid ${s.settleDate}: ${s.count} txn, gross ${s.gross} = net ${s.net} + fee ${s.fee} (${(s.fee / s.gross * 100).toFixed(2)}%)`)
+  }
+  console.log('takings by day of sale:', takings.map(t => `${t.date} ${t.gross}`).join(' | '))
+  console.log(bad === 0 ? 'all payouts add up ok' : `FAIL ${bad} payout(s)`)
+}

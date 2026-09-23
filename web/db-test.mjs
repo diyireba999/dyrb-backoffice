@@ -123,3 +123,13 @@ await db.query(`select post_sales_day('2026-09-23', 522.80, 52.28, 0, 0.02,
 const bev = (await db.query(`select sum(credit)::float c from journal_lines l join journals j on j.id=l.journal_id
   where j.source_ref='2026-09-23' and l.account='4010'`)).rows[0].c
 console.log(bev === 222.8 ? 'category split ok' : 'FAIL category split ' + bev)
+
+// ---- 007: Fiuu settlement (figures from a real Fiuu transaction listing) ----
+await db.exec(fs.readFileSync(new URL('../supabase/007_fiuu.sql', import.meta.url), 'utf8'))
+const fj = (await db.query(`select post_fiuu_settlement('2026-09-22', 3012.20, 45.18, 2967.02) id`)).rows[0].id
+const fbal = (await db.query(`select coalesce(sum(debit - credit), 0)::float d from journal_lines where journal_id=${fj}`)).rows[0].d
+const bank = (await db.query(`select sum(debit)::float d from journal_lines where journal_id=${fj} and account='1100'`)).rows[0].d
+const fee = (await db.query(`select sum(debit)::float d from journal_lines where journal_id=${fj} and account='6200'`)).rows[0].d
+console.log(fbal === 0 && bank === 2967.02 && fee === 45.18 ? 'fiuu settlement ok' : `FAIL fiuu ${fbal} ${bank} ${fee}`)
+try { await db.query(`select post_fiuu_settlement('2026-09-23', 100, 5, 90)`); console.log('FAIL: gross/fee/net mismatch accepted') }
+catch (e) { console.log('fiuu mismatch rejected:', e.message) }

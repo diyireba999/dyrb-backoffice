@@ -137,3 +137,58 @@ export function salesLinesFor(items: ItemSale[], map: Record<string, string>, ta
   }
   return { lines, sum, diff, unknown: [...unknown] }
 }
+
+// ---- Fiuu transaction listing: group settled card payments by payout day ----
+export type Settlement = {
+  settleDate: string          // the day Fiuu paid it into the bank
+  count: number
+  gross: number               // what customers paid
+  fee: number                 // Fiuu's cut
+  net: number                 // what lands in the bank
+  posted?: boolean
+  result?: string
+}
+
+const dateOnly = (v: unknown) => {
+  const s = String(v ?? '').trim()
+  const m = s.match(/^(\d{2})-(\d{2})-(\d{4})/)          // 22-09-2026 13:49:21
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : isoDate(s.split(' ')[0])
+}
+
+export function parseFiuu(input: unknown) {
+  const rows = toRows(input)
+  const head = (rows[0] ?? []).map(c => String(c ?? '').trim())
+  const col = (name: string) => head.indexOf(name)
+  const cSettle = col('Settlement Date'), cGross = col('Bill Amt'), cFee = col('Transaction Fee')
+  const cNet = col('Net Amount'), cStatus = col('Status'), cDate = col('Date')
+  if (cSettle < 0 || cGross < 0 || cNet < 0) throw new Error('This does not look like a Fiuu transaction listing.')
+
+  const byDay = new Map<string, Settlement>()
+  let pending = 0, skipped = 0
+  for (const row of rows.slice(1)) {
+    if (!row || !String(row[cGross] ?? '').trim()) continue
+    if (cStatus >= 0 && String(row[cStatus]).toLowerCase() !== 'settled') { skipped++; continue }
+    const settleDate = dateOnly(row[cSettle])
+    if (!settleDate) { pending++; continue }
+    const d = byDay.get(settleDate) ?? { settleDate, count: 0, gross: 0, fee: 0, net: 0 }
+    d.count++
+    d.gross = round2(d.gross + num(row[cGross]))
+    d.fee = round2(d.fee + (cFee >= 0 ? num(row[cFee]) : 0))
+    d.net = round2(d.net + num(row[cNet]))
+    byDay.set(settleDate, d)
+  }
+  // Takings per day of sale, to compare with the POS card figures.
+  const byTakingDay = new Map<string, number>()
+  if (cDate >= 0) {
+    for (const row of rows.slice(1)) {
+      if (cStatus >= 0 && String(row[cStatus]).toLowerCase() !== 'settled') continue
+      const d = dateOnly(row[cDate])
+      if (d) byTakingDay.set(d, round2((byTakingDay.get(d) ?? 0) + num(row[cGross])))
+    }
+  }
+  return {
+    settlements: [...byDay.values()].sort((a, b) => a.settleDate.localeCompare(b.settleDate)),
+    takings: [...byTakingDay.entries()].sort().map(([date, gross]) => ({ date, gross })),
+    pending, skipped,
+  }
+}

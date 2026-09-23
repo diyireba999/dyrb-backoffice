@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import { CheckCircle2, CloudUpload, Plus, Trash2, TriangleAlert } from 'lucide-react'
-import { dmy, rm, supabase, useAccounts, type Account, type Role } from '../lib'
-import { dayTotal, daySuspect, parseBillSummary, parseProductSales, paymentTotal, salesLinesFor, type Day, type ItemSale } from '../zeoniq'
+import { MONEY_ACCOUNTS, dmy, rm, supabase, useAccounts, type Account, type Role } from '../lib'
+import { dayTotal, daySuspect, parseBillSummary, parseFiuu, parseProductSales, paymentTotal, salesLinesFor, type Day, type ItemSale, type Settlement } from '../zeoniq'
 import { AccountSelect, Empty } from '../ui'
 
 export function UploadSales() {
@@ -135,6 +135,121 @@ export function UploadSales() {
             </button>
           </div>
           <p className="muted">Each day becomes one entry: money in by payment type, sales and service charge as income. A day already posted cannot go in twice.</p>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- Fiuu card settlements
+
+export function CardSettlement() {
+  const [rows, setRows] = useState<Settlement[]>([])
+  const [takings, setTakings] = useState<{ date: string; gross: number }[]>([])
+  const [info, setInfo] = useState({ pending: 0, skipped: 0 })
+  const [pick, setPick] = useState<Record<string, boolean>>({})
+  const [bank, setBank] = useState('1100')
+  const [fileName, setFileName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const accounts = useAccounts()
+
+  async function onFile(file: File) {
+    setError(''); setRows([]); setFileName(file.name)
+    try {
+      const parsed = parseFiuu(await readXlsxFile(file))
+      const { data } = await supabase.from('journals').select('source_ref').eq('source', 'fiuu')
+        .in('source_ref', parsed.settlements.map(s => s.settleDate))
+      const already = new Set((data ?? []).map(r => r.source_ref))
+      const list = parsed.settlements.map(s => ({ ...s, posted: already.has(s.settleDate) }))
+      setRows(list)
+      setTakings(parsed.takings)
+      setInfo({ pending: parsed.pending, skipped: parsed.skipped })
+      setPick(Object.fromEntries(list.filter(s => !s.posted).map(s => [s.settleDate, true])))
+    } catch (err) { setError((err as Error).message) }
+  }
+
+  async function post() {
+    setBusy(true)
+    const out: Settlement[] = []
+    for (const s of rows) {
+      if (!pick[s.settleDate] || s.posted) { out.push(s); continue }
+      const { error } = await supabase.rpc('post_fiuu_settlement', {
+        p_settle_date: s.settleDate, p_gross: s.gross, p_fee: s.fee, p_net: s.net, p_bank: bank,
+        p_note: `Fiuu settlement ${s.count} card payment${s.count === 1 ? '' : 's'}`,
+      })
+      out.push({ ...s, posted: !error, result: error ? error.message : 'ok' })
+    }
+    setRows(out); setBusy(false)
+  }
+
+  const chosen = rows.filter(s => pick[s.settleDate] && !s.posted)
+  return (
+    <div className="space-y-4">
+      <div className="card">
+        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 py-10 text-center hover:border-brand">
+          <CloudUpload className="size-8 text-slate-400" />
+          <span className="font-medium">Choose the Fiuu transaction listing</span>
+          <span className="muted">Fiuu portal → Transaction Listing → export to Excel</span>
+          {fileName && <span className="badge mt-1">{fileName}</span>}
+          <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} />
+        </label>
+      </div>
+      {error && <p className="alert-error">{error}</p>}
+
+      {rows.length > 0 && (
+        <>
+          <div className="card flex flex-wrap items-end gap-3">
+            <div className="w-64"><label>Money paid into</label>
+              <AccountSelect accounts={accounts} value={bank} onChange={setBank} filter={a => MONEY_ACCOUNTS.includes(a.code)} />
+            </div>
+            <p className="muted">{info.pending > 0 && `${info.pending} payment(s) not settled yet. `}{info.skipped > 0 && `${info.skipped} row(s) not in "settled" status were skipped.`}</p>
+          </div>
+          <div className="card overflow-x-auto p-0">
+            <table>
+              <thead><tr>
+                <th className="w-10"></th><th>Paid into bank on</th><th className="text-right">Card payments</th>
+                <th className="text-right">Customers paid</th><th className="text-right">Fiuu fee</th><th className="text-right">Rate</th>
+                <th className="text-right">Into bank</th><th></th>
+              </tr></thead>
+              <tbody>
+                {rows.map(s => (
+                  <tr key={s.settleDate} className={s.posted ? 'text-slate-400' : ''}>
+                    <td><input type="checkbox" disabled={s.posted} checked={!!pick[s.settleDate] && !s.posted}
+                      onChange={e => setPick({ ...pick, [s.settleDate]: e.target.checked })} /></td>
+                    <td className="font-medium">{dmy(s.settleDate)}</td>
+                    <td className="text-right">{s.count}</td>
+                    <td className="text-right">{rm(s.gross)}</td>
+                    <td className="text-right text-rose-600">{rm(s.fee)}</td>
+                    <td className="text-right text-xs text-slate-500">{s.gross ? (s.fee / s.gross * 100).toFixed(2) + '%' : ''}</td>
+                    <td className="text-right font-semibold">{rm(s.net)}</td>
+                    <td className="whitespace-nowrap text-right text-xs">
+                      {s.posted && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />{s.result === 'ok' ? 'Posted' : 'Already in'}</span>}
+                      {!s.posted && s.result && s.result !== 'ok' && <span className="text-red-600">{s.result}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="muted">{chosen.length} payout{chosen.length === 1 ? '' : 's'} ready · {rm(chosen.reduce((s, r) => s + r.net, 0))} into the bank</p>
+            <button className="btn ml-auto" disabled={busy || chosen.length === 0} onClick={post}>
+              {busy ? 'Posting…' : `Post ${chosen.length} payout${chosen.length === 1 ? '' : 's'}`}
+            </button>
+          </div>
+          {takings.length > 0 && (
+            <div className="card">
+              <h3 className="font-semibold">Card takings by day of sale</h3>
+              <p className="muted">Compare with the card totals on the POS. A card paid after midnight may belong to the day before on the POS.</p>
+              <table className="mt-3">
+                <tbody>{takings.map(t => (
+                  <tr key={t.date}><td>{dmy(t.date)}</td><td className="text-right">{rm(t.gross)}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+          <p className="muted">Each payout moves money out of 1200 Fiuu Card into the bank and books the fee to 6200. When everything is settled, 1200 goes back to zero.</p>
         </>
       )}
     </div>
