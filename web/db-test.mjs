@@ -101,3 +101,25 @@ try { await db.query(`select save_payslip(${hourlyId}, '{"hours":120}'::jsonb)`)
 await db.query(`select cancel_payroll_run(${run})`)
 const after = (await db.query(`select count(*)::int c from journals where id=${jid}`)).rows[0].c
 console.log(after === 0 ? 'cancel payroll ok' : 'FAIL cancel payroll')
+
+// ---- 005: daily sales import (figures from a real Zeoniq Bill Summary) ----
+await db.exec(fs.readFileSync(new URL('../supabase/005_sales.sql', import.meta.url), 'utf8'))
+const day = `select post_sales_day('2026-09-22', 1835.80, 183.58, 0, 0.02,
+  '[{"code":"CASH","amount":165},{"code":"TNG","amount":158.20},{"code":"VISA","amount":1696.20}]'::jsonb) id`
+const salesJ = (await db.query(day)).rows[0].id
+const bal = (await db.query(`select coalesce(sum(debit - credit), 0)::float d from journal_lines where journal_id=${salesJ}`)).rows[0].d
+const cash = (await db.query(`select sum(debit)::float d from journal_lines where journal_id=${salesJ} and account='1000'`)).rows[0].d
+const card = (await db.query(`select sum(debit)::float d from journal_lines where journal_id=${salesJ} and account='1200'`)).rows[0].d
+console.log(bal === 0 && cash === 165 && card === 1696.2 ? 'sales day ok' : `FAIL sales day ${bal} ${cash} ${card}`)
+try { await db.query(day); console.log('FAIL: same day posted twice') } catch (e) { console.log('duplicate day rejected:', e.message.split('\n')[0]) }
+try { await db.query(`select post_sales_day('2026-09-23', 500, 50, 0, 0,
+  '[{"code":"CASH","amount":500}]'::jsonb)`); console.log('FAIL: payments not matching accepted') }
+catch (e) { console.log('mismatch rejected:', e.message) }
+try { await db.query(`select post_sales_day('2026-09-23', 500, 0, 0, 0,
+  '[{"code":"BITCOIN","amount":500}]'::jsonb)`); console.log('FAIL: unknown payment accepted') }
+catch (e) { console.log('unknown payment rejected:', e.message) }
+await db.query(`select post_sales_day('2026-09-23', 522.80, 52.28, 0, 0.02,
+  '[{"code":"TNG","amount":575.10}]'::jsonb, '[{"account":"4000","amount":300},{"account":"4010","amount":222.80}]'::jsonb)`)
+const bev = (await db.query(`select sum(credit)::float c from journal_lines l join journals j on j.id=l.journal_id
+  where j.source_ref='2026-09-23' and l.account='4010'`)).rows[0].c
+console.log(bev === 222.8 ? 'category split ok' : 'FAIL category split ' + bev)

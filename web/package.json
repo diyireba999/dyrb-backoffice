@@ -8,14 +8,16 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test:db": "node db-test.mjs"
+    "test:db": "node db-test.mjs",
+    "test:sales": "node sales-test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
     "lucide-react": "^1.47.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.4"
+    "react-router-dom": "^7.18.4",
+    "read-excel-file": "^9.3.10"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",

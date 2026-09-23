@@ -98,7 +98,7 @@ export function OfficialReceipt() {
   if (done) return <Done msg={done.msg} doc={done.doc} again={() => setDone(null)} />
   return (
     <form onSubmit={submit} className="card max-w-2xl space-y-5 p-6">
-      <p className="muted">Daily sales will come from Upload Sales. Use this for other money received: event deposits, owner capital, refunds.</p>
+      <p className="muted">Daily sales come from Upload Sales. Use this for other money received: event deposits, owner capital, refunds.</p>
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
         <div><label>Ref no.</label><input value={f.reference} onChange={e => set('reference', e.target.value)} placeholder="Optional" /></div>
