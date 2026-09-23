@@ -139,12 +139,14 @@ export function salesLinesFor(items: ItemSale[], map: Record<string, string>, ta
 }
 
 // ---- Fiuu transaction listing: group settled card payments by payout day ----
+export type Brand = { brand: string; count: number; gross: number; fee: number }
 export type Settlement = {
   settleDate: string          // the day Fiuu paid it into the bank
   count: number
   gross: number               // what customers paid
   fee: number                 // Fiuu's cut
   net: number                 // what lands in the bank
+  brands: Brand[]             // Visa, Mastercard, MyDebit... each has its own rate
   posted?: boolean
   result?: string
 }
@@ -161,6 +163,7 @@ export function parseFiuu(input: unknown) {
   const col = (name: string) => head.indexOf(name)
   const cSettle = col('Settlement Date'), cGross = col('Bill Amt'), cFee = col('Transaction Fee')
   const cNet = col('Net Amount'), cStatus = col('Status'), cDate = col('Date')
+  const cBrand = col('Channel') >= 0 ? col('Channel') : col('Card Brand')
   if (cSettle < 0 || cGross < 0 || cNet < 0) throw new Error('This does not look like a Fiuu transaction listing.')
 
   const byDay = new Map<string, Settlement>()
@@ -170,11 +173,16 @@ export function parseFiuu(input: unknown) {
     if (cStatus >= 0 && String(row[cStatus]).toLowerCase() !== 'settled') { skipped++; continue }
     const settleDate = dateOnly(row[cSettle])
     if (!settleDate) { pending++; continue }
-    const d = byDay.get(settleDate) ?? { settleDate, count: 0, gross: 0, fee: 0, net: 0 }
+    const d = byDay.get(settleDate) ?? { settleDate, count: 0, gross: 0, fee: 0, net: 0, brands: [] }
+    const gross = num(row[cGross]), fee = cFee >= 0 ? num(row[cFee]) : 0
     d.count++
-    d.gross = round2(d.gross + num(row[cGross]))
-    d.fee = round2(d.fee + (cFee >= 0 ? num(row[cFee]) : 0))
+    d.gross = round2(d.gross + gross)
+    d.fee = round2(d.fee + fee)
     d.net = round2(d.net + num(row[cNet]))
+    const brandName = (cBrand >= 0 ? String(row[cBrand] ?? '') : '').trim() || 'Card'
+    const brand = d.brands.find(b => b.brand === brandName)
+    if (brand) { brand.count++; brand.gross = round2(brand.gross + gross); brand.fee = round2(brand.fee + fee) }
+    else d.brands.push({ brand: brandName, count: 1, gross: round2(gross), fee: round2(fee) })
     byDay.set(settleDate, d)
   }
   // Takings per day of sale, to compare with the POS card figures.

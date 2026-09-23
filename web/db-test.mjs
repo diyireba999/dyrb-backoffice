@@ -147,3 +147,15 @@ await db.query(`select post_journal('2026-09-30','Repay director','pv',null,null
   '[{"account":"2500","debit":180},{"account":"1100","credit":180}]'::jsonb)`)
 const after8 = Number((await db.query(`select coalesce(sum(credit - debit), 0)::float d from journal_lines where account='2500'`)).rows[0].d)
 console.log(after8 === 0 ? 'director repaid ok' : 'FAIL director repaid ' + after8)
+
+// ---- 009: Fiuu settlement split by card type ----
+await db.exec(fs.readFileSync(new URL('../supabase/009_fiuu_brands.sql', import.meta.url), 'utf8'))
+const bj = (await db.query(`select post_fiuu_settlement('2026-09-26', 1000, 15, 985, '1100', 'test',
+  '[{"brand":"Visa","gross":600,"fee":9},{"brand":"MyDebit Card Present","gross":400,"fee":6}]'::jsonb) id`)).rows[0].id
+const bbal = (await db.query(`select coalesce(sum(debit - credit), 0)::float d from journal_lines where journal_id=${bj}`)).rows[0].d
+const visaFee = (await db.query(`select sum(debit)::float d from journal_lines where journal_id=${bj} and account='6200' and memo='Visa fee'`)).rows[0].d
+const byType = (await db.query(`select count(*)::int c from card_fees_by_type where date='2026-09-26'`)).rows[0].c
+console.log(bbal === 0 && visaFee === 9 && byType === 2 ? 'fiuu by card type ok' : `FAIL fiuu brands ${bbal} ${visaFee} ${byType}`)
+try { await db.query(`select post_fiuu_settlement('2026-09-27', 1000, 15, 985, '1100', null,
+  '[{"brand":"Visa","gross":600,"fee":9}]'::jsonb)`); console.log('FAIL: card type totals not checked') }
+catch (e) { console.log('card type mismatch rejected:', e.message.split(' do not')[0] + ' do not match') }

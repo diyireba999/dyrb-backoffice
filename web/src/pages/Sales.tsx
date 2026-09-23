@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import { CheckCircle2, CloudUpload, Plus, Trash2, TriangleAlert } from 'lucide-react'
-import { MONEY_ACCOUNTS, dmy, rm, supabase, useAccounts, type Account, type Role } from '../lib'
+import { MONEY_ACCOUNTS, dmy, rm, round2, supabase, useAccounts, type Account, type Role } from '../lib'
 import { dayTotal, daySuspect, parseBillSummary, parseFiuu, parseProductSales, paymentTotal, salesLinesFor, type Day, type ItemSale, type Settlement } from '../zeoniq'
 import { AccountSelect, Empty } from '../ui'
 
@@ -180,6 +180,7 @@ export function CardSettlement() {
       const { error } = await supabase.rpc('post_fiuu_settlement', {
         p_settle_date: s.settleDate, p_gross: s.gross, p_fee: s.fee, p_net: s.net, p_bank: bank,
         p_note: `Fiuu settlement ${s.count} card payment${s.count === 1 ? '' : 's'}`,
+        p_brands: s.brands.map(b => ({ brand: b.brand, gross: b.gross, fee: b.fee })),
       })
       if (error) console.error('post_fiuu_settlement', s.settleDate, error)
       out.push({ ...s, posted: !error, result: error ? error.message : 'ok' })
@@ -220,6 +221,7 @@ export function CardSettlement() {
               </tr></thead>
               <tbody>
                 {rows.map(s => (
+                  <>
                   <tr key={s.settleDate} className={s.posted ? 'text-slate-400' : ''}>
                     <td><input type="checkbox" disabled={s.posted} checked={!!pick[s.settleDate] && !s.posted}
                       onChange={e => setPick({ ...pick, [s.settleDate]: e.target.checked })} /></td>
@@ -234,6 +236,15 @@ export function CardSettlement() {
                       {!s.posted && s.result && s.result !== 'ok' && <span className="text-red-600">{s.result}</span>}
                     </td>
                   </tr>
+                  {s.brands.map(b => (
+                    <tr key={s.settleDate + b.brand} className="text-xs text-slate-500">
+                      <td></td><td className="pl-6">{b.brand}</td><td className="text-right">{b.count}</td>
+                      <td className="text-right">{rm(b.gross)}</td><td className="text-right">{rm(b.fee)}</td>
+                      <td className="text-right">{b.gross ? (b.fee / b.gross * 100).toFixed(2) + '%' : ''}</td>
+                      <td className="text-right">{rm(round2(b.gross - b.fee))}</td><td></td>
+                    </tr>
+                  ))}
+                  </>
                 ))}
               </tbody>
             </table>
