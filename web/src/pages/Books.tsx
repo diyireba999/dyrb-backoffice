@@ -50,7 +50,8 @@ export function PaymentVoucher() {
         <div className="sm:col-span-2"><label>Pay to</label><input value={f.payee} onChange={e => set('payee', e.target.value)} placeholder="Shop, TNB, landlord…" required /></div>
         <div><label>Account (what for)</label>
           <AccountSelect accounts={accounts} value={f.what} onChange={v => set('what', v)}
-            filter={a => a.type === 'expense' || a.code === '3100' || (a.type === 'asset' && a.code >= '1300')} />
+            filter={a => a.type === 'expense' || a.code === '3100' || (a.type === 'asset' && a.code >= '1300')
+              || ['2300', '2310', '2320', '2330', '2340'].includes(a.code)} />
         </div>
         <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required /></div>
         <div><label>Paid from</label>

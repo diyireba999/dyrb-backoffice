@@ -28,7 +28,7 @@ Turn on two-step login for each account once created — this system holds salar
    - Plan: Free → **Create new project**. Wait about 2 minutes.
 3. Left menu **SQL Editor** → **New query**. Open `supabase/001_core.sql` in Notepad, copy everything, paste, click **Run**. It should say "Success. No rows returned".
 4. **New query** again → paste `supabase/002_claims.sql` → **Run**.
-   Then the same for `supabase/003_accounting.sql`.
+   Then the same for `supabase/003_accounting.sql` and `supabase/004_payroll.sql`.
 5. Left menu **Authentication** → **Sign In / Providers**: turn **off** "Allow new users to sign up", **Save**. Only you can add people.
 6. Still in Authentication → **Users** → **Add user** → **Create new user**: your email + a strong password, tick **Auto Confirm User** → **Create user**.
 7. Back to **SQL Editor** → New query → paste (with your name and email) → **Run**:
@@ -84,5 +84,5 @@ npm run dev
 - [x] Phase 2 – Accounting: Chart of Accounts, Journal Entry, General Ledger, Cash Book (PV / OR / Transfer), Bank Reconciliation, Purchase (Suppliers, Purchase Invoice, Supplier Payment, Aging), Trial Balance, Profit & Loss, Balance Sheet
 - [ ] Phase 3 – Upload Sales (Zeoniq) + Fiuu settlement — **need sample export files**
 - [x] Phase 4 – Claims (staff submit with photo, manager approves, owner/accountant pays)
-- [ ] Phase 5 – Payroll
+- [x] Phase 5 – Payroll (staff records, monthly run, EPF/SOCSO/EIS, payslips, yearly summary)
 - [ ] Phase 6 – Reports, SST, backups

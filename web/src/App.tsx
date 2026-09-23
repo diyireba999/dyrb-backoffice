@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BookOpen, BookText, CalendarClock, FileText, HandCoins, KeyRound, LayoutDashboard,
-  ListTree, LogOut, Menu, NotebookPen, Search as SearchIcon, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
+  ListTree, LogOut, Menu, NotebookPen, Search as SearchIcon, Settings2, CalendarDays, IdCard, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
 import { arrivedFromEmail, supabase, type Profile, type Role } from './lib'
@@ -14,6 +14,7 @@ import { Users } from './pages/Admin'
 import { Claims } from './pages/Claims'
 import { Dashboard } from './pages/Dashboard'
 import { SearchDialog } from './Search'
+import { Employees, MyPayslips, PayrollRun, PayrollSettings, PayrollYear } from './pages/Payroll'
 
 const OFFICE: Role[] = ['owner', 'manager', 'accountant']
 const EVERYONE: Role[] = [...OFFICE, 'staff']
@@ -35,6 +36,11 @@ const PAGES: Page[] = [
   { to: '/ap/payments', label: 'Supplier Payment', subtitle: 'Pay supplier invoices (SP)', icon: HandCoins, group: 'Purchase', roles: OFFICE },
   { to: '/ap/aging', label: 'Supplier Aging', subtitle: 'Amount owed, by how overdue', icon: CalendarClock, group: 'Purchase', roles: OFFICE },
   { to: '/claims', label: 'Claims', subtitle: 'Staff expense claims', icon: Receipt, group: 'Team', roles: EVERYONE },
+  { to: '/payslips', label: 'My Payslips', subtitle: 'Your own payslips', icon: Wallet2, group: 'Team', roles: ['staff'] },
+  { to: '/payroll/staff', label: 'Staff', subtitle: 'Staff details, salary and deductions', icon: IdCard, group: 'Payroll', roles: OFFICE },
+  { to: '/payroll/run', label: 'Monthly Payroll', subtitle: 'Work out pay, approve and print payslips', icon: CalendarDays, group: 'Payroll', roles: OFFICE },
+  { to: '/payroll/year', label: 'Yearly Summary', subtitle: 'Totals per staff for EA forms', icon: BookText, group: 'Payroll', roles: OFFICE },
+  { to: '/payroll/rates', label: 'Payroll Settings', subtitle: 'EPF, SOCSO, EIS rates', icon: Settings2, group: 'Payroll', roles: OFFICE },
   { to: '/reports/tb', label: 'Trial Balance', subtitle: 'All account balances; debit equals credit', icon: Scale, group: 'Reports', roles: OFFICE },
   { to: '/reports/pl', label: 'Profit & Loss', subtitle: 'Sales, costs and profit for a period', icon: TrendingUp, group: 'Reports', roles: OFFICE },
   { to: '/reports/bs', label: 'Balance Sheet', subtitle: 'What the business owns and owes', icon: PieChart, group: 'Reports', roles: OFFICE },
@@ -203,6 +209,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
           <Routes>
             <Route path="/" element={<Dashboard profile={profile} />} />
             <Route path="/claims" element={<Claims profile={profile} />} />
+            <Route path="/payslips" element={<MyPayslips profile={profile} />} />
             {office && <>
               <Route path="/gl/accounts" element={<ChartOfAccounts role={profile.role} />} />
               <Route path="/gl/journal" element={<JournalEntry />} />
@@ -220,6 +227,10 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
               <Route path="/reports/tb" element={<TrialBalance />} />
               <Route path="/reports/pl" element={<ProfitAndLoss />} />
               <Route path="/reports/bs" element={<BalanceSheet />} />
+              <Route path="/payroll/staff" element={<Employees role={profile.role} />} />
+              <Route path="/payroll/run" element={<PayrollRun role={profile.role} />} />
+              <Route path="/payroll/year" element={<PayrollYear />} />
+              <Route path="/payroll/rates" element={<PayrollSettings role={profile.role} />} />
             </>}
             {profile.role === 'owner' && <Route path="/users" element={<Users me={profile.id} />} />}
             <Route path="*" element={<Navigate to="/" />} />

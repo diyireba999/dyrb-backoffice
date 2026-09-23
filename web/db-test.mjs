@@ -75,3 +75,29 @@ const direct = (await db.query(`select sum(debit - credit)::float n from journal
 console.log(tot === direct ? 'account totals ok' : `FAIL account totals ${tot} vs ${direct}`)
 const ct = Number((await db.query(`select cleared_total('1100', '2026-09-30') c`)).rows[0].c)
 console.log(ct !== 0 ? 'cleared total ok' : 'FAIL cleared total')
+
+// ---- 004: payroll ----
+await db.exec(fs.readFileSync(new URL('../supabase/004_payroll.sql', import.meta.url), 'utf8'))
+await db.exec(`insert into employees (name, is_local, pay_type, rate) values ('Siti', true, 'monthly', 3000)`)
+await db.exec(`insert into employees (name, is_local, pay_type, rate, eis_on) values ('Aung', false, 'monthly', 1800, false)`)
+await db.exec(`insert into employees (name, is_local, pay_type, rate) values ('Lim', true, 'hourly', 12)`)
+const run = (await db.query(`select create_payroll_run('2026-09-05', '2026-09-30') id`)).rows[0].id
+const local = (await db.query(`select epf_employee::float ee, epf_employer::float er, socso_employee::float se, socso_employer::float sr, eis_employee::float ie from payslip_view where run_id=${run} and name='Siti'`)).rows[0]
+console.log(local.ee === 330 && local.er === 390 && local.se === 15 && local.sr === 52.5 && local.ie === 6
+  ? 'local statutory ok' : 'FAIL local ' + JSON.stringify(local))
+const foreign = (await db.query(`select epf_employee::float ee, epf_employer::float er, socso_employee::float se, socso_employer::float sr, eis_employer::float ir from payslip_view where run_id=${run} and name='Aung'`)).rows[0]
+console.log(foreign.ee === 36 && foreign.er === 36 && foreign.se === 0 && foreign.sr === 22.5 && foreign.ir === 0
+  ? 'foreign statutory ok' : 'FAIL foreign ' + JSON.stringify(foreign))
+const hourlyId = (await db.query(`select id from payslip_view where run_id=${run} and name='Lim'`)).rows[0].id
+await db.query(`select save_payslip(${hourlyId}, '{"hours":100}'::jsonb)`)
+const hourly = (await db.query(`select basic::float b, net_pay::float n from payslip_view where id=${hourlyId}`)).rows[0]
+console.log(hourly.b === 1200 ? 'hourly pay ok' : 'FAIL hourly ' + JSON.stringify(hourly))
+const jid = (await db.query(`select approve_payroll_run(${run}) j`)).rows[0].j
+const jbal = (await db.query(`select coalesce(sum(debit - credit), 0)::float d from journal_lines where journal_id=${jid}`)).rows[0].d
+const payable = (await db.query(`select sum(credit)::float c from journal_lines where journal_id=${jid} and account='2300'`)).rows[0].c
+const netTotal = Number((await db.query(`select sum(net_pay)::float n from payslip_view where run_id=${run}`)).rows[0].n)
+console.log(jbal === 0 && payable === netTotal ? 'payroll journal ok' : `FAIL payroll journal ${jbal} ${payable} vs ${netTotal}`)
+try { await db.query(`select save_payslip(${hourlyId}, '{"hours":120}'::jsonb)`); console.log('FAIL: edited approved payroll') } catch (e) { console.log('approved payroll locked:', e.message) }
+await db.query(`select cancel_payroll_run(${run})`)
+const after = (await db.query(`select count(*)::int c from journals where id=${jid}`)).rows[0].c
+console.log(after === 0 ? 'cancel payroll ok' : 'FAIL cancel payroll')
