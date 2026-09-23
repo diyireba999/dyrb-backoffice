@@ -63,16 +63,18 @@ export function ProfitAndLoss() {
   const net = useNet(from, to)
   const pick = (f: (a: Account) => boolean, sign: number) =>
     accounts.filter(f).map(a => [a, round2(sign * (net.get(a.code) ?? 0))] as [Account, number]).filter(([, v]) => v !== 0)
-  const sales = pick(a => a.type === 'income' && a.code < '4900', -1)
+  // Service charge is shown on its own, so the margins are measured on food and drink only.
+  const sales = pick(a => a.type === 'income' && a.code < '4100', -1)
+  const service = pick(a => a.type === 'income' && a.code >= '4100' && a.code < '4900', -1)
   const other = pick(a => a.type === 'income' && a.code >= '4900', -1)
   const cost = pick(a => a.type === 'expense' && a.code < '6000', 1)
   const opex = pick(a => a.type === 'expense' && a.code >= '6000', 1)
   const sum = (r: [Account, number][]) => r.reduce((s, [, v]) => s + v, 0)
   const gross = sum(sales) - sum(cost)
-  const profit = gross + sum(other) - sum(opex)
+  const profit = gross + sum(service) + sum(other) - sum(opex)
   const pct = (v: number) => sum(sales) ? ` (${((v / sum(sales)) * 100).toFixed(1)}%)` : ''
   const csv = () => downloadCsv(`profit-and-loss-${from}-${to}.csv`, [['Section', 'Code', 'Account', 'Amount'],
-    ...([['Sales', sales], ['Cost of sales', cost], ['Other income', other], ['Operating expenses', opex]] as [string, [Account, number][]][])
+    ...([['Sales', sales], ['Cost of sales', cost], ['Service charge', service], ['Other income', other], ['Operating expenses', opex]] as [string, [Account, number][]][])
       .flatMap(([s, r]) => r.map(([a, v]) => [s, a.code, a.name, v])),
     ['', '', 'Gross profit', round2(gross)], ['', '', 'Net profit / (loss)', round2(profit)]])
 
@@ -89,6 +91,7 @@ export function ProfitAndLoss() {
             <Section title="Sales" rows={sales} total={sum(sales)} totalLabel="Total sales" />
             <Section title="Cost of sales" rows={cost} total={sum(cost)} totalLabel={`Total cost of sales${pct(sum(cost))}`} />
             <tr className="bg-brand-soft font-semibold"><td>Gross profit{pct(gross)}</td><td className="text-right">{rm(gross)}</td></tr>
+            {service.length > 0 && <Section title="Service charge" rows={service} total={sum(service)} totalLabel="Total service charge" />}
             {other.length > 0 && <Section title="Other income" rows={other} total={sum(other)} totalLabel="Total other income" />}
             <Section title="Operating expenses" rows={opex} total={sum(opex)} totalLabel="Total operating expenses" />
             <tr className={`text-base font-bold ${profit < 0 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
