@@ -5,6 +5,8 @@ import { MONEY_ACCOUNTS, dmy, downloadCsv, isDirector, openReceipt, postJournal,
 import { AccountSelect, Done, Empty, ReportBar } from '../ui'
 
 const money = (a: Account) => MONEY_ACCOUNTS.includes(a.code)
+// 1200 card and 1210 e-wallet hold money already taken but not yet in the bank.
+const waiting = (a: Account) => a.code === '1200' || a.code === '1210'
 
 async function docNo(id: number) {
   const { data } = await supabase.from('journals').select('doc_no').eq('id', id).single()
@@ -146,10 +148,11 @@ export function Transfer() {
   if (done) return <Done msg={done.msg} doc={done.doc} again={() => setDone(null)} />
   return (
     <form onSubmit={submit} className="card max-w-2xl space-y-5 p-6">
+      <p className="muted">Also use this when e-wallet money (TNG and the like) reaches the bank: From <b>1210 E-Wallet</b>, To <b>Bank</b>. E-wallets have no fee, so the full amount moves across. Card money is handled on the Card Settlement screen, because Fiuu takes a fee.</p>
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
         <div><label>Ref no. (bank-in slip)</label><input value={f.reference} onChange={e => set('reference', e.target.value)} placeholder="Optional" /></div>
-        <div><label>From</label><AccountSelect accounts={accounts} value={f.from} onChange={v => set('from', v)} filter={money} /></div>
+        <div><label>From</label><AccountSelect accounts={accounts} value={f.from} onChange={v => set('from', v)} filter={a => money(a) || waiting(a)} /></div>
         <div><label>To</label><AccountSelect accounts={accounts} value={f.to} onChange={v => set('to', v)} filter={money} /></div>
         <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required /></div>
       </div>
