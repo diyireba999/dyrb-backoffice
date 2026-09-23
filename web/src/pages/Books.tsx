@@ -53,7 +53,7 @@ export function PaymentVoucher() {
         <div><label>Account (what for)</label>
           <AccountSelect accounts={accounts} value={f.what} onChange={v => set('what', v)}
             filter={a => a.type === 'expense' || a.code === '3100' || (a.type === 'asset' && a.code >= '1300')
-              || ['2300', '2310', '2320', '2330', '2340'].includes(a.code) || isDirector(a.code)} />
+              || ['2300', '2310', '2320', '2330', '2340', '2600'].includes(a.code) || isDirector(a.code)} />
         </div>
         <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required /></div>
         <div><label>Paid from</label>
