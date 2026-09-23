@@ -20,6 +20,10 @@ Turn on two-step login for each account once created — this system holds salar
 4. Refresh the GitHub page; you should see the `web` and `supabase` folders.
 
 ### Step 2 – Create the database on Supabase
+
+> **If a paste gets cut short**, part of a file will be missing and reports show zero.
+> Run `supabase/003b_repair.sql` — it is safe to run any time and creates whatever is missing.
+
 1. Go to https://supabase.com → **Start your project** → sign up with GitHub (easiest).
 2. **New project**:
    - Name: `dyrb-backoffice`

@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react'
 import { CheckCircle2, Download, Printer } from 'lucide-react'
-import type { Account } from './lib'
+import { supabase, type Account } from './lib'
 
 export function Done({ msg, doc, again }: { msg: string; doc?: string; again: () => void }) {
   return (
@@ -47,4 +48,21 @@ export function ReportBar({ title, period, onCsv, children }: {
 
 export function Empty({ text }: { text: string }) {
   return <p className="muted px-5 py-10 text-center">{text}</p>
+}
+
+// If part of the database setup is missing, reports quietly show zero. Say so instead.
+export function SetupWarning() {
+  const [missing, setMissing] = useState('')
+  useEffect(() => {
+    supabase.rpc('account_totals', { p_from: null, p_to: new Date().toISOString().slice(0, 10) })
+      .then(({ error }) => setMissing(error ? error.message : ''))
+  }, [])
+  if (!missing) return null
+  return (
+    <div className="no-print mx-auto mb-4 max-w-7xl rounded-lg bg-red-50 px-4 py-3 text-sm text-red-800">
+      <b>Database setup is not finished.</b> Reports and the General Ledger will show zero until it is.
+      Run <code>supabase/003b_repair.sql</code> in the Supabase SQL Editor, then reload this page.
+      <div className="mt-1 text-xs opacity-80">{missing}</div>
+    </div>
+  )
 }

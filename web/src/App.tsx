@@ -14,6 +14,7 @@ import { Users } from './pages/Admin'
 import { Claims } from './pages/Claims'
 import { Dashboard } from './pages/Dashboard'
 import { SearchDialog } from './Search'
+import { SetupWarning } from './ui'
 import { Employees, MyPayslips, PayrollRun, PayrollSettings, PayrollYear } from './pages/Payroll'
 import { CardSettlement, SalesSettings, UploadSales } from './pages/Sales'
 
@@ -210,6 +211,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
         </header>
         <SearchDialog pages={pages} canSeeDocs={office} open={search} setOpen={setSearch} />
         <main className="mx-auto max-w-7xl p-4 sm:p-8">
+          <SetupWarning />
           <Routes>
             <Route path="/" element={<Dashboard profile={profile} />} />
             <Route path="/claims" element={<Claims profile={profile} />} />
