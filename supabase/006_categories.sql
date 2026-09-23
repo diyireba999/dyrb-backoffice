@@ -18,6 +18,7 @@ insert into item_category_map (prefix, label, account) values
   ('CT', 'Cocktails', '4020'),
   ('OP', 'Open drink', '4020'),
   ('NA', 'Non-alcoholic drinks', '4010'),
+  ('MT', 'Mocktails', '4010'),
   ('F', 'Food', '4000'),
   ('T', 'Tidbits', '4000'),
   ('XS', 'Snacks', '4000');
