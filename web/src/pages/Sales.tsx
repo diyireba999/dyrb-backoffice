@@ -74,6 +74,24 @@ export function UploadSales() {
     if (error) console.error('post_cogs_day', d.date, error)
   }
 
+  async function postCogsOnly() {
+    setBusy(true); setError('')
+    const out: Day[] = []
+    let done = 0
+    for (const d of days) {
+      const cogs = cogsFor(d)
+      if (!pick[d.date] || !d.posted || !cogs || cogs.lines.length === 0) { out.push(d); continue }
+      const { error } = await supabase.rpc('post_cogs_day', { p_date: d.date, p_lines: cogs.lines })
+      if (error) console.error('post_cogs_day', d.date, error)
+      else done++
+      out.push({ ...d, result: error ? error.message : 'cost' })
+    }
+    setDays(out); setBusy(false)
+    const failed = out.filter(d => d.result && !['ok', 'split', 'cost'].includes(d.result))
+    setError(failed.length ? failed.map(d => `${dmy(d.date)}: ${d.result}`).join(' — ') : '')
+    if (!failed.length && done === 0) setError('No cost to post: tick the days, and make sure the items have a cost on the Item Costs screen.')
+  }
+
   // Days already posted as one line can take the split afterwards.
   async function resplit() {
     setBusy(true)
@@ -117,6 +135,12 @@ export function UploadSales() {
 
   const chosen = days.filter(d => pick[d.date] && !d.posted)
   // Posted days whose split is ready to be applied.
+  // Posted days whose items have costs, so cost of sales can be written.
+  const costable = days.filter(d => {
+    if (!d.posted || !pick[d.date]) return false
+    const cogs = cogsFor(d)
+    return !!cogs && cogs.lines.length > 0
+  })
   const splittable = days.filter(d => {
     if (!d.posted || !pick[d.date]) return false
     const split = splitFor(d)
@@ -184,8 +208,9 @@ export function UploadSales() {
                         )
                       })()}</td>
                       <td className="whitespace-nowrap text-right text-xs">
+                        {d.result === 'cost' && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />Cost posted</span>}
                         {d.result === 'split' && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />Split applied</span>}
-                        {d.posted && d.result !== 'split' && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />{d.result === 'ok' ? 'Posted' : 'Already in'}</span>}
+                        {d.posted && !['split', 'cost'].includes(d.result ?? '') && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />{d.result === 'ok' ? 'Posted' : 'Already in'}</span>}
                         {!d.posted && mismatch && <span className="inline-flex items-center gap-1 text-amber-600" title={`Totals do not add up: ${rm(dayTotal(d))} vs ${rm(d.netTotal)}, payments ${rm(paymentTotal(d))}`}><TriangleAlert className="size-4" />Does not add up</span>}
                         {!d.posted && d.result && d.result !== 'ok' && <span className="text-red-600">{d.result}</span>}
                       </td>
@@ -198,6 +223,11 @@ export function UploadSales() {
           <div className="flex flex-wrap items-center gap-3">
             <p className="muted">{chosen.length} day{chosen.length === 1 ? '' : 's'} ready · {rm(chosen.reduce((s, d) => s + d.netTotal, 0))}</p>
             <div className="ml-auto flex gap-2">
+              {costable.length > 0 && (
+                <button className="btn-light" disabled={busy} onClick={postCogsOnly} title="Write the cost of sales for these days from the item costs">
+                  {busy ? 'Working…' : `Post cost of sales · ${costable.length} day${costable.length === 1 ? '' : 's'}`}
+                </button>
+              )}
               {splittable.length > 0 && (
                 <button className="btn-light" disabled={busy} onClick={resplit} title="Replace the single sales line with the food / beverage / liquor split">
                   {busy ? 'Working…' : `Re-split ${splittable.length} posted day${splittable.length === 1 ? '' : 's'}`}
