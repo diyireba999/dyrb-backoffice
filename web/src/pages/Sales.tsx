@@ -61,9 +61,12 @@ export function UploadSales() {
         p_payments: d.payments,
         p_sales_lines: usable ? split.lines.map(l => ({ account: l.account, amount: l.amount })) : null,
       })
+      if (error) console.error('post_sales_day', d.date, error)
       out.push({ ...d, posted: !error, result: error ? error.message : 'ok' })
     }
     setDays(out); setBusy(false)
+    const failed = out.filter(d => d.result && d.result !== 'ok')
+    setError(failed.length ? failed.map(d => `${dmy(d.date)}: ${d.result}`).join(' — ') : '')
   }
 
   const chosen = days.filter(d => pick[d.date] && !d.posted)
@@ -178,9 +181,12 @@ export function CardSettlement() {
         p_settle_date: s.settleDate, p_gross: s.gross, p_fee: s.fee, p_net: s.net, p_bank: bank,
         p_note: `Fiuu settlement ${s.count} card payment${s.count === 1 ? '' : 's'}`,
       })
+      if (error) console.error('post_fiuu_settlement', s.settleDate, error)
       out.push({ ...s, posted: !error, result: error ? error.message : 'ok' })
     }
     setRows(out); setBusy(false)
+    const failed = out.filter(s => s.result && s.result !== 'ok')
+    setError(failed.length ? failed.map(s => `${dmy(s.settleDate)}: ${s.result}`).join(' — ') : '')
   }
 
   const chosen = rows.filter(s => pick[s.settleDate] && !s.posted)
