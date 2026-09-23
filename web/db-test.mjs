@@ -159,3 +159,20 @@ console.log(bbal === 0 && visaFee === 9 && byType === 2 ? 'fiuu by card type ok'
 try { await db.query(`select post_fiuu_settlement('2026-09-27', 1000, 15, 985, '1100', null,
   '[{"brand":"Visa","gross":600,"fee":9}]'::jsonb)`); console.log('FAIL: card type totals not checked') }
 catch (e) { console.log('card type mismatch rejected:', e.message.split(' do not')[0] + ' do not match') }
+
+// ---- 011: re-split a day that was posted as one line ----
+for (const f of ['006_categories.sql', '010_item_groups.sql', '011_resplit.sql'])
+  await db.exec(fs.readFileSync(new URL('../supabase/' + f, import.meta.url), 'utf8'))
+await db.query(`select post_sales_day('2026-09-28', 1000, 100, 0, 0,
+  '[{"code":"CASH","amount":1100}]'::jsonb)`)
+await db.query(`select resplit_sales_day('2026-09-28',
+  '[{"account":"4000","amount":300},{"account":"4010","amount":200},{"account":"4020","amount":500}]'::jsonb)`)
+const rs = (await db.query(`select l.account, l.credit::float c from journal_lines l
+  join journals j on j.id = l.journal_id where j.source_ref='2026-09-28' and l.credit > 0 order by l.account`)).rows
+const rsBal = (await db.query(`select coalesce(sum(l.debit - l.credit), 0)::float d from journal_lines l
+  join journals j on j.id = l.journal_id where j.source_ref='2026-09-28'`)).rows[0].d
+const liquor = rs.find(r => r.account === '4020')?.c
+console.log(rsBal === 0 && liquor === 500 && rs.length === 4 ? 'resplit ok' : `FAIL resplit ${rsBal} ${JSON.stringify(rs)}`)
+try { await db.query(`select resplit_sales_day('2026-09-28', '[{"account":"4000","amount":999}]'::jsonb)`)
+  console.log('FAIL: resplit total not checked') }
+catch (e) { console.log('resplit mismatch rejected:', e.message.split(' does not')[0] + ' does not match') }

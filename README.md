@@ -32,7 +32,7 @@ Turn on two-step login for each account once created — this system holds salar
    - Plan: Free → **Create new project**. Wait about 2 minutes.
 3. Left menu **SQL Editor** → **New query**. Open `supabase/001_core.sql` in Notepad, copy everything, paste, click **Run**. It should say "Success. No rows returned".
 4. **New query** again → paste `supabase/002_claims.sql` → **Run**.
-   Then the same for `supabase/003_accounting.sql`, `supabase/004_payroll.sql`, `supabase/005_sales.sql`, `supabase/006_categories.sql`, `supabase/007_fiuu.sql`, `supabase/008_director.sql` and `supabase/009_fiuu_brands.sql`.
+   Then the same for `supabase/003_accounting.sql`, `supabase/004_payroll.sql`, `supabase/005_sales.sql`, `supabase/006_categories.sql`, `supabase/007_fiuu.sql`, `supabase/008_director.sql`, `supabase/009_fiuu_brands.sql`, `supabase/010_item_groups.sql` and `supabase/011_resplit.sql`.
 5. Left menu **Authentication** → **Sign In / Providers**: turn **off** "Allow new users to sign up", **Save**. Only you can add people.
 6. Still in Authentication → **Users** → **Add user** → **Create new user**: your email + a strong password, tick **Auto Confirm User** → **Create user**.
 7. Back to **SQL Editor** → New query → paste (with your name and email) → **Run**:

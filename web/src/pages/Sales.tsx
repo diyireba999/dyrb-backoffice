@@ -49,6 +49,25 @@ export function UploadSales() {
     } catch (err) { setError((err as Error).message) }
   }
 
+  // Days already posted as one line can take the split afterwards.
+  async function resplit() {
+    setBusy(true)
+    const out: Day[] = []
+    for (const d of days) {
+      const split = splitFor(d)
+      const usable = d.posted && split && split.unknown.length === 0 && Math.abs(split.diff) <= 0.05 && split.lines.length > 0
+      if (!usable || !pick[d.date]) { out.push(d); continue }
+      const { error } = await supabase.rpc('resplit_sales_day', {
+        p_date: d.date, p_lines: split.lines.map(l => ({ account: l.account, amount: l.amount })),
+      })
+      if (error) console.error('resplit_sales_day', d.date, error)
+      out.push({ ...d, result: error ? error.message : 'split' })
+    }
+    setDays(out); setBusy(false)
+    const failed = out.filter(d => d.result && !['ok', 'split'].includes(d.result))
+    setError(failed.length ? failed.map(d => `${dmy(d.date)}: ${d.result}`).join(' — ') : '')
+  }
+
   async function post() {
     setBusy(true)
     const out: Day[] = []
@@ -70,6 +89,12 @@ export function UploadSales() {
   }
 
   const chosen = days.filter(d => pick[d.date] && !d.posted)
+  // Posted days whose split is ready to be applied.
+  const splittable = days.filter(d => {
+    if (!d.posted || !pick[d.date]) return false
+    const split = splitFor(d)
+    return !!split && split.unknown.length === 0 && Math.abs(split.diff) <= 0.05 && split.lines.length > 0
+  })
 
   return (
     <div className="space-y-4">
@@ -104,7 +129,7 @@ export function UploadSales() {
                   const mismatch = daySuspect(d)
                   return (
                     <tr key={d.date} className={d.posted ? 'text-slate-400' : ''}>
-                      <td><input type="checkbox" disabled={d.posted || mismatch} checked={!!pick[d.date] && !d.posted}
+                      <td><input type="checkbox" disabled={mismatch} checked={!!pick[d.date]}
                         onChange={e => setPick({ ...pick, [d.date]: e.target.checked })} /></td>
                       <td className="font-medium">{dmy(d.date)}</td>
                       <td className="text-right">{rm(d.sales)}</td>
@@ -121,7 +146,8 @@ export function UploadSales() {
                         return <span className="text-slate-600">{split.lines.map(l => `${accountNames[l.account] ?? l.account} ${rm(l.amount)}`).join(' · ')}</span>
                       })()}</td>
                       <td className="whitespace-nowrap text-right text-xs">
-                        {d.posted && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />{d.result === 'ok' ? 'Posted' : 'Already in'}</span>}
+                        {d.result === 'split' && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />Split applied</span>}
+                        {d.posted && d.result !== 'split' && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />{d.result === 'ok' ? 'Posted' : 'Already in'}</span>}
                         {!d.posted && mismatch && <span className="inline-flex items-center gap-1 text-amber-600" title={`Totals do not add up: ${rm(dayTotal(d))} vs ${rm(d.netTotal)}, payments ${rm(paymentTotal(d))}`}><TriangleAlert className="size-4" />Does not add up</span>}
                         {!d.posted && d.result && d.result !== 'ok' && <span className="text-red-600">{d.result}</span>}
                       </td>
@@ -133,10 +159,18 @@ export function UploadSales() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <p className="muted">{chosen.length} day{chosen.length === 1 ? '' : 's'} ready · {rm(chosen.reduce((s, d) => s + d.netTotal, 0))}</p>
-            <button className="btn ml-auto" disabled={busy || chosen.length === 0} onClick={post}>
-              {busy ? 'Posting…' : `Post ${chosen.length} day${chosen.length === 1 ? '' : 's'}`}
-            </button>
+            <div className="ml-auto flex gap-2">
+              {splittable.length > 0 && (
+                <button className="btn-light" disabled={busy} onClick={resplit} title="Replace the single sales line with the food / beverage / liquor split">
+                  {busy ? 'Working…' : `Re-split ${splittable.length} posted day${splittable.length === 1 ? '' : 's'}`}
+                </button>
+              )}
+              <button className="btn" disabled={busy || chosen.length === 0} onClick={post}>
+                {busy ? 'Posting…' : `Post ${chosen.length} day${chosen.length === 1 ? '' : 's'}`}
+              </button>
+            </div>
           </div>
+          {splittable.length > 0 && <p className="muted">Days already posted can take the split now — tick them and press <b>Re-split</b>. Only the sales lines change; payments, service charge and rounding stay as they are.</p>}
           <p className="muted">Each day becomes one entry: money in by payment type, sales and service charge as income. A day already posted cannot go in twice.</p>
         </>
       )}
