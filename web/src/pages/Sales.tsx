@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import { CheckCircle2, CloudUpload, Plus, Trash2, TriangleAlert } from 'lucide-react'
-import { dmy, rm, supabase, useAccounts, type Role } from '../lib'
-import { dayTotal, daySuspect, parseBillSummary, paymentTotal, type Day } from '../zeoniq'
+import { dmy, rm, supabase, useAccounts, type Account, type Role } from '../lib'
+import { dayTotal, daySuspect, parseBillSummary, parseProductSales, paymentTotal, salesLinesFor, type Day, type ItemSale } from '../zeoniq'
 import { AccountSelect, Empty } from '../ui'
 
 export function UploadSales() {
@@ -11,6 +11,30 @@ export function UploadSales() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [fileName, setFileName] = useState('')
+  const [items, setItems] = useState<ItemSale[]>([])
+  const [itemFile, setItemFile] = useState('')
+  const [categories, setCategories] = useState<Record<string, string>>({})
+  const [accountNames, setAccountNames] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    supabase.from('item_category_map').select('prefix, account')
+      .then(({ data }) => setCategories(Object.fromEntries((data ?? []).map(r => [r.prefix.toUpperCase(), r.account]))))
+    supabase.from('accounts').select('code, name')
+      .then(({ data }) => setAccountNames(Object.fromEntries((data ?? []).map(a => [a.code, a.name]))))
+  }, [])
+
+  // Food / beverage / liquor split for one day, when the product file is loaded.
+  const splitFor = (d: Day) => {
+    const dayItems = items.filter(i => i.date === d.date)
+    if (!dayItems.length) return null
+    return salesLinesFor(dayItems, categories, d.sales)
+  }
+
+  async function onItemFile(file: File) {
+    setError(''); setItemFile(file.name)
+    try { setItems(parseProductSales(await readXlsxFile(file))) }
+    catch (err) { setError((err as Error).message); setItems([]) }
+  }
 
   async function onFile(file: File) {
     setError(''); setDays([]); setFileName(file.name)
@@ -30,9 +54,12 @@ export function UploadSales() {
     const out: Day[] = []
     for (const d of days) {
       if (!pick[d.date] || d.posted) { out.push(d); continue }
+      const split = splitFor(d)
+      const usable = split && split.unknown.length === 0 && Math.abs(split.diff) <= 0.05 && split.lines.length > 0
       const { error } = await supabase.rpc('post_sales_day', {
         p_date: d.date, p_sales: d.sales, p_service: d.service, p_tax: d.tax, p_rounding: d.rounding,
-        p_payments: d.payments, p_sales_lines: null,
+        p_payments: d.payments,
+        p_sales_lines: usable ? split.lines.map(l => ({ account: l.account, amount: l.amount })) : null,
       })
       out.push({ ...d, posted: !error, result: error ? error.message : 'ok' })
     }
@@ -51,6 +78,12 @@ export function UploadSales() {
           {fileName && <span className="badge mt-1">{fileName}</span>}
           <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} />
         </label>
+        <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 py-4 text-center text-sm hover:border-brand">
+          <span className="font-medium">Optional: Product Sales export, to split food / beverage / liquor</span>
+          {itemFile && <span className="badge">{itemFile}</span>}
+          <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => e.target.files?.[0] && onItemFile(e.target.files[0])} />
+        </label>
+        <p className="muted mt-2 text-center">Export both reports with the same date range and the same status filter, or the split will not match.</p>
       </div>
       {error && <p className="alert-error">{error}</p>}
 
@@ -61,7 +94,7 @@ export function UploadSales() {
               <thead><tr>
                 <th className="w-10"></th><th>Date</th><th className="text-right">Sales</th><th className="text-right">Service charge</th>
                 <th className="text-right">Tax</th><th className="text-right">Rounding</th><th className="text-right">Day total</th>
-                <th>Payments</th><th></th>
+                <th>Payments</th><th>Split</th><th></th>
               </tr></thead>
               <tbody>
                 {days.map(d => {
@@ -77,6 +110,13 @@ export function UploadSales() {
                       <td className="text-right">{rm(d.rounding)}</td>
                       <td className="text-right font-medium">{rm(d.netTotal)}</td>
                       <td className="text-xs text-slate-600">{d.payments.map(p => `${p.code} ${rm(p.amount)}`).join(' · ')}</td>
+                      <td className="text-xs">{(() => {
+                        const split = splitFor(d)
+                        if (!split) return <span className="text-slate-400">One line</span>
+                        if (split.unknown.length) return <span className="text-amber-600">Unknown item codes: {split.unknown.join(', ')}</span>
+                        if (Math.abs(split.diff) > 0.05) return <span className="text-amber-600">Off by {rm(split.diff)} — posts as one line</span>
+                        return <span className="text-slate-600">{split.lines.map(l => `${accountNames[l.account] ?? l.account} ${rm(l.amount)}`).join(' · ')}</span>
+                      })()}</td>
                       <td className="whitespace-nowrap text-right text-xs">
                         {d.posted && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />{d.result === 'ok' ? 'Posted' : 'Already in'}</span>}
                         {!d.posted && mismatch && <span className="inline-flex items-center gap-1 text-amber-600" title={`Totals do not add up: ${rm(dayTotal(d))} vs ${rm(d.netTotal)}, payments ${rm(paymentTotal(d))}`}><TriangleAlert className="size-4" />Does not add up</span>}
@@ -157,6 +197,8 @@ export function SalesSettings({ role }: { role: Role }) {
         </div>
       </div>
 
+      <ItemCategories canEdit={canEdit} accounts={accounts} />
+
       <div className="card overflow-x-auto p-0">
         <div className="p-5 pb-3">
           <h3 className="font-semibold">Payment types from Zeoniq</h3>
@@ -185,6 +227,65 @@ export function SalesSettings({ role }: { role: Role }) {
           </form>
         )}
       </div>
+    </div>
+  )
+}
+
+type CategoryRow = { prefix: string; label: string; account: string }
+
+// Which sales account each Zeoniq item-code group belongs to (AC01 -> AC -> liquor).
+function ItemCategories({ canEdit, accounts }: { canEdit: boolean; accounts: Account[] }) {
+  const [rows, setRows] = useState<CategoryRow[]>([])
+  const [add, setAdd] = useState({ prefix: '', label: '', account: '4000' })
+  const [msg, setMsg] = useState('')
+  const load = () => { supabase.from('item_category_map').select('*').order('account').order('prefix').then(({ data }) => setRows(data ?? [])) }
+  useEffect(load, [])
+
+  async function setAccount(prefix: string, account: string) {
+    const { error } = await supabase.from('item_category_map').update({ account }).eq('prefix', prefix)
+    setMsg(error?.message ?? ''); load()
+  }
+  async function addRow(e: React.FormEvent) {
+    e.preventDefault()
+    const { error } = await supabase.from('item_category_map')
+      .insert({ ...add, prefix: add.prefix.toUpperCase(), label: add.label || add.prefix })
+    if (error) return setMsg(error.message)
+    setAdd({ prefix: '', label: '', account: '4000' }); load()
+  }
+  async function remove(prefix: string) {
+    if (!confirm(`Remove ${prefix}?`)) return
+    await supabase.from('item_category_map').delete().eq('prefix', prefix); load()
+  }
+
+  return (
+    <div className="card overflow-x-auto p-0">
+      <div className="p-5 pb-3">
+        <h3 className="font-semibold">Item groups for the food / drink split</h3>
+        <p className="muted">The start of the item code, for example AC in AC01-CARLSBERG.</p>
+      </div>
+      {msg && <p className="alert-error mx-5">{msg}</p>}
+      {rows.length === 0 && <Empty text="No item groups." />}
+      {rows.length > 0 && <table>
+        <thead><tr><th className="w-24">Code starts with</th><th>Name</th><th>Sales account</th><th></th></tr></thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.prefix}>
+              <td className="font-mono text-xs">{r.prefix}</td>
+              <td>{r.label}</td>
+              <td className="w-72"><AccountSelect accounts={accounts} value={r.account} onChange={v => setAccount(r.prefix, v)} filter={a => a.type === 'income'} /></td>
+              <td className="text-right">{canEdit && <button title="Remove" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => remove(r.prefix)}><Trash2 className="size-4" /></button>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>}
+      {canEdit && (
+        <form onSubmit={addRow} className="grid items-end gap-3 border-t border-slate-100 p-5 sm:grid-cols-[8rem_1fr_16rem_auto]">
+          <div><label>Code starts with</label><input value={add.prefix} onChange={e => setAdd({ ...add, prefix: e.target.value })} placeholder="e.g. WN" required /></div>
+          <div><label>Name</label><input value={add.label} onChange={e => setAdd({ ...add, label: e.target.value })} placeholder="Wine" /></div>
+          <div><label>Sales account</label><AccountSelect accounts={accounts} value={add.account} onChange={v => setAdd({ ...add, account: v })} filter={a => a.type === 'income'} /></div>
+          <button className="btn"><Plus className="size-4" />Add</button>
+        </form>
+      )}
     </div>
   )
 }

@@ -83,3 +83,57 @@ export function parseBillSummary(input: unknown): Day[] {
 export const dayTotal = (d: Day) => round2(d.sales + d.service + d.tax + d.rounding)
 export const paymentTotal = (d: Day) => round2(d.payments.reduce((s, p) => s + p.amount, 0))
 export const daySuspect = (d: Day) => dayTotal(d) !== d.netTotal || paymentTotal(d) !== dayTotal(d)
+
+// ---- Product Sales Listing: net sales per item, per day ----
+export type ItemSale = { date: string; code: string; name: string; net: number }
+
+export function parseProductSales(input: unknown): ItemSale[] {
+  const rows = toRows(input)
+  const headIndex = rows.findIndex(r => r.some(c => String(c ?? '').trim() === 'Business Date'))
+  if (headIndex < 0) throw new Error('This does not look like a Zeoniq Product Sales export (no "Business Date" column).')
+  const head = rows[headIndex].map(c => String(c ?? '').trim())
+  const cDate = head.indexOf('Business Date')
+  const cNet = head.indexOf('Net Sales')
+  if (cNet < 0) throw new Error('Missing the Net Sales column.')
+
+  const out: ItemSale[] = []
+  let code = '', name = ''
+  for (const row of rows.slice(headIndex + 1)) {
+    const label = String(row[1] ?? '').trim()
+    if (label.startsWith('Item:')) {
+      const item = label.slice(5).trim()
+      const dash = item.indexOf('-')
+      code = dash > 0 ? item.slice(0, dash) : item
+      name = dash > 0 ? item.slice(dash + 1) : item
+      continue
+    }
+    if (/subtotal|grand total/i.test(String(row[cDate] ?? ''))) continue
+    const date = isoDate(row[cDate])
+    if (!date || !code) continue
+    const net = round2(num(row[cNet]))
+    if (net !== 0) out.push({ date, code, name, net })
+  }
+  return out
+}
+
+export const codePrefix = (code: string) => (code.match(/^[A-Za-z]+/) ?? [''])[0].toUpperCase()
+
+// Group one day's items into sales accounts. Any few-cent difference against the
+// bill summary is put on the biggest line so the day still balances.
+export function salesLinesFor(items: ItemSale[], map: Record<string, string>, target: number) {
+  const byAccount = new Map<string, number>()
+  const unknown = new Set<string>()
+  for (const i of items) {
+    const account = map[codePrefix(i.code)]
+    if (!account) { unknown.add(codePrefix(i.code)); continue }
+    byAccount.set(account, round2((byAccount.get(account) ?? 0) + i.net))
+  }
+  const lines = [...byAccount.entries()].map(([account, amount]) => ({ account, amount }))
+  const sum = round2(lines.reduce((s, l) => s + l.amount, 0))
+  const diff = round2(target - sum)
+  if (lines.length && diff !== 0 && Math.abs(diff) <= 0.05) {
+    const biggest = lines.reduce((a, b) => (b.amount > a.amount ? b : a))
+    biggest.amount = round2(biggest.amount + diff)
+  }
+  return { lines, sum, diff, unknown: [...unknown] }
+}

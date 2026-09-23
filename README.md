@@ -28,7 +28,7 @@ Turn on two-step login for each account once created — this system holds salar
    - Plan: Free → **Create new project**. Wait about 2 minutes.
 3. Left menu **SQL Editor** → **New query**. Open `supabase/001_core.sql` in Notepad, copy everything, paste, click **Run**. It should say "Success. No rows returned".
 4. **New query** again → paste `supabase/002_claims.sql` → **Run**.
-   Then the same for `supabase/003_accounting.sql`, `supabase/004_payroll.sql` and `supabase/005_sales.sql`.
+   Then the same for `supabase/003_accounting.sql`, `supabase/004_payroll.sql`, `supabase/005_sales.sql` and `supabase/006_categories.sql`.
 5. Left menu **Authentication** → **Sign In / Providers**: turn **off** "Allow new users to sign up", **Save**. Only you can add people.
 6. Still in Authentication → **Users** → **Add user** → **Create new user**: your email + a strong password, tick **Auto Confirm User** → **Create user**.
 7. Back to **SQL Editor** → New query → paste (with your name and email) → **Run**:
@@ -85,7 +85,7 @@ npm run dev
 - [x] Phase 2 – Accounting: Chart of Accounts, Journal Entry, General Ledger, Cash Book (PV / OR / Transfer), Bank Reconciliation, Purchase (Suppliers, Purchase Invoice, Supplier Payment, Aging), Trial Balance, Profit & Loss, Balance Sheet
 - [x] Phase 3a – Upload Sales from the Zeoniq Bill Summary
 - [ ] Phase 3b – Fiuu settlement matching — **need a sample settlement file**
-- [ ] Phase 3c – Food / beverage split — **need a sample Zeoniq sales-by-category export**
+- [x] Phase 3c – Food / beverage / liquor split from the Zeoniq Product Sales export
 - [x] Phase 4 – Claims (staff submit with photo, manager approves, owner/accountant pays)
 - [x] Phase 5 – Payroll (staff records, monthly run, EPF/SOCSO/EIS, payslips, yearly summary)
 - [ ] Phase 6 – Reports, SST, backups
