@@ -5,7 +5,8 @@
 -- (for example when a paste was cut short), then run 004-008 again the same way.
 
 -- ---------- Document numbers ----------
-create or replace function doc_prefix(p_source text) returns text language sql immutable as $$
+drop function if exists doc_prefix(text);
+create function doc_prefix(p_source text) returns text language sql immutable as $$
   select case p_source
     when 'pv' then 'PV' when 'or' then 'OR' when 'transfer' then 'TR'
     when 'pi' then 'PI' when 'sp' then 'SP' when 'claim' then 'CL'
@@ -36,7 +37,8 @@ insert into doc_counters (prefix, last)
   select doc_prefix(source), count(*) from journals group by 1
   on conflict (prefix) do update set last = greatest(doc_counters.last, excluded.last);
 
-create or replace function set_doc_no() returns trigger
+drop function if exists set_doc_no() cascade;
+create function set_doc_no() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare p text := doc_prefix(new.source); n int;
 begin
@@ -75,7 +77,8 @@ begin
   return j;
 end $$;
 
-create or replace function delete_journal(p_id bigint) returns void
+drop function if exists delete_journal(bigint) cascade;
+create function delete_journal(p_id bigint) returns void
 language plpgsql security definer set search_path = public as $$
 declare src text;
 begin
@@ -135,7 +138,8 @@ create or replace view purchase_invoice_status with (security_invoker = true) as
   left join payment_allocations pa on pa.invoice_id = pi.id
   group by pi.id, s.name, j.doc_no, j.description;
 
-create or replace function create_purchase_invoice(p_supplier bigint, p_invoice_no text, p_date date, p_due date,
+drop function if exists create_purchase_invoice(bigint,text,date,date,text,jsonb,text) cascade;
+create function create_purchase_invoice(p_supplier bigint, p_invoice_no text, p_date date, p_due date,
                                         p_description text, p_lines jsonb, p_attachment text default null)
 returns bigint language plpgsql security definer set search_path = public as $$
 declare total numeric; j bigint; inv bigint;
@@ -156,7 +160,8 @@ begin
   return inv;
 end $$;
 
-create or replace function pay_supplier(p_supplier bigint, p_date date, p_from text, p_reference text, p_allocations jsonb)
+drop function if exists pay_supplier(bigint,date,text,text,jsonb) cascade;
+create function pay_supplier(p_supplier bigint, p_date date, p_from text, p_reference text, p_allocations jsonb)
 returns bigint language plpgsql security definer set search_path = public as $$
 declare a jsonb; total numeric := 0; owing numeric; j bigint; pay bigint; who text;
 begin
@@ -185,7 +190,8 @@ begin
   return pay;
 end $$;
 
-create or replace function cancel_purchase_invoice(p_id bigint) returns void
+drop function if exists cancel_purchase_invoice(bigint) cascade;
+create function cancel_purchase_invoice(p_id bigint) returns void
 language plpgsql security definer set search_path = public as $$
 declare j bigint;
 begin
@@ -196,7 +202,8 @@ begin
   delete from journals where id = j;
 end $$;
 
-create or replace function cancel_supplier_payment(p_id bigint) returns void
+drop function if exists cancel_supplier_payment(bigint) cascade;
+create function cancel_supplier_payment(p_id bigint) returns void
 language plpgsql security definer set search_path = public as $$
 declare j bigint;
 begin
@@ -208,7 +215,8 @@ end $$;
 -- ---------- Bank reconciliation ----------
 alter table journal_lines add column if not exists cleared_on date;
 
-create or replace function set_cleared(p_line_ids bigint[], p_date date) returns void
+drop function if exists set_cleared(bigint[],date) cascade;
+create function set_cleared(p_line_ids bigint[], p_date date) returns void
 language plpgsql security definer set search_path = public as $$
 begin
   if not is_office() then raise exception 'Not allowed'; end if;
@@ -216,7 +224,8 @@ begin
 end $$;
 
 -- ---------- Totals for reports ----------
-create or replace function account_totals(p_from date, p_to date)
+drop function if exists account_totals(date,date) cascade;
+create function account_totals(p_from date, p_to date)
 returns table (code text, debit numeric, credit numeric)
 language sql stable as $$
   select l.account, sum(l.debit), sum(l.credit)
@@ -225,7 +234,8 @@ language sql stable as $$
   group by l.account
 $$;
 
-create or replace function cleared_total(p_account text, p_date date) returns numeric
+drop function if exists cleared_total(text,date) cascade;
+create function cleared_total(p_account text, p_date date) returns numeric
 language sql stable as $$
   select coalesce(sum(debit - credit), 0) from journal_lines
   where account = p_account and cleared_on is not null and cleared_on <= p_date
