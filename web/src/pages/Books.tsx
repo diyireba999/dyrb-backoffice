@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Paperclip, Trash2 } from 'lucide-react'
-import { MONEY_ACCOUNTS, dmy, downloadCsv, isDirector, openReceipt, postJournal, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, type Account } from '../lib'
+import { MONEY_ACCOUNTS, accountTotals, dmy, downloadCsv, isDirector, openReceipt, postJournal, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, type Account } from '../lib'
 import { AccountSelect, Done, Empty, ReportBar } from '../ui'
 
 const money = (a: Account) => MONEY_ACCOUNTS.includes(a.code)
@@ -122,8 +122,11 @@ export function OfficialReceipt() {
 export function Transfer() {
   const accounts = useAccounts()
   const [f, setF] = useState({ date: todayMY(), from: '1000', to: '1100', amount: '', reference: '' })
+  const [balances, setBalances] = useState<Map<string, number>>(new Map())
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
+  // Reload after a transfer, so the amount still waiting is up to date.
+  useEffect(() => { accountTotals(null, todayMY()).then(setBalances) }, [done])
   const [error, setError] = useState('')
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
 
@@ -152,7 +155,12 @@ export function Transfer() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
         <div><label>Ref no. (bank-in slip)</label><input value={f.reference} onChange={e => set('reference', e.target.value)} placeholder="Optional" /></div>
-        <div><label>From</label><AccountSelect accounts={accounts} value={f.from} onChange={v => set('from', v)} filter={a => money(a) || waiting(a)} /></div>
+        <div><label>From</label><AccountSelect accounts={accounts} value={f.from} onChange={v => set('from', v)} filter={a => money(a) || waiting(a)} />
+          <p className="muted mt-1">Sitting there now: {rm(balances.get(f.from) ?? 0)}
+            {waiting({ code: f.from } as Account) && <button type="button" className="link ml-2"
+              onClick={() => set('amount', String(round2(balances.get(f.from) ?? 0)))}>Move it all</button>}
+          </p>
+        </div>
         <div><label>To</label><AccountSelect accounts={accounts} value={f.to} onChange={v => set('to', v)} filter={money} /></div>
         <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required /></div>
       </div>
