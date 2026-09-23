@@ -85,7 +85,7 @@ export const paymentTotal = (d: Day) => round2(d.payments.reduce((s, p) => s + p
 export const daySuspect = (d: Day) => dayTotal(d) !== d.netTotal || paymentTotal(d) !== dayTotal(d)
 
 // ---- Product Sales Listing: net sales per item, per day ----
-export type ItemSale = { date: string; code: string; name: string; net: number }
+export type ItemSale = { date: string; code: string; name: string; net: number; qty: number }
 
 export function parseProductSales(input: unknown): ItemSale[] {
   const rows = toRows(input)
@@ -94,6 +94,7 @@ export function parseProductSales(input: unknown): ItemSale[] {
   const head = rows[headIndex].map(c => String(c ?? '').trim())
   const cDate = head.indexOf('Business Date')
   const cNet = head.indexOf('Net Sales')
+  const cQty = head.indexOf('Item Qty')
   if (cNet < 0) throw new Error('Missing the Net Sales column.')
 
   const out: ItemSale[] = []
@@ -111,7 +112,10 @@ export function parseProductSales(input: unknown): ItemSale[] {
     const date = isoDate(row[cDate])
     if (!date || !code) continue
     const net = round2(num(row[cNet]))
-    if (net !== 0) out.push({ date, code, name, net })
+    const qty = cQty >= 0 ? num(row[cQty]) : 0
+    // A bundle (10 MUG) carries the money with no quantity; its units show up on
+    // the single-item code with no money. Keep both, so cost and sales both work.
+    if (net !== 0 || qty !== 0) out.push({ date, code, name, net, qty })
   }
   return out
 }
@@ -198,5 +202,24 @@ export function parseFiuu(input: unknown) {
     settlements: [...byDay.values()].sort((a, b) => a.settleDate.localeCompare(b.settleDate)),
     takings: [...byTakingDay.entries()].sort().map(([date, gross]) => ({ date, gross })),
     pending, skipped,
+  }
+}
+
+// Cost of what was sold on a day, per sales account: quantity x cost per unit.
+export function cogsLinesFor(items: ItemSale[], groups: Record<string, string>, costs: Record<string, number>) {
+  const byAccount = new Map<string, number>()
+  const missing = new Set<string>()
+  for (const i of items) {
+    if (!i.qty) continue
+    const account = groups[codePrefix(i.code)]
+    const cost = costs[i.code.toUpperCase()]
+    if (!account) continue
+    if (!cost) { if (i.qty) missing.add(i.code) ; continue }
+    byAccount.set(account, round2((byAccount.get(account) ?? 0) + i.qty * cost))
+  }
+  return {
+    lines: [...byAccount.entries()].map(([sales_account, amount]) => ({ sales_account, amount })),
+    total: round2([...byAccount.values()].reduce((s, v) => s + v, 0)),
+    missing: [...missing],
   }
 }

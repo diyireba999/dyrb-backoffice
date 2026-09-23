@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite'
 import fs from 'fs'
+const round = n => Math.round(n * 100) / 100
 const db = new PGlite()
 await db.exec(`
 create schema auth; create schema storage; create role anon; create role authenticated;
@@ -176,3 +177,31 @@ console.log(rsBal === 0 && liquor === 500 && rs.length === 4 ? 'resplit ok' : `F
 try { await db.query(`select resplit_sales_day('2026-09-28', '[{"account":"4000","amount":999}]'::jsonb)`)
   console.log('FAIL: resplit total not checked') }
 catch (e) { console.log('resplit mismatch rejected:', e.message.split(' does not')[0] + ' does not match') }
+
+// ---- 012: stock and cost of sales ----
+await db.exec(fs.readFileSync(new URL('../supabase/012_stock.sql', import.meta.url), 'utf8'))
+await db.query(`select note_items('[{"code":"ac01","name":"CARLSBERG (1 MUG)","date":"2026-09-19"},
+  {"code":"F05","name":"CHICKEN CHOP","date":"2026-09-19"}]'::jsonb)`)
+await db.query(`update item_costs set unit_cost = 6.50 where code = 'AC01'`)
+await db.query(`select note_items('[{"code":"AC01","name":"other name","date":"2026-09-20"}]'::jsonb)`)
+const ic = (await db.query(`select name, unit_cost::float c, last_seen::text s from item_costs where code='AC01'`)).rows[0]
+console.log(ic.c === 6.5 && ic.name === 'CARLSBERG (1 MUG)' && ic.s === '2026-09-20' ? 'item costs ok' : 'FAIL item costs ' + JSON.stringify(ic))
+
+// Buy stock, sell some of it, count what is left.
+const acctBal = async acct => Number((await db.query(`select coalesce(sum(debit - credit), 0)::float v from journal_lines where account='${acct}'`)).rows[0].v)
+const costBefore = await acctBal('5020')
+await db.query(`select create_purchase_invoice(${s2}, 'BEER-1', '2026-09-19', '2026-10-19', 'Beer stock',
+  '[{"account":"1420","amount":1000}]'::jsonb)`)
+await db.query(`select post_cogs_day('2026-09-20', '[{"sales_account":"4020","amount":400}]'::jsonb)`)
+let stock = await acctBal('1420')
+let cost = round(await acctBal('5020') - costBefore)
+console.log(stock === 600 && cost === 400 ? 'cogs ok' : `FAIL cogs stock ${stock} cost ${cost}`)
+// Posting the same day again replaces it, never doubles.
+await db.query(`select post_cogs_day('2026-09-20', '[{"sales_account":"4020","amount":450}]'::jsonb)`)
+stock = await acctBal('1420')
+console.log(stock === 550 ? 'cogs repost ok' : 'FAIL cogs repost ' + stock)
+// Count says 500 on the shelf: the missing 50 becomes cost.
+await db.query(`select post_stock_count('2026-09-30', '[{"stock_account":"1420","counted":500}]'::jsonb)`)
+stock = await acctBal('1420')
+cost = round(await acctBal('5020') - costBefore)
+console.log(stock === 500 && cost === 500 ? 'stock count ok' : `FAIL stock count ${stock} ${cost}`)

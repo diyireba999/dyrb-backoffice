@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import { CheckCircle2, CloudUpload, Plus, Trash2, TriangleAlert } from 'lucide-react'
 import { MONEY_ACCOUNTS, dmy, rm, round2, supabase, useAccounts, type Account, type Role } from '../lib'
-import { dayTotal, daySuspect, parseBillSummary, parseFiuu, parseProductSales, paymentTotal, salesLinesFor, type Day, type ItemSale, type Settlement } from '../zeoniq'
+import { cogsLinesFor, dayTotal, daySuspect, parseBillSummary, parseFiuu, parseProductSales, paymentTotal, salesLinesFor, type Day, type ItemSale, type Settlement } from '../zeoniq'
 import { AccountSelect, Empty } from '../ui'
 
 export function UploadSales() {
@@ -14,6 +14,7 @@ export function UploadSales() {
   const [items, setItems] = useState<ItemSale[]>([])
   const [itemFile, setItemFile] = useState('')
   const [categories, setCategories] = useState<Record<string, string>>({})
+  const [costs, setCosts] = useState<Record<string, number>>({})
   const [accountNames, setAccountNames] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -21,6 +22,8 @@ export function UploadSales() {
       .then(({ data }) => setCategories(Object.fromEntries((data ?? []).map(r => [r.prefix.toUpperCase(), r.account]))))
     supabase.from('accounts').select('code, name')
       .then(({ data }) => setAccountNames(Object.fromEntries((data ?? []).map(a => [a.code, a.name]))))
+    supabase.from('item_costs').select('code, unit_cost')
+      .then(({ data }) => setCosts(Object.fromEntries((data ?? []).map(r => [r.code.toUpperCase(), Number(r.unit_cost)]))))
   }, [])
 
   // Food / beverage / liquor split for one day, when the product file is loaded.
@@ -30,10 +33,24 @@ export function UploadSales() {
     return salesLinesFor(dayItems, categories, d.sales)
   }
 
+  // What the items sold that day cost us.
+  const cogsFor = (d: Day) => {
+    const dayItems = items.filter(i => i.date === d.date)
+    if (!dayItems.length) return null
+    return cogsLinesFor(dayItems, categories, costs)
+  }
+
   async function onItemFile(file: File) {
     setError(''); setItemFile(file.name)
-    try { setItems(parseProductSales(await readXlsxFile(file))) }
-    catch (err) { setError((err as Error).message); setItems([]) }
+    try {
+      const parsed = parseProductSales(await readXlsxFile(file))
+      setItems(parsed)
+      // Remember the items, so their cost can be filled in on the Item Costs screen.
+      const seen = new Map<string, { code: string; name: string; date: string }>()
+      for (const i of parsed) seen.set(i.code.toUpperCase(), { code: i.code, name: i.name, date: i.date })
+      const { error } = await supabase.rpc('note_items', { p_items: [...seen.values()] })
+      if (error) console.error('note_items', error)
+    } catch (err) { setError((err as Error).message); setItems([]) }
   }
 
   async function onFile(file: File) {
@@ -49,6 +66,14 @@ export function UploadSales() {
     } catch (err) { setError((err as Error).message) }
   }
 
+  // Cost of sales for a day, posted (or posted again) alongside it.
+  async function postCogs(d: Day) {
+    const cogs = cogsFor(d)
+    if (!cogs || cogs.lines.length === 0) return
+    const { error } = await supabase.rpc('post_cogs_day', { p_date: d.date, p_lines: cogs.lines })
+    if (error) console.error('post_cogs_day', d.date, error)
+  }
+
   // Days already posted as one line can take the split afterwards.
   async function resplit() {
     setBusy(true)
@@ -61,6 +86,7 @@ export function UploadSales() {
         p_date: d.date, p_lines: split.lines.map(l => ({ account: l.account, amount: l.amount })),
       })
       if (error) console.error('resplit_sales_day', d.date, error)
+      if (!error) await postCogs(d)
       out.push({ ...d, result: error ? error.message : 'split' })
     }
     setDays(out); setBusy(false)
@@ -81,6 +107,7 @@ export function UploadSales() {
         p_sales_lines: usable ? split.lines.map(l => ({ account: l.account, amount: l.amount })) : null,
       })
       if (error) console.error('post_sales_day', d.date, error)
+      if (!error) await postCogs(d)
       out.push({ ...d, posted: !error, result: error ? error.message : 'ok' })
     }
     setDays(out); setBusy(false)
@@ -122,7 +149,7 @@ export function UploadSales() {
               <thead><tr>
                 <th className="w-10"></th><th>Date</th><th className="text-right">Sales</th><th className="text-right">Service charge</th>
                 <th className="text-right">Tax</th><th className="text-right">Rounding</th><th className="text-right">Day total</th>
-                <th>Payments</th><th>Split</th><th></th>
+                <th>Payments</th><th>Split</th><th className="text-right">Cost of sales</th><th></th>
               </tr></thead>
               <tbody>
                 {days.map(d => {
@@ -144,6 +171,17 @@ export function UploadSales() {
                         if (split.unknown.length) return <span className="text-amber-600">Unknown item codes: {split.unknown.join(', ')}</span>
                         if (Math.abs(split.diff) > 0.05) return <span className="text-amber-600">Off by {rm(split.diff)} — posts as one line</span>
                         return <span className="text-slate-600">{split.lines.map(l => `${accountNames[l.account] ?? l.account} ${rm(l.amount)}`).join(' · ')}</span>
+                      })()}</td>
+                      <td className="text-right text-xs">{(() => {
+                        const cogs = cogsFor(d)
+                        if (!cogs) return <span className="text-slate-400">&mdash;</span>
+                        if (cogs.total === 0) return <span className="text-amber-600">No costs set</span>
+                        return (
+                          <span title={cogs.missing.length ? `No cost yet for: ${cogs.missing.join(', ')}` : ''}>
+                            {rm(cogs.total)}
+                            {cogs.missing.length > 0 && <span className="block text-amber-600">{cogs.missing.length} item(s) without a cost</span>}
+                          </span>
+                        )
                       })()}</td>
                       <td className="whitespace-nowrap text-right text-xs">
                         {d.result === 'split' && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />Split applied</span>}
@@ -171,6 +209,7 @@ export function UploadSales() {
             </div>
           </div>
           {splittable.length > 0 && <p className="muted">Days already posted can take the split now — tick them and press <b>Re-split</b>. Only the sales lines change; payments, service charge and rounding stay as they are.</p>}
+          <p className="muted">Cost of sales is posted as its own entry per day, from quantity sold times cost per unit. Fill in the costs on the <b>Item Costs</b> screen.</p>
           <p className="muted">Each day becomes one entry: money in by payment type, sales and service charge as income. A day already posted cannot go in twice.</p>
         </>
       )}
