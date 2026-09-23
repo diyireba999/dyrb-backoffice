@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MONEY_ACCOUNTS, dmy, openReceipt, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, type Profile } from '../lib'
+import { MONEY_ACCOUNTS, MONEY_NAMES, dmy, isDirector, openReceipt, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, type Profile } from '../lib'
 
 type Status = 'pending' | 'approved' | 'rejected' | 'paid'
 type Claim = {
@@ -80,6 +80,7 @@ function ClaimCard({ c, actions }: { c: Claim; actions?: React.ReactNode }) {
 }
 
 export function Claims({ profile }: { profile: Profile }) {
+  const accounts = useAccounts()
   const [claims, setClaims] = useState<Claim[]>([])
   const [tab, setTab] = useState<Status | 'mine'>(profile.role === 'staff' ? 'mine' : 'pending')
   const [payFrom, setPayFrom] = useState('1010')
@@ -140,7 +141,8 @@ export function Claims({ profile }: { profile: Profile }) {
           <div className="w-56">
             <label>Pay from</label>
             <select value={payFrom} onChange={e => setPayFrom(e.target.value)}>
-              {MONEY_ACCOUNTS.map(code => <option key={code} value={code}>{{ '1000': 'Cash in Drawer', '1010': 'Petty Cash', '1100': 'Bank' }[code]}</option>)}
+              {MONEY_ACCOUNTS.map(code => <option key={code} value={code}>{MONEY_NAMES[code]}</option>)}
+              {accounts.filter(a => isDirector(a.code)).map(a => <option key={a.code} value={a.code}>{a.name} (director paid)</option>)}
             </select>
           </div>
         </div>

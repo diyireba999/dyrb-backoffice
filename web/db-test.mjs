@@ -133,3 +133,17 @@ const fee = (await db.query(`select sum(debit)::float d from journal_lines where
 console.log(fbal === 0 && bank === 2967.02 && fee === 45.18 ? 'fiuu settlement ok' : `FAIL fiuu ${fbal} ${bank} ${fee}`)
 try { await db.query(`select post_fiuu_settlement('2026-09-23', 100, 5, 90)`); console.log('FAIL: gross/fee/net mismatch accepted') }
 catch (e) { console.log('fiuu mismatch rejected:', e.message) }
+
+// ---- 008: director's account ----
+await db.exec(fs.readFileSync(new URL('../supabase/008_director.sql', import.meta.url), 'utf8'))
+const sup3 = (await db.query(`insert into suppliers (name) values ('Ice Supplier') returning id`)).rows[0].id
+const inv3 = (await db.query(`select create_purchase_invoice(${sup3}, 'INV-77', '2026-09-20', '2026-10-20', 'Ice', '[{"account":"5100","amount":180}]'::jsonb) id`)).rows[0].id
+await db.query(`select pay_supplier(${sup3}, '2026-09-25', '2500', 'director paid', '[{"invoice_id":${inv3},"amount":180}]'::jsonb)`)
+const owedDirector = Number((await db.query(`select coalesce(sum(credit - debit), 0)::float d from journal_lines where account='2500'`)).rows[0].d)
+const supOwing = Number((await db.query(`select outstanding::float o from purchase_invoice_status where id=${inv3}`)).rows[0].o)
+console.log(owedDirector === 180 && supOwing === 0 ? 'director paid supplier ok' : `FAIL director ${owedDirector} ${supOwing}`)
+// Paying the director back from the bank clears it.
+await db.query(`select post_journal('2026-09-30','Repay director','pv',null,null,
+  '[{"account":"2500","debit":180},{"account":"1100","credit":180}]'::jsonb)`)
+const after8 = Number((await db.query(`select coalesce(sum(credit - debit), 0)::float d from journal_lines where account='2500'`)).rows[0].d)
+console.log(after8 === 0 ? 'director repaid ok' : 'FAIL director repaid ' + after8)

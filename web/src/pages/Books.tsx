@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Paperclip, Trash2 } from 'lucide-react'
-import { MONEY_ACCOUNTS, dmy, downloadCsv, openReceipt, postJournal, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, type Account } from '../lib'
+import { MONEY_ACCOUNTS, dmy, downloadCsv, isDirector, openReceipt, postJournal, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, type Account } from '../lib'
 import { AccountSelect, Done, Empty, ReportBar } from '../ui'
 
 const money = (a: Account) => MONEY_ACCOUNTS.includes(a.code)
@@ -51,13 +51,14 @@ export function PaymentVoucher() {
         <div><label>Account (what for)</label>
           <AccountSelect accounts={accounts} value={f.what} onChange={v => set('what', v)}
             filter={a => a.type === 'expense' || a.code === '3100' || (a.type === 'asset' && a.code >= '1300')
-              || ['2300', '2310', '2320', '2330', '2340'].includes(a.code)} />
+              || ['2300', '2310', '2320', '2330', '2340'].includes(a.code) || isDirector(a.code)} />
         </div>
         <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required /></div>
         <div><label>Paid from</label>
           <select value={f.from} onChange={e => set('from', e.target.value)}>
             {accounts.filter(money).map(a => <option key={a.code} value={a.code}>{a.code} · {a.name}</option>)}
-            <option value="3000">3000 · Owner paid personally</option>
+            {accounts.filter(a => isDirector(a.code)).map(a => <option key={a.code} value={a.code}>{a.code} · {a.name} (director paid, we owe them)</option>)}
+            <option value="3000">3000 · Owner capital (not to be paid back)</option>
           </select>
         </div>
         <div><label>Description</label><input value={f.note} onChange={e => set('note', e.target.value)} placeholder="Optional" /></div>
@@ -105,7 +106,7 @@ export function OfficialReceipt() {
         <div className="sm:col-span-2"><label>Received from</label><input value={f.from} onChange={e => set('from', e.target.value)} required /></div>
         <div><label>Account</label>
           <AccountSelect accounts={accounts} value={f.kind} onChange={v => set('kind', v)}
-            filter={a => a.type === 'income' || a.code === '3000' || a.code === '1300'} />
+            filter={a => a.type === 'income' || a.code === '3000' || a.code === '1300' || isDirector(a.code)} />
         </div>
         <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required /></div>
         <div><label>Received into</label><AccountSelect accounts={accounts} value={f.into} onChange={v => set('into', v)} filter={money} /></div>

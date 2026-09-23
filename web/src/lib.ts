@@ -17,6 +17,10 @@ export type Line = { account: string; debit?: number; credit?: number; memo?: st
 // Accounts money can physically come from / go to.
 export const MONEY_ACCOUNTS = ['1000', '1010', '1100']
 
+// Director accounts: 2500, 2510... one per director. Paying from these means the
+// director used their own money and the business owes them.
+export const isDirector = (code: string) => code >= '2500' && code < '2600'
+
 export const rm = (n: number | null | undefined) =>
   'RM ' + (Math.round((n ?? 0) * 100) / 100 || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 

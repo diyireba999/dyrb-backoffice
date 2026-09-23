@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDownLeft, ArrowUpRight, Banknote, FileText, Landmark, Receipt, Truck, type LucideIcon } from 'lucide-react'
-import { accountTotals, addDays, dmy, monthStart, rm, supabase, todayMY, useAccounts, type Account, type Profile } from '../lib'
+import { ArrowDownLeft, ArrowUpRight, Banknote, FileText, HandCoins, Landmark, Receipt, Truck, type LucideIcon } from 'lucide-react'
+import { accountTotals, addDays, dmy, isDirector, monthStart, rm, supabase, todayMY, useAccounts, type Account, type Profile } from '../lib'
 import { RankedBars, SalesVsExpenses, type MonthPoint } from '../charts'
 
 type Recent = { id: number; doc_no: string; date: string; description: string; journal_lines: { debit: number }[] }
@@ -60,6 +60,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
 
   const bal = (codes: string[], sign = 1) => codes.reduce((s, c) => s + sign * (all.get(c) ?? 0), 0)
   const income = -sumType(accounts, month, 'income'), expense = sumType(accounts, month, 'expense')
+  const directorOwed = -accounts.filter(a => isDirector(a.code)).reduce((s, a) => s + (all.get(a.code) ?? 0), 0)
   const openClaims = office ? claims : claims.filter(c => c.staff_id === profile.id)
   const claimsTotal = openClaims.reduce((s, c) => s + Number(c.amount), 0)
   const monthName = new Date().toLocaleDateString('en-MY', { month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
@@ -88,11 +89,12 @@ export function Dashboard({ profile }: { profile: Profile }) {
         <QuickButton to="/ap/invoices" icon={FileText} label="Purchase Invoice" />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
         <Kpi icon={Landmark} label="Bank balance" value={rm(bal(['1100']))} tone="bg-blue-50 text-blue-600" />
         <Kpi icon={Banknote} label="Cash on hand" value={rm(bal(['1000', '1010']))} note="Drawer + petty cash" tone="bg-emerald-50 text-emerald-600" />
         <Kpi icon={Truck} label="Owed to suppliers" value={rm(bal(['2000'], -1))} tone="bg-rose-50 text-rose-600" />
         <Kpi icon={Receipt} label="Claims to settle" value={rm(claimsTotal)} note={`${openClaims.length} pending or approved`} tone="bg-amber-50 text-amber-600" />
+        <Kpi icon={HandCoins} label="Owed to director" value={rm(directorOwed)} note="Paid from their own pocket" tone="bg-violet-50 text-violet-600" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

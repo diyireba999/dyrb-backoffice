@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Plus, Trash2, XCircle } from 'lucide-react'
-import { MONEY_ACCOUNTS, MONEY_NAMES, addDays, dmy, downloadCsv, openReceipt, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, useSuppliers, type Role } from '../lib'
+import { MONEY_ACCOUNTS, MONEY_NAMES, addDays, dmy, isDirector, downloadCsv, openReceipt, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, useSuppliers, type Role } from '../lib'
 import { AccountSelect, Done, Empty, ReportBar } from '../ui'
 
 type Invoice = {
@@ -241,6 +241,7 @@ type Payment = { id: number; date: string; amount: number; suppliers: { name: st
 
 export function SupplierPayments({ role }: { role: Role }) {
   const { list: suppliers } = useSuppliers()
+  const directors = useAccounts().filter(a => isDirector(a.code))
   const [supplier, setSupplier] = useState('')
   const [open, setOpen] = useState<Invoice[]>([])
   const [pay, setPay] = useState<Record<number, string>>({})
@@ -302,7 +303,8 @@ export function SupplierPayments({ role }: { role: Role }) {
           <div><label>Paid from</label>
             <select value={head.from} onChange={e => setHead({ ...head, from: e.target.value })}>
               {MONEY_ACCOUNTS.map(c => <option key={c} value={c}>{c} · {MONEY_NAMES[c]}</option>)}
-              <option value="3000">3000 · Owner paid personally</option>
+              {directors.map(a => <option key={a.code} value={a.code}>{a.code} · {a.name} (director paid, we owe them)</option>)}
+              <option value="3000">3000 · Owner capital (not to be paid back)</option>
             </select>
           </div>
           <div className="sm:col-span-2"><label>Cheque / transfer ref no.</label><input value={head.reference} onChange={e => setHead({ ...head, reference: e.target.value })} placeholder="Optional" /></div>
