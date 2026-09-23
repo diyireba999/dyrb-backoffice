@@ -149,6 +149,7 @@ export function UploadSales() {
 export function CardSettlement() {
   const [rows, setRows] = useState<Settlement[]>([])
   const [takings, setTakings] = useState<{ date: string; gross: number }[]>([])
+  const [inBooks, setInBooks] = useState<Record<string, number>>({})
   const [info, setInfo] = useState({ pending: 0, skipped: 0 })
   const [pick, setPick] = useState<Record<string, boolean>>({})
   const [bank, setBank] = useState('1100')
@@ -167,6 +168,19 @@ export function CardSettlement() {
       const list = parsed.settlements.map(s => ({ ...s, posted: already.has(s.settleDate) }))
       setRows(list)
       setTakings(parsed.takings)
+      // What the POS already booked to 1200 on each of those days.
+      const dates = parsed.takings.map(t => t.date)
+      if (dates.length) {
+        const { data: lines } = await supabase.from('journal_lines')
+          .select('debit, journals!inner(date, source)')
+          .eq('account', '1200').eq('journals.source', 'sales')
+          .gte('journals.date', dates[0]).lte('journals.date', dates[dates.length - 1])
+        const totals: Record<string, number> = {}
+        for (const l of (lines ?? []) as unknown as { debit: number; journals: { date: string } }[]) {
+          totals[l.journals.date] = round2((totals[l.journals.date] ?? 0) + Number(l.debit))
+        }
+        setInBooks(totals)
+      }
       setInfo({ pending: parsed.pending, skipped: parsed.skipped })
       setPick(Object.fromEntries(list.filter(s => !s.posted).map(s => [s.settleDate, true])))
     } catch (err) { setError((err as Error).message) }
@@ -257,12 +271,26 @@ export function CardSettlement() {
           </div>
           {takings.length > 0 && (
             <div className="card">
-              <h3 className="font-semibold">Card takings by day of sale</h3>
-              <p className="muted">Compare with the card totals on the POS. A card paid after midnight may belong to the day before on the POS.</p>
+              <h3 className="font-semibold">Check only — nothing here is posted</h3>
+              <p className="muted">
+                Card sales reach your books from the Zeoniq Bill Summary, not from Fiuu. This compares the two.
+                A card paid after midnight may sit on the day before on the POS, so a difference that cancels out between
+                two days is normal.
+              </p>
               <table className="mt-3">
-                <tbody>{takings.map(t => (
-                  <tr key={t.date}><td>{dmy(t.date)}</td><td className="text-right">{rm(t.gross)}</td></tr>
-                ))}</tbody>
+                <thead><tr><th>Day of sale</th><th className="text-right">Fiuu says</th><th className="text-right">In your books (POS)</th><th className="text-right">Difference</th></tr></thead>
+                <tbody>{takings.map(t => {
+                  const booked = inBooks[t.date]
+                  const diff = booked === undefined ? null : round2(booked - t.gross)
+                  return (
+                    <tr key={t.date}>
+                      <td>{dmy(t.date)}</td>
+                      <td className="text-right">{rm(t.gross)}</td>
+                      <td className="text-right">{booked === undefined ? <span className="text-amber-600">Sales not uploaded</span> : rm(booked)}</td>
+                      <td className={`text-right ${diff ? 'text-amber-600' : 'text-slate-400'}`}>{diff === null ? '—' : diff === 0 ? 'Matches' : rm(diff)}</td>
+                    </tr>
+                  )
+                })}</tbody>
               </table>
             </div>
           )}
