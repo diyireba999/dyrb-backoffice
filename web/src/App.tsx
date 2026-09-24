@@ -46,7 +46,7 @@ const PAGES: Page[] = [
   { to: '/ap/payments', label: 'Supplier Payment', subtitle: 'Pay supplier invoices (SP)', icon: HandCoins, group: 'Purchase', roles: OFFICE },
   { to: '/ap/aging', label: 'Supplier Aging', subtitle: 'Amount owed, by how overdue', icon: CalendarClock, group: 'Purchase', roles: OFFICE },
   { to: '/claims', label: 'Claims', subtitle: 'Staff expense claims', icon: Receipt, group: 'Team', roles: EVERYONE },
-  { to: '/payslips', label: 'My Payslips', subtitle: 'Your own payslips', icon: Wallet2, group: 'Team', roles: ['staff'] },
+  { to: '/payslips', label: 'My Payslips', subtitle: 'Your own payslips', icon: Wallet2, group: 'Team', roles: EVERYONE },
   { to: '/payroll/staff', label: 'Staff', subtitle: 'Staff details, salary and deductions', icon: IdCard, group: 'Payroll', roles: OFFICE },
   { to: '/payroll/run', label: 'Monthly Payroll', subtitle: 'Work out pay, approve and print payslips', icon: CalendarDays, group: 'Payroll', roles: OFFICE },
   { to: '/payroll/year', label: 'Yearly Summary', subtitle: 'Totals per staff for EA forms', icon: BookText, group: 'Payroll', roles: OFFICE },
@@ -269,16 +269,28 @@ export default function App() {
     return () => data.subscription.unsubscribe()
   }, [])
 
+  const [loadFailed, setLoadFailed] = useState('')
+
   useEffect(() => {
     if (!session) { setProfile(null); return }
     supabase.auth.getUser().then(({ data }) =>
       supabase.from('profiles').select('*').eq('id', data.user!.id).single()
-        .then(({ data }) => setProfile(data)))
+        .then(({ data, error }) => { setProfile(data); if (error) setLoadFailed(error.message) }))
   }, [session])
 
   if (session === null) return null
   if (!session) return <Login />
-  if (!profile) return <div className="grid min-h-screen place-items-center muted">Loading…</div>
+  if (!profile) return (
+    <div className="grid min-h-screen place-items-center p-4">
+      {loadFailed ? (
+        <div className="card max-w-sm space-y-3 text-center">
+          <p className="font-semibold">Could not open your account</p>
+          <p className="muted">{loadFailed}</p>
+          <button className="btn w-full" onClick={() => supabase.auth.signOut()}>Sign out and try again</button>
+        </div>
+      ) : <p className="muted">Loading…</p>}
+    </div>
+  )
   if (needPassword) return <SetPassword done={() => setNeedPassword(false)} />
 
   return (

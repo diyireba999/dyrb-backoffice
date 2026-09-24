@@ -221,3 +221,45 @@ console.log(accrued === -8000 ? 'accrual repost ok' : 'FAIL accrual repost ' + a
 // The date used is the last day of that month.
 const accDate = (await db.query(`select date::text d from journals where source='accrual'`)).rows[0].d
 console.log(accDate === '2026-09-30' ? 'accrual date ok' : 'FAIL accrual date ' + accDate)
+
+// ---- 015 / 016: fixes found in the pre-launch review ----
+for (const f of ['015_fixes.sql', '016_fixes2.sql'])
+  await db.exec(fs.readFileSync(new URL('../supabase/' + f, import.meta.url), 'utf8'))
+
+// EPF leaves out overtime and service charge; SOCSO and EIS include them.
+await db.exec(`insert into employees (name, is_local, pay_type, rate) values ('Mei', true, 'monthly', 2000)`)
+const run2 = (await db.query(`select create_payroll_run('2026-10-01','2026-10-31') id`)).rows[0].id
+const meiId = (await db.query(`select id from payslip_view where run_id=${run2} and name='Mei'`)).rows[0].id
+await db.query(`select save_payslip(${meiId}, '{"ot_amount":300,"service_charge":200}'::jsonb)`)
+const mei = (await db.query(`select epf_employee::float ee, socso_employee::float se from payslip_view where id=${meiId}`)).rows[0]
+// EPF on 2000 = 220; SOCSO on 2500 = 12.50
+console.log(mei.ee === 220 && mei.se === 12.5 ? 'statutory wage base ok' : 'FAIL wage base ' + JSON.stringify(mei))
+
+// Deleting a sales day takes its cost of sales with it.
+await db.query(`select post_sales_day('2026-10-05', 500, 50, 0, 0, '[{"code":"CASH","amount":550}]'::jsonb)`)
+await db.query(`select post_cogs_day('2026-10-05', '[{"sales_account":"4020","amount":150}]'::jsonb)`)
+const salesId = (await db.query(`select id from journals where source='sales' and source_ref='2026-10-05'`)).rows[0].id
+await db.query(`select delete_journal(${salesId})`)
+const leftover = (await db.query(`select count(*)::int c from journals where source='cogs' and source_ref='2026-10-05'`)).rows[0].c
+console.log(leftover === 0 ? 'cogs removed with its sales day ok' : 'FAIL orphan cogs ' + leftover)
+
+// Posting nothing must not wipe what is already there.
+await db.query(`select post_accruals('2026-11-01','[{"account":"6100","amount":5000,"name":"Rent"}]'::jsonb)`)
+await db.query(`select post_accruals('2026-11-01','[{"account":"6100","amount":0,"name":"Rent"}]'::jsonb)`)
+const kept = (await db.query(`select count(*)::int c from journals where source='accrual' and source_ref='2026-11-01'`)).rows[0].c
+console.log(kept === 1 ? 'empty repost keeps the entry ok' : 'FAIL accrual wiped ' + kept)
+
+// A purchase of stock may not be booked straight to cost.
+try { await db.query(`select create_purchase_invoice(${s2}, 'X1', '2026-10-01', '2026-10-31', 'Beer',
+  '[{"account":"5020","amount":100}]'::jsonb)`); console.log('FAIL: purchase booked to cost account') }
+catch (e) { console.log('purchase to cost account rejected:', e.message.split(' —')[0]) }
+
+// A re-split may only touch sales accounts.
+await db.query(`select post_sales_day('2026-10-06', 600, 60, 0, 0, '[{"code":"CASH","amount":660}]'::jsonb)`)
+try { await db.query(`select resplit_sales_day('2026-10-06','[{"account":"4100","amount":600}]'::jsonb)`)
+  console.log('FAIL: re-split wrote to the service charge account') }
+catch (e) { console.log('re-split to a non-sales account rejected:', e.message) }
+
+// Cancelling a payment that is not there is an error, not a quiet success.
+try { await db.query(`select cancel_supplier_payment(999999)`); console.log('FAIL: cancelled a payment that does not exist') }
+catch (e) { console.log('missing payment rejected:', e.message) }

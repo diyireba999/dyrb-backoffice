@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import { CheckCircle2, CloudUpload, Plus, Trash2, TriangleAlert } from 'lucide-react'
 import { MONEY_ACCOUNTS, dmy, rm, round2, supabase, useAccounts, type Account, type Role } from '../lib'
@@ -62,16 +62,17 @@ export function UploadSales() {
       const already = new Set((data ?? []).map(r => r.source_ref))
       const withStatus = parsed.map(d => ({ ...d, posted: already.has(d.date) }))
       setDays(withStatus)
-      setPick(Object.fromEntries(withStatus.filter(d => !d.posted).map(d => [d.date, true])))
+      setPick(Object.fromEntries(withStatus.filter(d => !d.posted && !daySuspect(d)).map(d => [d.date, true])))
     } catch (err) { setError((err as Error).message) }
   }
 
   // Cost of sales for a day, posted (or posted again) alongside it.
   async function postCogs(d: Day) {
     const cogs = cogsFor(d)
-    if (!cogs || cogs.lines.length === 0) return
+    if (!cogs || cogs.lines.length === 0) return null
     const { error } = await supabase.rpc('post_cogs_day', { p_date: d.date, p_lines: cogs.lines })
     if (error) console.error('post_cogs_day', d.date, error)
+    return error ? `saved, but cost of sales failed: ${error.message}` : null
   }
 
   async function postCogsOnly() {
@@ -104,8 +105,8 @@ export function UploadSales() {
         p_date: d.date, p_lines: split.lines.map(l => ({ account: l.account, amount: l.amount })),
       })
       if (error) console.error('resplit_sales_day', d.date, error)
-      if (!error) await postCogs(d)
-      out.push({ ...d, result: error ? error.message : 'split' })
+      const costError = error ? null : await postCogs(d)
+      out.push({ ...d, result: error ? error.message : costError ?? 'split' })
     }
     setDays(out); setBusy(false)
     const failed = out.filter(d => d.result && !['ok', 'split'].includes(d.result))
@@ -125,8 +126,8 @@ export function UploadSales() {
         p_sales_lines: usable ? split.lines.map(l => ({ account: l.account, amount: l.amount })) : null,
       })
       if (error) console.error('post_sales_day', d.date, error)
-      if (!error) await postCogs(d)
-      out.push({ ...d, posted: !error, result: error ? error.message : 'ok' })
+      const costError = error ? null : await postCogs(d)
+      out.push({ ...d, posted: !error, result: error ? error.message : costError ?? 'ok' })
     }
     setDays(out); setBusy(false)
     const failed = out.filter(d => d.result && d.result !== 'ok')
@@ -338,8 +339,8 @@ export function CardSettlement() {
               </tr></thead>
               <tbody>
                 {rows.map(s => (
-                  <>
-                  <tr key={s.settleDate} className={s.posted ? 'text-slate-400' : ''}>
+                  <Fragment key={s.settleDate}>
+                  <tr className={s.posted ? 'text-slate-400' : ''}>
                     <td><input type="checkbox" disabled={s.posted} checked={!!pick[s.settleDate] && !s.posted}
                       onChange={e => setPick({ ...pick, [s.settleDate]: e.target.checked })} /></td>
                     <td className="font-medium">{dmy(s.settleDate)}</td>
@@ -361,7 +362,7 @@ export function CardSettlement() {
                       <td className="text-right">{rm(round2(b.gross - b.fee))}</td><td></td>
                     </tr>
                   ))}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -475,7 +476,7 @@ export function SalesSettings({ role }: { role: Role }) {
               <tr key={r.code}>
                 <td className="font-mono text-xs">{r.code}</td>
                 <td>{r.label}</td>
-                <td className="w-72"><AccountSelect accounts={accounts} value={r.account} onChange={v => setAccount(r.code, v)} /></td>
+                <td className="w-72"><AccountSelect accounts={accounts} value={r.account} onChange={v => setAccount(r.code, v)} disabled={!canEdit} /></td>
                 <td className="text-right">{canEdit && <button title="Remove" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => remove(r.code)}><Trash2 className="size-4" /></button>}</td>
               </tr>
             ))}
@@ -535,7 +536,7 @@ function ItemCategories({ canEdit, accounts }: { canEdit: boolean; accounts: Acc
             <tr key={r.prefix}>
               <td className="font-mono text-xs">{r.prefix}</td>
               <td>{r.label}</td>
-              <td className="w-72"><AccountSelect accounts={accounts} value={r.account} onChange={v => setAccount(r.prefix, v)} filter={a => a.type === 'income'} /></td>
+              <td className="w-72"><AccountSelect accounts={accounts} value={r.account} onChange={v => setAccount(r.prefix, v)} filter={a => a.type === 'income'} disabled={!canEdit} /></td>
               <td className="text-right">{canEdit && <button title="Remove" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => remove(r.prefix)}><Trash2 className="size-4" /></button>}</td>
             </tr>
           ))}

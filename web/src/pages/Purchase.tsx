@@ -25,22 +25,25 @@ export function Suppliers() {
   const blank = { name: '', phone: '', default_account: '', opening: '', opening_date: todayMY() }
   const [f, setF] = useState(blank)
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
 
   async function add(e: React.FormEvent) {
     e.preventDefault()
+    if (busy) return
+    setBusy(true)
     const opening = round2(Number(f.opening || 0))
     const { data, error } = await supabase.from('suppliers')
       .insert({ name: f.name, phone: f.phone || null, default_account: f.default_account || null }).select('id').single()
-    if (error) return setError(error.message.includes('duplicate') ? 'A supplier with this name already exists' : error.message)
+    if (error) { setBusy(false); return setError(error.message.includes('duplicate') ? 'A supplier with this name already exists' : error.message) }
     if (opening > 0) {
       // Amount already owed before we started: an opening purchase invoice against owner capital.
       const { error } = await supabase.rpc('create_purchase_invoice', {
         p_supplier: data.id, p_invoice_no: 'Opening balance', p_date: f.opening_date, p_due: f.opening_date,
         p_description: `Opening balance owed – ${f.name}`, p_lines: [{ account: '3000', amount: opening }],
       })
-      if (error) return setError('Supplier added, but opening amount failed: ' + error.message)
+      if (error) { setBusy(false); return setError('Supplier added, but opening amount failed: ' + error.message) }
     }
-    setF(blank); setError(''); load()
+    setBusy(false); setF(blank); setError(''); load()
   }
 
   async function remove(id: number) {
@@ -62,7 +65,7 @@ export function Suppliers() {
         </div>
         <div><label>Opening balance owed (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.opening} onChange={e => setF({ ...f, opening: e.target.value })} placeholder="Optional" /></div>
         {Number(f.opening) > 0 && <div><label>Owed as at</label><input type="date" value={f.opening_date} onChange={e => setF({ ...f, opening_date: e.target.value })} required /></div>}
-        <button className="btn"><Plus className="size-4" />Add supplier</button>
+        <button className="btn" disabled={busy}><Plus className="size-4" />Add supplier</button>
         {error && <p className="alert-error md:col-span-3">{error}</p>}
       </form>
       <div className="card overflow-x-auto p-0">

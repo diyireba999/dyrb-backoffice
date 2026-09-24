@@ -32,7 +32,7 @@ Turn on two-step login for each account once created — this system holds salar
    - Plan: Free → **Create new project**. Wait about 2 minutes.
 3. Left menu **SQL Editor** → **New query**. Open `supabase/001_core.sql` in Notepad, copy everything, paste, click **Run**. It should say "Success. No rows returned".
 4. **New query** again → paste `supabase/002_claims.sql` → **Run**.
-   Then the same for `supabase/003_accounting.sql`, `supabase/004_payroll.sql`, `supabase/005_sales.sql`, `supabase/006_categories.sql`, `supabase/007_fiuu.sql`, `supabase/008_director.sql`, `supabase/009_fiuu_brands.sql`, `supabase/010_item_groups.sql`, `supabase/011_resplit.sql`, `supabase/012_stock.sql`, `supabase/013_accruals.sql` and `supabase/014_recurring.sql`.
+   Then the same for `supabase/003_accounting.sql`, `supabase/004_payroll.sql`, `supabase/005_sales.sql`, `supabase/006_categories.sql`, `supabase/007_fiuu.sql`, `supabase/008_director.sql`, `supabase/009_fiuu_brands.sql`, `supabase/010_item_groups.sql`, `supabase/011_resplit.sql`, `supabase/012_stock.sql`, `supabase/013_accruals.sql`, `supabase/014_recurring.sql`, `supabase/015_fixes.sql` and `supabase/016_fixes2.sql`.
 5. Left menu **Authentication** → **Sign In / Providers**: turn **off** "Allow new users to sign up", **Save**. Only you can add people.
 6. Still in Authentication → **Users** → **Add user** → **Create new user**: your email + a strong password, tick **Auto Confirm User** → **Create user**.
 7. Back to **SQL Editor** → New query → paste (with your name and email) → **Run**:
@@ -83,6 +83,8 @@ npm run dev
 
 `npm run test:db` checks the database rules (entries must balance, no double posting, claims, supplier balances, payroll, daily sales).
 `npm run test:sales -- <file.xlsx>` checks a Zeoniq Bill Summary export adds up before importing.
+`npm run test:rls` checks what each role can see and do.
+`npm run test:repair` checks the repair file on a half-applied and on a complete database.
 
 ## Status
 - [x] Phase 1 – login, roles, chart of accounts

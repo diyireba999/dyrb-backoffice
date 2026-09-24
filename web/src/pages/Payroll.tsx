@@ -39,6 +39,7 @@ export function Employees({ role }: { role: Role }) {
   const [list, setList] = useState<Employee[]>([])
   const [people, setPeople] = useState<Profile[]>([])
   const [edit, setEdit] = useState<(typeof blankEmployee & { id?: number }) | null>(null)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const canEdit = role === 'owner' || role === 'accountant'
 
@@ -63,7 +64,8 @@ export function Employees({ role }: { role: Role }) {
 
   async function save(ev: React.FormEvent) {
     ev.preventDefault()
-    if (!edit) return
+    if (!edit || saving) return
+    setSaving(true)
     const { id, ...f } = edit
     const row = {
       ...f, rate: round2(Number(f.rate || 0)),
@@ -75,6 +77,7 @@ export function Employees({ role }: { role: Role }) {
     const { error } = id
       ? await supabase.from('employees').update(row).eq('id', id)
       : await supabase.from('employees').insert(row)
+    setSaving(false)
     if (error) return setError(error.message)
     setEdit(null); load()
   }
@@ -130,7 +133,7 @@ export function Employees({ role }: { role: Role }) {
       {error && <p className="alert-error">{error}</p>}
       <div className="flex justify-end gap-2">
         <button type="button" className="btn-light" onClick={() => setEdit(null)}>Cancel</button>
-        <button className="btn">Save staff</button>
+        <button className="btn" disabled={saving}>{saving ? 'Saving…' : 'Save staff'}</button>
       </div>
     </form>
   )
@@ -167,12 +170,20 @@ const FIELDS = [
   ['service_charge', 'Service charge'], ['unpaid_leave', 'Unpaid leave'], ['other_deduction', 'Other deduction'], ['pcb', 'PCB'],
 ] as const
 
+// Only used when the contributions are typed in by hand.
+const STATUTORY = [
+  ['epf_employee', 'EPF (staff)'], ['epf_employer', 'EPF (employer)'],
+  ['socso_employee', 'SOCSO (staff)'], ['socso_employer', 'SOCSO (employer)'],
+  ['eis_employee', 'EIS (staff)'], ['eis_employer', 'EIS (employer)'],
+] as const
+
 export function PayrollRun({ role }: { role: Role }) {
   const [runs, setRuns] = useState<Run[]>([])
   const [runId, setRunId] = useState<number | null>(null)
   const [slips, setSlips] = useState<Payslip[]>([])
   const [newMonth, setNewMonth] = useState(todayMY().slice(0, 7))
   const [editing, setEditing] = useState<Payslip | null>(null)
+  const [busyRun, setBusyRun] = useState(false)
   const [error, setError] = useState('')
   const canEdit = role === 'owner' || role === 'accountant'
   const run = runs.find(r => r.id === runId)
@@ -190,18 +201,20 @@ export function PayrollRun({ role }: { role: Role }) {
   useEffect(loadSlips, [runId])
 
   async function create() {
-    setError('')
+    if (busyRun) return
+    setBusyRun(true); setError('')
     const month = newMonth + '-01'
     const [y, m] = newMonth.split('-').map(Number)
     const payDate = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)  // last day of the month
     const { data, error } = await supabase.rpc('create_payroll_run', { p_month: month, p_pay_date: payDate })
+    setBusyRun(false)
     if (error) return setError(error.message)
     loadRuns(); setRunId(data)
   }
 
-  async function saveSlip(fields: Record<string, number | string>) {
+  async function saveSlip(fields: Record<string, number | string>, recalc: boolean) {
     if (!editing) return
-    const { error } = await supabase.rpc('save_payslip', { p_id: editing.id, p_fields: fields, p_recalc: true })
+    const { error } = await supabase.rpc('save_payslip', { p_id: editing.id, p_fields: fields, p_recalc: recalc })
     if (error) return setError(error.message)
     setEditing(null); loadSlips()
   }
@@ -230,7 +243,12 @@ export function PayrollRun({ role }: { role: Role }) {
     <form className="card max-w-2xl space-y-5 p-6" onSubmit={e => {
       e.preventDefault()
       const form = new FormData(e.target as HTMLFormElement)
-      saveSlip(Object.fromEntries([...form.entries()].map(([k, v]) => [k, Number(v) || 0])))
+      const recalc = form.get('recalc') === 'on'
+      const fields = Object.fromEntries([...form.entries()]
+        .filter(([k]) => k !== 'recalc')
+        .filter(([k]) => recalc ? !STATUTORY.some(([f]) => f === k) : true)
+        .map(([k, v]) => [k, Number(v) || 0]))
+      saveSlip(fields, recalc)
     }}>
       <div>
         <h3 className="font-semibold">{editing.name}</h3>
@@ -243,6 +261,22 @@ export function PayrollRun({ role }: { role: Role }) {
         ))}
       </div>
       <p className="muted">Hours only matter for staff paid by the hour: pay becomes hours × rate ({rm(editing.hourly_rate)}/hour).</p>
+      <div className="rounded-xl bg-slate-50 p-4">
+        <label className="flex items-center gap-2 font-normal">
+          <input type="checkbox" name="recalc" defaultChecked />
+          Work out EPF, SOCSO and EIS again when I save
+        </label>
+        <p className="muted mt-2">
+          EPF is worked out on basic pay and allowances; SOCSO and EIS also count overtime and service charge.
+          Untick to type the figures in yourself — for example to match the PERKESO table to the sen.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          {STATUTORY.map(([k, label]) => (
+            <div key={k}><label>{label} (RM)</label>
+              <input name={k} type="number" step="0.01" min="0" inputMode="decimal" defaultValue={n(editing[k])} /></div>
+          ))}
+        </div>
+      </div>
       {error && <p className="alert-error">{error}</p>}
       <div className="flex justify-end gap-2">
         <button type="button" className="btn-light" onClick={() => { setEditing(null); setError('') }}>Cancel</button>
@@ -262,7 +296,7 @@ export function PayrollRun({ role }: { role: Role }) {
         </div>
         {canEdit && <>
           <div className="w-44"><label>Start a new month</label><input type="month" value={newMonth} onChange={e => setNewMonth(e.target.value)} /></div>
-          <button className="btn-light" onClick={create}><Plus className="size-4" />Create</button>
+          <button className="btn-light" onClick={create} disabled={busyRun}><Plus className="size-4" />Create</button>
         </>}
         <div className="ml-auto flex gap-2">
           {run && <button className="btn-light" onClick={() => window.print()}><Printer className="size-4" />Print</button>}
@@ -492,7 +526,7 @@ export function PayrollSettings({ role }: { role: Role }) {
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
-    const form = Object.fromEntries([...new FormData(e.target as HTMLFormElement).entries()].map(([k, v]) => [k, Number(v)]))
+    const form = Object.fromEntries([...new FormData(e.target as HTMLFormElement).entries()].map(([k, v]) => [k, Number(v) || 0]))
     const { error } = await supabase.from('payroll_rates').update(form).eq('id', 1)
     setMsg(error ? error.message : 'Saved')
   }

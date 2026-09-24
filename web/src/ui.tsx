@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Download, Printer } from 'lucide-react'
-import { supabase, type Account } from './lib'
+import { supabase, todayMY, type Account } from './lib'
 
 export function Done({ msg, doc, again }: { msg: string; doc?: string; again: () => void }) {
   return (
@@ -13,11 +13,12 @@ export function Done({ msg, doc, again }: { msg: string; doc?: string; again: ()
   )
 }
 
-export function AccountSelect({ accounts, value, onChange, filter = () => true, required = true }: {
-  accounts: Account[]; value: string; onChange: (v: string) => void; filter?: (a: Account) => boolean; required?: boolean
+export function AccountSelect({ accounts, value, onChange, filter = () => true, required = true, disabled = false }: {
+  accounts: Account[]; value: string; onChange: (v: string) => void
+  filter?: (a: Account) => boolean; required?: boolean; disabled?: boolean
 }) {
   return (
-    <select value={value} onChange={e => onChange(e.target.value)} required={required}>
+    <select value={value} onChange={e => onChange(e.target.value)} required={required} disabled={disabled}>
       <option value="">— choose —</option>
       {accounts.filter(filter).map(a => <option key={a.code} value={a.code}>{a.code} · {a.name}</option>)}
     </select>
@@ -54,7 +55,7 @@ export function Empty({ text }: { text: string }) {
 export function SetupWarning() {
   const [missing, setMissing] = useState('')
   useEffect(() => {
-    supabase.rpc('account_totals', { p_from: null, p_to: new Date().toISOString().slice(0, 10) })
+    supabase.rpc('account_totals', { p_from: null, p_to: todayMY() })
       .then(({ error }) => setMissing(error ? error.message : ''))
   }, [])
   if (!missing) return null

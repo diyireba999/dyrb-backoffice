@@ -177,7 +177,8 @@ type EntryRow = {
 
 const TYPES: Record<string, string> = {
   '': 'All types', pv: 'Payment Voucher', or: 'Official Receipt', jv: 'Journal Entry', transfer: 'Bank Transfer',
-  pi: 'Purchase Invoice', sp: 'Supplier Payment', claim: 'Claim', manual: 'Older entries',
+  pi: 'Purchase Invoice', sp: 'Supplier Payment', claim: 'Claim', sales: 'Daily sales', cogs: 'Cost of sales',
+  fiuu: 'Card settlement', payroll: 'Payroll', accrual: 'Accruals', stock: 'Stock count', manual: 'Older entries',
 }
 
 export function JournalListing({ isOwner }: { isOwner: boolean }) {

@@ -18,6 +18,7 @@ export function Accruals({ role }: { role: Role }) {
   const [owing, setOwing] = useState(0)
   const [add, setAdd] = useState({ name: '', account: '6900', amount: '' })
   const [busy, setBusy] = useState(false)
+  const [version, setVersion] = useState(0)
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
   const canEdit = role === 'owner' || role === 'accountant'
@@ -35,7 +36,7 @@ export function Accruals({ role }: { role: Role }) {
   useEffect(() => {
     supabase.from('journals').select('doc_no, date').eq('source', 'accrual').eq('source_ref', `${month}-01`).maybeSingle()
       .then(({ data }) => setPosted(data))
-  }, [month, msg])
+  }, [month, version])
 
   async function save(id: number, patch: Partial<Item>) {
     const { error } = await supabase.from('recurring_accruals').update(patch).eq('id', id)
@@ -44,8 +45,11 @@ export function Accruals({ role }: { role: Role }) {
   }
   async function addItem(e: React.FormEvent) {
     e.preventDefault()
+    if (busy) return
+    setBusy(true)
     const { error } = await supabase.from('recurring_accruals')
       .insert({ name: add.name, account: add.account, amount: round2(Number(add.amount || 0)), sort: items.length + 1 })
+    setBusy(false)
     if (error) return setError(error.message)
     setAdd({ name: '', account: '6900', amount: '' }); load()
   }
@@ -67,7 +71,7 @@ export function Accruals({ role }: { role: Role }) {
     setBusy(false)
     if (error) return setError(error.message)
     setMsg(data ? `Posted for ${monthLabel(month)}` : 'Nothing to post')
-    load()
+    setVersion(v => v + 1); load()
   }
 
   return (
@@ -93,7 +97,7 @@ export function Accruals({ role }: { role: Role }) {
                   ? <input className="h-8 border-transparent shadow-none hover:border-slate-300" defaultValue={i.name}
                       onBlur={e => e.target.value !== i.name && save(i.id, { name: e.target.value })} />
                   : i.name}</td>
-                <td className="w-72"><AccountSelect accounts={accounts} value={i.account} onChange={v => save(i.id, { account: v })} filter={a => a.type === 'expense'} /></td>
+                <td className="w-72"><AccountSelect accounts={accounts} value={i.account} onChange={v => save(i.id, { account: v })} filter={a => a.type === 'expense'} disabled={!canEdit} /></td>
                 <td><input className="text-right" type="number" step="0.01" min="0" inputMode="decimal" disabled={!canEdit}
                   defaultValue={Number(i.amount)} onBlur={e => Number(e.target.value) !== Number(i.amount) && save(i.id, { amount: round2(Number(e.target.value)) })} /></td>
                 <td className="text-right">{canEdit && <button title="Remove" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => remove(i.id)}><Trash2 className="size-4" /></button>}</td>

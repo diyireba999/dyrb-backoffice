@@ -84,6 +84,8 @@ export function Claims({ profile }: { profile: Profile }) {
   const [claims, setClaims] = useState<Claim[]>([])
   const [tab, setTab] = useState<Status | 'mine'>(profile.role === 'staff' ? 'mine' : 'pending')
   const [payFrom, setPayFrom] = useState('1010')
+  const [rejecting, setRejecting] = useState<number | null>(null)
+  const [reason, setReason] = useState('')
   const office = profile.role !== 'staff'
   const canReview = (c: Claim) => profile.role === 'owner' || (profile.role === 'manager' && c.staff_id !== profile.id)
   const canPay = profile.role === 'owner' || profile.role === 'accountant'
@@ -94,12 +96,11 @@ export function Claims({ profile }: { profile: Profile }) {
   }
   useEffect(load, [])
 
-  async function review(c: Claim, status: 'approved' | 'rejected') {
-    const note = status === 'rejected' ? prompt('Reason for rejecting?') : ''
-    if (note === null) return
+  async function review(c: Claim, status: 'approved' | 'rejected', note = '') {
     const { error } = await supabase.from('claims')
       .update({ status, review_note: note || null, reviewed_by: profile.id }).eq('id', c.id)
     if (error) alert(error.message)
+    setRejecting(null); setReason('')
     load()
   }
 
@@ -151,10 +152,18 @@ export function Claims({ profile }: { profile: Profile }) {
       {shown.length === 0 && <p className="card muted py-10 text-center">Nothing here.</p>}
       {shown.map(c => (
         <ClaimCard key={c.id} c={c} actions={<>
-          {c.status === 'pending' && canReview(c) && <>
+          {c.status === 'pending' && canReview(c) && rejecting !== c.id && <>
             <button className="btn" onClick={() => review(c, 'approved')}>Approve</button>
-            <button className="btn-light" onClick={() => review(c, 'rejected')}>Reject</button>
+            <button className="btn-light" onClick={() => { setRejecting(c.id); setReason('') }}>Reject</button>
           </>}
+          {c.status === 'pending' && canReview(c) && rejecting === c.id && (
+            <div className="flex w-full flex-wrap items-end gap-2">
+              <div className="min-w-48 flex-1"><label>Why is it rejected?</label>
+                <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Optional" autoFocus /></div>
+              <button className="btn" onClick={() => review(c, 'rejected', reason)}>Confirm reject</button>
+              <button className="btn-light" onClick={() => setRejecting(null)}>Cancel</button>
+            </div>
+          )}
           {c.status === 'approved' && canPay && <button className="btn" onClick={() => pay(c)}>Mark paid</button>}
           {c.status === 'pending' && c.staff_id === profile.id && <button className="btn-light" onClick={() => remove(c)}>Cancel</button>}
         </>} />

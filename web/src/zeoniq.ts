@@ -19,15 +19,32 @@ const num = (v: unknown) => {
   return Number.isFinite(n) ? n : 0
 }
 
-export const isoDate = (v: unknown) => {
+// Zeoniq writes 9/21/26 (month first) or 21/9/2026 (day first) depending on the
+// export. Guessing row by row put 8/9/2026 in the wrong month, so the order is
+// decided once for the whole file: day-first unless some row proves otherwise.
+export type DateOrder = 'dmy' | 'mdy'
+
+const parts = (v: unknown) => {
+  const m = String(v ?? '').trim().match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/)
+  return m ? [m[1], m[2], m[3]] : null
+}
+
+export function dateOrderOf(values: unknown[]): DateOrder {
+  for (const v of values) {
+    const p = parts(v)
+    if (!p) continue
+    if (Number(p[0]) > 12) return 'dmy'
+    if (Number(p[1]) > 12) return 'mdy'
+  }
+  return 'dmy'
+}
+
+export const isoDate = (v: unknown, order: DateOrder = 'dmy') => {
   if (v instanceof Date) return new Date(Date.UTC(v.getFullYear(), v.getMonth(), v.getDate())).toISOString().slice(0, 10)
-  const s = String(v ?? '').trim()
-  // Zeoniq writes 9/21/26 (month/day/year) or 21/9/2026 depending on the export.
-  const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/)
-  if (!m) return ''
-  const [, a, b, yy] = m
-  const y = yy.length === 2 ? '20' + yy : yy
-  const [month, day] = Number(a) > 12 ? [b, a] : [a, b]
+  const p = parts(v)
+  if (!p) return ''
+  const y = p[2].length === 2 ? '20' + p[2] : p[2]
+  const [day, month] = order === 'dmy' ? [p[0], p[1]] : [p[1], p[0]]
   return `${y}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
 }
 
@@ -58,12 +75,14 @@ export function parseBillSummary(input: unknown): Day[] {
   const cTotal = first(['Net Total'])
   if (cSales < 0 || cTotal < 0) throw new Error('Missing the Net Sales or Net Total column.')
   // Everything after Net Total is a payment type column.
-  const payCols = head.map((name, i) => ({ name, i })).filter(({ name, i }) => i > cTotal && name)
+  const payCols = head.map((name, i) => ({ name, i }))
+    .filter(({ name, i }) => i > cTotal && name && !/count|qty|quantity|guest|void/i.test(name))
+  const order = dateOrderOf(rows.slice(headIndex + 1).map(r => r[cDate]))
 
   const days: Day[] = []
   for (const row of rows.slice(headIndex + 1)) {
     if (/subtotal|grand total/i.test(String(row[cDate] ?? ''))) continue
-    const date = isoDate(row[cDate])
+    const date = isoDate(row[cDate], order)
     if (!date) continue
     days.push({
       date,
@@ -98,6 +117,7 @@ export function parseProductSales(input: unknown): ItemSale[] {
   if (cNet < 0) throw new Error('Missing the Net Sales column.')
 
   const out: ItemSale[] = []
+  const order = dateOrderOf(rows.slice(headIndex + 1).map(r => r[cDate]))
   let code = '', name = ''
   for (const row of rows.slice(headIndex + 1)) {
     const label = String(row[1] ?? '').trim()
@@ -109,7 +129,7 @@ export function parseProductSales(input: unknown): ItemSale[] {
       continue
     }
     if (/subtotal|grand total/i.test(String(row[cDate] ?? ''))) continue
-    const date = isoDate(row[cDate])
+    const date = isoDate(row[cDate], order)
     if (!date || !code) continue
     const net = round2(num(row[cNet]))
     const qty = cQty >= 0 ? num(row[cQty]) : 0
@@ -155,10 +175,10 @@ export type Settlement = {
   result?: string
 }
 
-const dateOnly = (v: unknown) => {
+const dateOnly = (v: unknown, order: DateOrder = 'dmy') => {
   const s = String(v ?? '').trim()
   const m = s.match(/^(\d{2})-(\d{2})-(\d{4})/)          // 22-09-2026 13:49:21
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : isoDate(s.split(' ')[0])
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : isoDate(s.split(' ')[0], order)
 }
 
 export function parseFiuu(input: unknown) {

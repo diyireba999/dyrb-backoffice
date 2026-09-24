@@ -9,6 +9,13 @@ export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY,
 )
 
+// Every list in the app goes through this, so a failed request is never mistaken
+// for an empty table.
+export function rowsOf<T>(r: { data: T[] | null; error: { message: string } | null }, what: string): T[] {
+  if (r.error) console.error(`Could not load ${what}:`, r.error.message)
+  return r.data ?? []
+}
+
 export type Role = 'owner' | 'manager' | 'accountant' | 'staff'
 export type Profile = { id: string; full_name: string; role: Role }
 export type Account = { code: string; name: string; type: 'asset' | 'liability' | 'equity' | 'income' | 'expense'; active: boolean }
@@ -38,7 +45,7 @@ export function useAccounts(includeInactive = false) {
   useEffect(() => {
     let q = supabase.from('accounts').select('*').order('code')
     if (!includeInactive) q = q.eq('active', true)
-    q.then(({ data }) => setAccounts(data ?? []))
+    q.then(r => setAccounts(rowsOf(r, 'the account list')))
   }, [includeInactive])
   return accounts
 }
@@ -62,15 +69,17 @@ export async function uploadReceipt(file: File): Promise<string> {
   canvas.height = img.height * scale
   canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
   const blob: Blob = await new Promise(r => canvas.toBlob(b => r(b!), 'image/jpeg', 0.7))
-  const path = `${todayMY().slice(0, 7)}/${crypto.randomUUID()}.jpg`
+  const { data: me } = await supabase.auth.getUser()
+  const path = `${me.user?.id ?? 'shared'}/${todayMY().slice(0, 7)}/${crypto.randomUUID()}.jpg`
   const { error } = await supabase.storage.from('receipts').upload(path, blob, { contentType: 'image/jpeg' })
   if (error) throw new Error(error.message)
   return path
 }
 
 export async function openReceipt(path: string) {
-  const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 300)
-  if (data) window.open(data.signedUrl, '_blank')
+  const { data, error } = await supabase.storage.from('receipts').createSignedUrl(path, 300)
+  if (error || !data) return alert('Could not open the receipt: ' + (error?.message ?? 'not found'))
+  window.open(data.signedUrl, '_blank')
 }
 
 export const MONEY_NAMES: Record<string, string> = { '1000': 'Cash in Drawer', '1010': 'Petty Cash', '1100': 'Bank' }
@@ -84,8 +93,8 @@ export function useSuppliers() {
       supabase.from('suppliers').select('*').order('name'),
       supabase.from('supplier_balances').select('id, owed'),
     ]).then(([s, b]) => {
-      const owed = new Map((b.data ?? []).map(r => [r.id, Number(r.owed)]))
-      setList((s.data ?? []).map(r => ({ ...r, owed: owed.get(r.id) ?? 0 })))
+      const owed = new Map(rowsOf(b, 'supplier balances').map(r => [r.id, Number(r.owed)]))
+      setList(rowsOf(s, 'suppliers').map(r => ({ ...r, owed: owed.get(r.id) ?? 0 })))
     })
   }
   useEffect(load, [])
@@ -109,7 +118,8 @@ export const addDays = (iso: string, days: number) => {
 
 // Net debit (debit minus credit) per account code, summed in the database.
 export async function accountTotals(from: string | null, to: string) {
-  const { data } = await supabase.rpc('account_totals', { p_from: from, p_to: to })
+  const { data, error } = await supabase.rpc('account_totals', { p_from: from, p_to: to })
+  if (error) console.error('Could not total the accounts:', error.message)
   return new Map(((data ?? []) as { code: string; debit: number; credit: number }[])
     .map(r => [r.code, Number(r.debit) - Number(r.credit)]))
 }
