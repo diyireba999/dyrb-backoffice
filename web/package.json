@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test:db": "node db-test.mjs",
     "test:sales": "node sales-test.mjs",
-    "test:repair": "node repair-test.mjs"
+    "test:repair": "node repair-test.mjs",
+    "test:rls": "node rls-test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
