@@ -66,7 +66,10 @@ export function Dashboard({ profile }: { profile: Profile }) {
   const sales = -sumCodes(accounts, month, '4000', '4100')
   const service = -sumCodes(accounts, month, '4100', '4900')
   const otherIncome = -sumCodes(accounts, month, '4900', '5000')
-  const expense = sumType(accounts, month, 'expense')
+  // Cost of sales (5000-5999) is shown on its own; 6000 upwards are running costs.
+  const costOfSales = sumCodes(accounts, month, '5000', '6000')
+  const expense = sumCodes(accounts, month, '6000', '7000')
+  const grossProfit = sales - costOfSales
   const income = sales + service + otherIncome
   const directorOwed = -accounts.filter(a => isDirector(a.code)).reduce((s, a) => s + (all.get(a.code) ?? 0), 0)
   const openClaims = office ? claims : claims.filter(c => c.staff_id === profile.id)
@@ -76,7 +79,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
     label: m.label, sales: -sumCodes(accounts, m.totals, '4000', '4100'), expenses: sumType(accounts, m.totals, 'expense'),
   }))
   const topExpenses = (() => {
-    const rows = accounts.filter(a => a.type === 'expense').map(a => ({ label: a.name, value: month.get(a.code) ?? 0 }))
+    const rows = accounts.filter(a => a.type === 'expense' && a.code >= '6000').map(a => ({ label: a.name, value: month.get(a.code) ?? 0 }))
       .filter(r => r.value > 0).sort((a, b) => b.value - a.value)
     const other = rows.slice(5).reduce((s, r) => s + r.value, 0)
     return other > 0 ? [...rows.slice(0, 5), { label: 'Other', value: other }] : rows
@@ -117,15 +120,20 @@ export function Dashboard({ profile }: { profile: Profile }) {
           <h3 className="font-semibold">{monthName}</h3>
           <dl className="mt-4 space-y-3 text-sm">
             <div className="flex justify-between"><dt className="text-slate-500">Sales (food &amp; drink)</dt><dd className="font-medium tabular-nums">{rm(sales)}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">Cost of sales</dt><dd className="font-medium tabular-nums">{rm(costOfSales)}</dd></div>
+            <div className="flex justify-between border-t border-slate-100 pt-3">
+              <dt className="font-medium">Gross profit{sales ? ` (${((grossProfit / sales) * 100).toFixed(0)}%)` : ''}</dt>
+              <dd className="font-semibold tabular-nums">{rm(grossProfit)}</dd>
+            </div>
             <div className="flex justify-between"><dt className="text-slate-500">Service charge</dt><dd className="font-medium tabular-nums">{rm(service)}</dd></div>
             {otherIncome !== 0 && <div className="flex justify-between"><dt className="text-slate-500">Other income</dt><dd className="font-medium tabular-nums">{rm(otherIncome)}</dd></div>}
-            <div className="flex justify-between"><dt className="text-slate-500">Expenses</dt><dd className="font-medium tabular-nums">{rm(expense)}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">Running costs</dt><dd className="font-medium tabular-nums">{rm(expense)}</dd></div>
             <div className="flex justify-between border-t border-slate-100 pt-3">
               <dt className="font-medium">Profit so far</dt>
-              <dd className={`font-semibold tabular-nums ${income - expense < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{rm(income - expense)}</dd>
+              <dd className={`font-semibold tabular-nums ${income - costOfSales - expense < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{rm(income - costOfSales - expense)}</dd>
             </div>
           </dl>
-          <h4 className="mb-3 mt-6 text-sm font-semibold text-slate-500">Top expenses this month</h4>
+          <h4 className="mb-3 mt-6 text-sm font-semibold text-slate-500">Top running costs this month</h4>
           {topExpenses.length ? <RankedBars rows={topExpenses} /> : <p className="muted">No expenses yet.</p>}
         </div>
       </div>
