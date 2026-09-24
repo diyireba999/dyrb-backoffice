@@ -7,7 +7,8 @@ create schema auth; create schema storage; create role anon; create role authent
 create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb);
 create function auth.uid() returns uuid language sql as $$ select current_setting('app.uid', true)::uuid $$;
 create table storage.buckets (id text, name text, public bool);
-create table storage.objects (bucket_id text, owner uuid);
+create table storage.objects (bucket_id text, owner uuid, name text);
+create function storage.foldername(p text) returns text[] language sql immutable as $$ select string_to_array(p, '/') $$;
 `)
 for (const f of ['001_core.sql', '002_claims.sql'])
   await db.exec(fs.readFileSync(new URL('../supabase/' + f, import.meta.url), 'utf8'))
@@ -263,3 +264,15 @@ catch (e) { console.log('re-split to a non-sales account rejected:', e.message) 
 // Cancelling a payment that is not there is an error, not a quiet success.
 try { await db.query(`select cancel_supplier_payment(999999)`); console.log('FAIL: cancelled a payment that does not exist') }
 catch (e) { console.log('missing payment rejected:', e.message) }
+
+// ---- 017: corkage has no cost ----
+await db.exec(fs.readFileSync(new URL('../supabase/017_corkage.sql', import.meta.url), 'utf8'))
+const corkAcct = (await db.query(`select account from item_category_map where prefix='OP'`)).rows[0].account
+const hasCosting = (await db.query(`select count(*)::int c from category_costing where sales_account='4030'`)).rows[0].c
+console.log(corkAcct === '4030' && hasCosting === 0 ? 'corkage income ok' : `FAIL corkage ${corkAcct} ${hasCosting}`)
+// A day can still be split with corkage in it.
+await db.query(`select post_sales_day('2026-10-08', 700, 70, 0, 0, '[{"code":"CASH","amount":770}]'::jsonb)`)
+await db.query(`select resplit_sales_day('2026-10-08','[{"account":"4020","amount":500},{"account":"4030","amount":200}]'::jsonb)`)
+const cork = Number((await db.query(`select coalesce(sum(l.credit),0)::float v from journal_lines l
+  join journals j on j.id=l.journal_id where j.source_ref='2026-10-08' and l.account='4030'`)).rows[0].v)
+console.log(cork === 200 ? 'corkage split ok' : 'FAIL corkage split ' + cork)

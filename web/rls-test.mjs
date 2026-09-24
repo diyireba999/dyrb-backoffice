@@ -13,7 +13,8 @@ await db.exec(`
   create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb);
   create function auth.uid() returns uuid language sql as $$ select current_setting('app.uid', true)::uuid $$;
   create table storage.buckets (id text, name text, public bool);
-  create table storage.objects (bucket_id text, owner uuid);
+  create table storage.objects (bucket_id text, owner uuid, name text);
+create function storage.foldername(p text) returns text[] language sql immutable as $$ select string_to_array(p, '/') $$;
   grant usage on schema public, auth to anon, authenticated;
 `)
 for (const f of FILES) await db.exec(fs.readFileSync(new URL('../supabase/' + f, import.meta.url), 'utf8'))

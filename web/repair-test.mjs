@@ -14,7 +14,8 @@ async function fresh(files) {
     create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb);
     create function auth.uid() returns uuid language sql as $$ select current_setting('app.uid', true)::uuid $$;
     create table storage.buckets (id text, name text, public bool);
-    create table storage.objects (bucket_id text, owner uuid);
+    create table storage.objects (bucket_id text, owner uuid, name text);
+create function storage.foldername(p text) returns text[] language sql immutable as $$ select string_to_array(p, '/') $$;
   `)
   for (const f of files) await db.exec(sql(f))
   await db.exec(`insert into auth.users values ('${owner}', 'o@x.my', '{"full_name":"Boss"}');
