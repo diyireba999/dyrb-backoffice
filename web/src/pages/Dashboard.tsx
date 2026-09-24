@@ -37,6 +37,10 @@ function lastMonths(n: number) {
 const sumType = (accounts: Account[], m: Map<string, number>, type: Account['type']) =>
   accounts.filter(a => a.type === type).reduce((s, a) => s + (m.get(a.code) ?? 0), 0)
 
+// Sales means food and drink only. Service charge and other income are shown apart.
+const sumCodes = (accounts: Account[], m: Map<string, number>, from: string, to: string) =>
+  accounts.filter(a => a.code >= from && a.code < to).reduce((s, a) => s + (m.get(a.code) ?? 0), 0)
+
 export function Dashboard({ profile }: { profile: Profile }) {
   const office = profile.role !== 'staff'
   const accounts = useAccounts(true)
@@ -59,12 +63,18 @@ export function Dashboard({ profile }: { profile: Profile }) {
   }, [office])
 
   const bal = (codes: string[], sign = 1) => codes.reduce((s, c) => s + sign * (all.get(c) ?? 0), 0)
-  const income = -sumType(accounts, month, 'income'), expense = sumType(accounts, month, 'expense')
+  const sales = -sumCodes(accounts, month, '4000', '4100')
+  const service = -sumCodes(accounts, month, '4100', '4900')
+  const otherIncome = -sumCodes(accounts, month, '4900', '5000')
+  const expense = sumType(accounts, month, 'expense')
+  const income = sales + service + otherIncome
   const directorOwed = -accounts.filter(a => isDirector(a.code)).reduce((s, a) => s + (all.get(a.code) ?? 0), 0)
   const openClaims = office ? claims : claims.filter(c => c.staff_id === profile.id)
   const claimsTotal = openClaims.reduce((s, c) => s + Number(c.amount), 0)
   const monthName = new Date().toLocaleDateString('en-MY', { month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
-  const chart: MonthPoint[] = months.map(m => ({ label: m.label, sales: -sumType(accounts, m.totals, 'income'), expenses: sumType(accounts, m.totals, 'expense') }))
+  const chart: MonthPoint[] = months.map(m => ({
+    label: m.label, sales: -sumCodes(accounts, m.totals, '4000', '4100'), expenses: sumType(accounts, m.totals, 'expense'),
+  }))
   const topExpenses = (() => {
     const rows = accounts.filter(a => a.type === 'expense').map(a => ({ label: a.name, value: month.get(a.code) ?? 0 }))
       .filter(r => r.value > 0).sort((a, b) => b.value - a.value)
@@ -106,7 +116,9 @@ export function Dashboard({ profile }: { profile: Profile }) {
         <div className="card">
           <h3 className="font-semibold">{monthName}</h3>
           <dl className="mt-4 space-y-3 text-sm">
-            <div className="flex justify-between"><dt className="text-slate-500">Income</dt><dd className="font-medium tabular-nums">{rm(income)}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">Sales (food &amp; drink)</dt><dd className="font-medium tabular-nums">{rm(sales)}</dd></div>
+            <div className="flex justify-between"><dt className="text-slate-500">Service charge</dt><dd className="font-medium tabular-nums">{rm(service)}</dd></div>
+            {otherIncome !== 0 && <div className="flex justify-between"><dt className="text-slate-500">Other income</dt><dd className="font-medium tabular-nums">{rm(otherIncome)}</dd></div>}
             <div className="flex justify-between"><dt className="text-slate-500">Expenses</dt><dd className="font-medium tabular-nums">{rm(expense)}</dd></div>
             <div className="flex justify-between border-t border-slate-100 pt-3">
               <dt className="font-medium">Profit so far</dt>

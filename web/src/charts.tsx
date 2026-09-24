@@ -23,7 +23,7 @@ export function SalesVsExpenses({ data }: { data: MonthPoint[] }) {
   return (
     <div>
       <div className="mb-3 flex gap-4 text-xs text-slate-600">
-        {['Sales', 'Expenses'].map((s, i) => (
+        {['Sales (food & drink)', 'Expenses'].map((s, i) => (
           <span key={s} className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm" style={{ background: SERIES[i] }} />{s}</span>
         ))}
       </div>
@@ -46,7 +46,7 @@ export function SalesVsExpenses({ data }: { data: MonthPoint[] }) {
                 {hover === i && (
                   <div className="pointer-events-none absolute bottom-full z-10 mb-1 w-40 rounded-lg border border-slate-200 bg-white p-2.5 text-xs shadow-lg">
                     <div className="mb-1 font-semibold text-slate-900">{d.label}</div>
-                    {(['Sales', 'Expenses'] as const).map((s, k) => (
+                    {(['Sales (food & drink)', 'Expenses'] as const).map((s, k) => (
                       <div key={s} className="flex items-center justify-between gap-2 text-slate-600">
                         <span className="flex items-center gap-1.5"><span className="size-2 rounded-sm" style={{ background: SERIES[k] }} />{s}</span>
                         <span className="font-medium tabular-nums text-slate-900">{rm(k ? d.expenses : d.sales)}</span>
