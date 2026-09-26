@@ -372,3 +372,40 @@ try { await db.query(`select update_supplier_payment(${payE}, '2026-10-21', '100
   '[{"invoice_id":${invE},"amount":500}]'::jsonb)`)
   console.log('FAIL: edit paid more than owed') }
 catch (e) { console.log('over-payment on edit rejected:', e.message) }
+
+// A supplier payment funded from a director account can be edited.
+const supDir = (await db.query(`insert into suppliers (name) values ('Dir Test Supplier') returning id`)).rows[0].id
+const invDir = (await db.query(`select create_purchase_invoice(${supDir}, 'DIR1', '2026-10-15', '2026-11-15',
+  'Director purchase', '[{"account":"5100","amount":200}]'::jsonb) id`)).rows[0].id
+const payDir = (await db.query(`select pay_supplier(${supDir}, '2026-10-20', '2500', 'DIRPAY',
+  '[{"invoice_id":${invDir},"amount":200}]'::jsonb) id`)).rows[0].id
+await db.query(`select update_supplier_payment(${payDir}, '2026-10-22', '2500', 'DIRPAY2',
+  '[{"invoice_id":${invDir},"amount":200}]'::jsonb)`)
+const dirpay = (await db.query(`select sp.date::text date, j.reference from supplier_payments sp
+  join journals j on j.id=sp.journal_id where sp.id=${payDir}`)).rows[0]
+console.log(dirpay.date === '2026-10-22' && dirpay.reference === 'DIRPAY2'
+  ? 'director account payment edit ok' : 'FAIL dir pay ' + JSON.stringify(dirpay))
+
+// Deactivated account rejects purchase invoice edit.
+const supDeact = (await db.query(`insert into suppliers (name) values ('Deact Test Supplier') returning id`)).rows[0].id
+const invDeact = (await db.query(`select create_purchase_invoice(${supDeact}, 'DEACT1', '2026-10-15', '2026-11-15',
+  'Test deactivation', '[{"account":"5100","amount":50}]'::jsonb) id`)).rows[0].id
+await db.exec(`update accounts set active=false where code='5100'`)
+try { await db.query(`select update_purchase_invoice(${invDeact}, 'DEACT2', '2026-10-13', '2026-11-13',
+  'x', '[{"account":"5100","amount":80}]'::jsonb)`)
+  console.log('FAIL: deactivated account accepted on invoice edit') }
+catch (e) { console.log('deactivated account on invoice edit rejected:', e.message) }
+await db.exec(`update accounts set active=true where code='5100'`)
+
+// Deactivated account rejects supplier payment edit.
+const supPayDeact = (await db.query(`insert into suppliers (name) values ('Pay Deact Test Supplier') returning id`)).rows[0].id
+const invPayDeact = (await db.query(`select create_purchase_invoice(${supPayDeact}, 'PAYDEACT1', '2026-10-15', '2026-11-15',
+  'Test pay deactivation', '[{"account":"5100","amount":100}]'::jsonb) id`)).rows[0].id
+const payPayDeact = (await db.query(`select pay_supplier(${supPayDeact}, '2026-10-20', '1100', 'CHQ_DEACT',
+  '[{"invoice_id":${invPayDeact},"amount":100}]'::jsonb) id`)).rows[0].id
+await db.exec(`update accounts set active=false where code='1100'`)
+try { await db.query(`select update_supplier_payment(${payPayDeact}, '2026-10-21', '1100', 'CHQ_DEACT2',
+  '[{"invoice_id":${invPayDeact},"amount":100}]'::jsonb)`)
+  console.log('FAIL: deactivated account accepted on payment edit') }
+catch (e) { console.log('deactivated account on payment edit rejected:', e.message) }
+await db.exec(`update accounts set active=true where code='1100'`)

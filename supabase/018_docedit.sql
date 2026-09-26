@@ -61,6 +61,9 @@ begin
   if p_due < p_date then raise exception 'Due date cannot be before invoice date'; end if;
   if exists (select 1 from jsonb_array_elements(p_lines) l where coalesce((l->>'amount')::numeric, 0) <= 0) then
     raise exception 'Each line needs an amount'; end if;
+  if exists (select 1 from jsonb_array_elements(p_lines) l
+             join accounts a on a.code = l->>'account' where not a.active) then
+    raise exception 'Account is switched off'; end if;
   select string_agg(distinct l->>'account', ', ') into bad from jsonb_array_elements(p_lines) l
     where l->>'account' in (select cost_account from category_costing);
   if bad is not null then
@@ -93,8 +96,10 @@ begin
   if my_role() not in ('owner', 'accountant', 'manager') then raise exception 'Not allowed'; end if;
   select * into pay from supplier_payments where id = p_id;
   if pay.id is null then raise exception 'Payment not found'; end if;
-  if p_from not in ('1000', '1010', '1100', '3000') then
-    raise exception 'Pay from cash, petty cash, bank or owner'; end if;
+  if p_from not in ('1000', '1010', '1100', '3000') and not (p_from >= '2500' and p_from < '2600') then
+    raise exception 'Pay from cash, petty cash, bank, a director or owner capital'; end if;
+  if not exists (select 1 from accounts where code = p_from and active) then
+    raise exception 'Account is switched off'; end if;
   if exists (select 1 from journal_lines where journal_id = pay.journal_id and cleared_on is not null) then
     raise exception 'This payment is ticked on the bank reconciliation. Untick it there first.'; end if;
 
