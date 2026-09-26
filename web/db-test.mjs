@@ -498,3 +498,45 @@ try { await db.query(`select update_journal(${e1}, '2026-10-11','x',null,null,
   console.log('FAIL: 2000 line without a supplier accepted on edit') }
 catch (e) { console.log(e.message === 'Choose which supplier (add them in Suppliers first)'
   ? '2000 line without a supplier on edit rejected correctly' : 'FAIL wrong message: ' + e.message) }
+
+// ---- 019: staff salary advances ----
+await db.exec(fs.readFileSync(new URL('../supabase/019_advance.sql', import.meta.url), 'utf8'))
+await db.exec(`update profiles set role='owner'`)
+
+const emp = (await db.query(`insert into employees (name, pay_type, rate) values ('Ahmad', 'monthly', 2000) returning id`)).rows[0].id
+const adv = (await db.query(`select record_advance(${emp}, '2026-10-05', 600, '1000', 'Advance for rent') id`)).rows[0].id
+const advRow = (await db.query(`select a.amount::float amount, j.source, j.doc_no,
+  (select sum(l.debit)::float from journal_lines l where l.journal_id=a.journal_id and l.account='1310') dr,
+  (select sum(l.credit)::float from journal_lines l where l.journal_id=a.journal_id and l.account='1000') cr
+  from staff_advances a join journals j on j.id=a.journal_id where a.id=${adv}`)).rows[0]
+console.log(advRow.amount === 600 && advRow.dr === 600 && advRow.cr === 600 && advRow.source === 'advance'
+  ? 'advance recorded ok' : 'FAIL advance ' + JSON.stringify(advRow))
+
+const advBal = (await db.query(`select outstanding::float o from advance_balances where id=${adv}`)).rows[0].o
+console.log(advBal === 600 ? 'advance outstanding ok' : 'FAIL advance outstanding ' + advBal)
+
+// Money must come from cash, petty cash or bank.
+try { await db.query(`select record_advance(${emp}, '2026-10-05', 100, '6000', null)`)
+  console.log('FAIL: advance paid from an expense account') }
+catch (e) { console.log('advance from a non-money account rejected:', e.message) }
+
+// A zero or negative advance is meaningless.
+try { await db.query(`select record_advance(${emp}, '2026-10-05', 0, '1000', null)`)
+  console.log('FAIL: zero advance accepted') }
+catch (e) { console.log('zero advance rejected:', e.message) }
+
+// Only owner or accountant may hand out an advance.
+await db.exec(`update profiles set role='manager'`)
+try { await db.query(`select record_advance(${emp}, '2026-10-05', 100, '1000', null)`)
+  console.log('FAIL: manager recorded an advance') }
+catch (e) { console.log('manager blocked from advances:', e.message) }
+await db.exec(`update profiles set role='owner'`)
+
+// Deleting an untouched advance takes its journal with it.
+const adv2 = (await db.query(`select record_advance(${emp}, '2026-10-06', 50, '1010', null) id`)).rows[0].id
+const adv2j = (await db.query(`select journal_id from staff_advances where id=${adv2}`)).rows[0].journal_id
+await db.query(`select delete_advance(${adv2})`)
+const gone = (await db.query(`select
+  (select count(*)::int from staff_advances where id=${adv2}) a,
+  (select count(*)::int from journals where id=${adv2j}) j`)).rows[0]
+console.log(gone.a === 0 && gone.j === 0 ? 'advance deleted ok' : 'FAIL advance delete ' + JSON.stringify(gone))
