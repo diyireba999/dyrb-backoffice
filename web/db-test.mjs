@@ -633,3 +633,52 @@ const slip5 = (await db.query(`select basic::float basic, epf_employee::float ep
 console.log(slip5.basic === 1600 && slip5.epf === 176 && slip5.epf_er === 208 && slip5.socso === 8 && slip5.socso_er === 28
   ? 'hourly staff get real EPF/SOCSO from timesheet basic ok' : 'FAIL hourly statutory ' + JSON.stringify(slip5))
 await db.query(`select delete_payroll_run(${run5})`)
+
+// ---- 019/020 fix wave: stale advance recovery must not double-deduct ----
+
+// (a) Two draft runs against the same advance: approving the first recovers
+// it; the second must recover nothing, not a phantom second RM800.
+const kumar = (await db.query(`insert into employees (name, pay_type, rate, epf_on, socso_on, eis_on)
+  values ('Kumar', 'monthly', 2000, false, false, false) returning id`)).rows[0].id
+const kumarAdv = (await db.query(`select record_advance(${kumar}, '2027-03-01', 800, '1000', null) id`)).rows[0].id
+const run6 = (await db.query(`select create_payroll_run('2027-03-01', '2027-03-31') id`)).rows[0].id
+const run7 = (await db.query(`select create_payroll_run('2027-04-01', '2027-04-30') id`)).rows[0].id
+await db.query(`select approve_payroll_run(${run6})`)
+const afterFirst = (await db.query(`select outstanding::float o from advance_balances where id=${kumarAdv}`)).rows[0].o
+console.log(afterFirst === 0 ? 'first draft run recovered the advance ok' : 'FAIL first recovery ' + afterFirst)
+await db.query(`select approve_payroll_run(${run7})`)
+const slip7 = (await db.query(`select advance_recovery::float ar, net_pay::float net, gross::float gross
+  from payslip_view where run_id=${run7} and employee_id=${kumar}`)).rows[0]
+// Other active employees also get payroll runs here, some with their own
+// outstanding advances — check the recovery row for THIS advance and run
+// specifically, not the run's whole 1310 credit.
+const run7Recovered = (await db.query(`select count(*)::int c from advance_recoveries where advance_id=${kumarAdv} and run_id=${run7}`)).rows[0].c
+console.log(slip7.ar === 0 && slip7.net === slip7.gross && run7Recovered === 0
+  ? 'second draft run on the same advance recovers nothing ok' : 'FAIL second recovery ' + JSON.stringify(slip7) + ' recovered rows ' + run7Recovered)
+
+// (b) An advance deleted out from under a draft run must not still take money
+// off that payslip when the run is approved.
+const lim = (await db.query(`insert into employees (name, pay_type, rate, epf_on, socso_on, eis_on)
+  values ('Lim', 'monthly', 2000, false, false, false) returning id`)).rows[0].id
+const limAdv = (await db.query(`select record_advance(${lim}, '2027-05-01', 500, '1000', null) id`)).rows[0].id
+const run8 = (await db.query(`select create_payroll_run('2027-05-01', '2027-05-31') id`)).rows[0].id
+await db.query(`select delete_advance(${limAdv})`)
+await db.query(`select approve_payroll_run(${run8})`)
+const slip8 = (await db.query(`select advance_recovery::float ar, net_pay::float net, gross::float gross
+  from payslip_view where run_id=${run8} and employee_id=${lim}`)).rows[0]
+console.log(slip8.ar === 0 && slip8.net === slip8.gross
+  ? 'advance deleted under a draft run recovers nothing on approval ok' : 'FAIL deleted-advance recovery ' + JSON.stringify(slip8))
+
+// ---- 019 fix wave: delete_advance must respect a closed bank reconciliation ----
+// Lands on the NEW reconciliation guard, not the earlier "already recovered"
+// guard — this advance has no payroll recovery against it at all.
+const farah = (await db.query(`insert into employees (name, pay_type, rate)
+  values ('Farah', 'monthly', 2000) returning id`)).rows[0].id
+const farahAdv = (await db.query(`select record_advance(${farah}, '2027-06-01', 300, '1100', null) id`)).rows[0].id
+const farahJ = (await db.query(`select journal_id from staff_advances where id=${farahAdv}`)).rows[0].journal_id
+const farahLine = (await db.query(`select id from journal_lines where journal_id=${farahJ} and account='1100'`)).rows[0].id
+await db.query(`select set_cleared(array[${farahLine}]::bigint[], '2027-06-30')`)
+try { await db.query(`select delete_advance(${farahAdv})`)
+  console.log('FAIL: advance ticked on bank reconciliation was deleted') }
+catch (e) { console.log(e.message === 'This entry is ticked on the bank reconciliation. Untick it there first.'
+  ? 'advance on a closed reconciliation blocked from deletion ok' : 'FAIL wrong message: ' + e.message) }

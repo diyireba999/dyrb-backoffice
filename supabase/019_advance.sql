@@ -42,9 +42,18 @@ create table if not exists advance_recoveries (
 
 alter table staff_advances enable row level security;
 alter table advance_recoveries enable row level security;
-create policy "office reads all, staff read own" on staff_advances for select
+do $$ begin create policy "office reads all, staff read own" on staff_advances for select
   using (is_office() or exists (select 1 from employees e where e.id = employee_id and e.profile_id = auth.uid()));
-create policy "office reads" on advance_recoveries for select using (is_office());
+exception when duplicate_object then null; end $$;
+-- Staff can read the recovery rows against their own advances too, or
+-- advance_balances (which is security_invoker and sums this table to work out
+-- what is still owed) always shows them the full original amount, never mind
+-- how much has actually been taken back.
+do $$ begin create policy "office reads all, staff read own" on advance_recoveries for select
+  using (is_office() or exists (
+    select 1 from staff_advances a join employees e on e.id = a.employee_id
+    where a.id = advance_id and e.profile_id = auth.uid()));
+exception when duplicate_object then null; end $$;
 revoke insert, update, delete on staff_advances, advance_recoveries from anon, authenticated;
 
 -- Outstanding per advance, oldest first.
@@ -85,6 +94,8 @@ begin
     raise exception 'Part of this advance has already been taken back on a payslip'; end if;
   select journal_id into j from staff_advances where id = p_id;
   if j is null then raise exception 'Advance not found'; end if;
+  if exists (select 1 from journal_lines where journal_id = j and cleared_on is not null) then
+    raise exception 'This entry is ticked on the bank reconciliation. Untick it there first.'; end if;
   delete from staff_advances where id = p_id;
   delete from journals where id = j;
 end $$;
@@ -215,6 +226,13 @@ begin
   if my_role() <> 'owner' then raise exception 'Only the owner can approve payroll'; end if;
   select * into r from payroll_runs where id = p_id for update;
   if r.status <> 'draft' then raise exception 'Already approved'; end if;
+
+  -- The stored recovery figure can go stale between the last save and now (an
+  -- earlier run recovering the same advance, or the advance being deleted).
+  -- Work it out fresh against live balances before the totals are taken, so
+  -- the journal below is never built from a number that no longer matches.
+  update payslips set advance_recovery = advance_to_recover(id) where run_id = p_id;
+
   select coalesce(sum(gross), 0) gross, coalesce(sum(epf_employee), 0) epf_e, coalesce(sum(epf_employer), 0) epf_r,
          coalesce(sum(socso_employee), 0) soc_e, coalesce(sum(socso_employer), 0) soc_r,
          coalesce(sum(eis_employee), 0) eis_e, coalesce(sum(eis_employer), 0) eis_r,
@@ -260,6 +278,13 @@ begin
       insert into advance_recoveries (advance_id, run_id, amount) values (b.id, p_id, take);
       left_to_take := left_to_take - take;
     end loop;
+    -- The recompute above should make this impossible; if it still happens,
+    -- the figures on the payslip and the real advance balance disagree, and
+    -- crediting 1310 for money that isn't actually there would be worse than
+    -- stopping the approval.
+    if left_to_take > 0 then
+      raise exception 'A salary advance recovery on this payroll no longer matches what the staff member owes. Please try approving again.';
+    end if;
   end loop;
 
   return j;
