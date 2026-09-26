@@ -15,7 +15,7 @@ import { Claims } from './pages/Claims'
 import { Dashboard } from './pages/Dashboard'
 import { SearchDialog } from './Search'
 import { SetupWarning } from './ui'
-import { Employees, MyPayslips, PayrollRun, PayrollSettings, PayrollYear } from './pages/Payroll'
+import { Employees, MyPayslips, PayrollRun, PayrollSettings, PayrollYear, StaffAdvances } from './pages/Payroll'
 import { CardSettlement, SalesSettings, UploadSales } from './pages/Sales'
 import { ItemCosts, StockCount } from './pages/Stock'
 import { Accruals } from './pages/Accruals'
@@ -48,6 +48,7 @@ const PAGES: Page[] = [
   { to: '/claims', label: 'Claims', subtitle: 'Staff expense claims', icon: Receipt, group: 'Team', roles: EVERYONE },
   { to: '/payslips', label: 'My Payslips', subtitle: 'Your own payslips', icon: Wallet2, group: 'Team', roles: EVERYONE },
   { to: '/payroll/staff', label: 'Staff', subtitle: 'Staff details, salary and deductions', icon: IdCard, group: 'Payroll', roles: OFFICE },
+  { to: '/payroll/advances', label: 'Staff Advance', subtitle: 'Money lent before payday, taken back on the payslip', icon: HandCoins, group: 'Payroll', roles: OFFICE },
   { to: '/payroll/run', label: 'Monthly Payroll', subtitle: 'Work out pay, approve and print payslips', icon: CalendarDays, group: 'Payroll', roles: OFFICE },
   { to: '/payroll/year', label: 'Yearly Summary', subtitle: 'Totals per staff for EA forms', icon: BookText, group: 'Payroll', roles: OFFICE },
   { to: '/payroll/rates', label: 'Payroll Settings', subtitle: 'EPF, SOCSO, EIS rates', icon: Settings2, group: 'Payroll', roles: OFFICE },
@@ -245,6 +246,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
               <Route path="/stock/costs" element={<ItemCosts role={profile.role} />} />
               <Route path="/stock/count" element={<StockCount role={profile.role} />} />
               <Route path="/payroll/staff" element={<Employees role={profile.role} />} />
+              <Route path="/payroll/advances" element={<StaffAdvances role={profile.role} />} />
               <Route path="/payroll/run" element={<PayrollRun role={profile.role} />} />
               <Route path="/payroll/year" element={<PayrollYear />} />
               <Route path="/payroll/rates" element={<PayrollSettings role={profile.role} />} />

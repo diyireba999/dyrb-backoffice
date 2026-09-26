@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Pencil, Plus, Printer, Trash2, XCircle } from 'lucide-react'
-import { dmy, downloadCsv, rm, round2, supabase, todayMY, type Profile, type Role } from '../lib'
-import { Empty, ReportBar } from '../ui'
+import { dmy, downloadCsv, MONEY_ACCOUNTS, MONEY_NAMES, rm, round2, supabase, todayMY, type Profile, type Role } from '../lib'
+import { Done, Empty, ReportBar } from '../ui'
 
 type Employee = {
   id: number; profile_id: string | null; employee_no: string | null; name: string; id_no: string | null
@@ -154,6 +154,117 @@ export function Employees({ role }: { role: Role }) {
                 <td className="text-right">{rm(e.rate)}{e.pay_type === 'hourly' && <span className="text-xs text-slate-500"> /hr</span>}</td>
                 <td className="text-xs text-slate-600">{[e.epf_on && 'EPF', e.socso_on && 'SOCSO', e.eis_on && 'EIS', e.pcb_on && 'PCB'].filter(Boolean).join(' · ') || 'None'}</td>
                 <td className="text-right">{canEdit && <button title="Edit" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand" onClick={() => start(e)}><Pencil className="size-4" /></button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- Staff advances
+
+type Advance = { id: number; employee_id: number; date: string; amount: number; note: string | null; outstanding: number }
+
+const blankAdvance = { employee: '', date: todayMY(), amount: '', from: MONEY_ACCOUNTS[0], note: '' }
+
+export function StaffAdvances({ role }: { role: Role }) {
+  const [rows, setRows] = useState<Advance[]>([])
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [mode, setMode] = useState<'list' | 'form'>('list')
+  const [f, setF] = useState(blankAdvance)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState<{ msg: string } | null>(null)
+  const canEdit = role === 'owner' || role === 'accountant'
+  const nameOf = (id: number) => employees.find(e => e.id === id)?.name ?? '—'
+  const outstandingFor = (id: number) => rows.filter(r => r.employee_id === id).reduce((s, r) => s + Number(r.outstanding), 0)
+
+  const load = () => { supabase.from('advance_balances').select('*').order('date', { ascending: false }).then(({ data }) => setRows((data as Advance[]) ?? [])) }
+  useEffect(load, [])
+  useEffect(() => { supabase.from('employees').select('*').order('name').then(({ data }) => setEmployees((data as Employee[]) ?? [])) }, [])
+
+  // Newest first within each staff member, staff grouped alphabetically.
+  const sorted = [...rows].sort((a, b) => nameOf(a.employee_id).localeCompare(nameOf(b.employee_id)) || b.date.localeCompare(a.date))
+
+  function startNew() { setF(blankAdvance); setError(''); setMode('form') }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (busy) return
+    if (!f.employee) return setError('Choose a staff member')
+    const amount = round2(Number(f.amount))
+    if (!(amount > 0)) return setError('Enter an amount')
+    setBusy(true); setError('')
+    const { error } = await supabase.rpc('record_advance', {
+      p_employee: Number(f.employee), p_date: f.date, p_amount: amount, p_from: f.from, p_note: f.note || null,
+    })
+    setBusy(false)
+    if (error) return setError(error.message)
+    setDone({ msg: `Salary advance of ${rm(amount)} given to ${nameOf(Number(f.employee))}` })
+    setF(blankAdvance)
+    load()
+  }
+
+  async function remove(a: Advance) {
+    if (!confirm('Remove this advance?')) return
+    const { error } = await supabase.rpc('delete_advance', { p_id: a.id })
+    if (error) return alert(error.message)
+    load()
+  }
+
+  if (done) return <Done msg={done.msg} again={() => { setDone(null); setMode('list') }} />
+
+  if (mode === 'form') {
+    const chosen = f.employee ? Number(f.employee) : null
+    const outstanding = chosen ? outstandingFor(chosen) : 0
+    return (
+      <form onSubmit={submit} className="card max-w-xl space-y-5 p-6">
+        <button type="button" className="link" onClick={() => { setMode('list'); setError('') }}>← Back to list</button>
+        <p className="muted">This pays a staff member ahead of payday. The money leaves the till now, and comes back out of their next payslip by itself.</p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2"><label>Staff member</label>
+            <select value={f.employee} onChange={e => setF({ ...f, employee: e.target.value })} required>
+              <option value="">— choose —</option>
+              {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+            {chosen !== null && outstanding > 0 && <p className="muted mt-1">Already has {rm(outstanding)} outstanding.</p>}
+          </div>
+          <div><label>Date</label><input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} required /></div>
+          <div><label>Amount (RM)</label><input type="number" step="0.01" min="0.01" inputMode="decimal" value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} required /></div>
+          <div><label>Paid from</label>
+            <select value={f.from} onChange={e => setF({ ...f, from: e.target.value })}>
+              {MONEY_ACCOUNTS.map(c => <option key={c} value={c}>{MONEY_NAMES[c]}</option>)}
+            </select>
+          </div>
+          <div className="sm:col-span-2"><label>Note (optional)</label><input value={f.note} onChange={e => setF({ ...f, note: e.target.value })} /></div>
+        </div>
+        {error && <p className="alert-error">{error}</p>}
+        <div className="flex justify-end"><button className="btn" disabled={busy}>{busy ? 'Saving…' : 'Give advance'}</button></div>
+      </form>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {canEdit && <div className="flex justify-end"><button className="btn" onClick={startNew}><Plus className="size-4" />New advance</button></div>}
+      <div className="card overflow-x-auto p-0">
+        {sorted.length === 0 && <Empty text="No salary advances yet." />}
+        {sorted.length > 0 && <table>
+          <thead><tr><th>Date</th><th>Staff</th><th className="text-right">Amount</th><th className="text-right">Outstanding</th><th>Note</th><th></th></tr></thead>
+          <tbody>
+            {sorted.map(a => (
+              <tr key={a.id}>
+                <td>{dmy(a.date)}</td>
+                <td className="font-medium">{nameOf(a.employee_id)}</td>
+                <td className="text-right">{rm(a.amount)}</td>
+                <td className={`text-right ${Number(a.outstanding) > 0 ? 'font-semibold text-rose-600' : 'text-slate-400'}`}>{rm(a.outstanding)}</td>
+                <td className="text-slate-600">{a.note}</td>
+                <td className="text-right">
+                  {canEdit && Number(a.outstanding) === Number(a.amount) &&
+                    <button title="Remove" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => remove(a)}><Trash2 className="size-4" /></button>}
+                </td>
               </tr>
             ))}
           </tbody>
