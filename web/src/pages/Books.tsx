@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Paperclip, Trash2 } from 'lucide-react'
-import { MONEY_ACCOUNTS, accountTotals, dmy, downloadCsv, isDirector, openReceipt, postJournal, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, type Account } from '../lib'
+import { MONEY_ACCOUNTS, accountTotals, dmy, downloadCsv, isDirector, loadDocuments, openReceipt, postJournal, rm, round2, supabase, todayMY, updateJournal, uploadReceipt, useAccounts, type Account, type DocRow } from '../lib'
 import { AccountSelect, Done, Empty, ReportBar } from '../ui'
+import { DocumentList } from '../DocumentList'
 
 const money = (a: Account) => MONEY_ACCOUNTS.includes(a.code)
 // 1200 card and 1210 e-wallet hold money already taken but not yet in the bank.
@@ -17,12 +18,43 @@ async function docNo(id: number) {
 export function PaymentVoucher() {
   const accounts = useAccounts()
   const blank = { date: todayMY(), payee: '', what: '', amount: '', from: '1100', reference: '', note: '' }
+  const [mode, setMode] = useState<'list' | 'form'>('list')
+  const [editing, setEditing] = useState<DocRow | null>(null)
+  const [rows, setRows] = useState<DocRow[]>([])
   const [f, setF] = useState(blank)
   const [photo, setPhoto] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
   const [error, setError] = useState('')
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
+  const load = () => { loadDocuments('pv').then(setRows) }
+  useEffect(load, [])
+
+  // A payment voucher is always one debit (what for) and one credit (paid from).
+  function startEdit(d: DocRow) {
+    const debit = d.journal_lines.find(l => Number(l.debit) > 0)
+    const credit = d.journal_lines.find(l => Number(l.credit) > 0)
+    if (!debit || !credit) return alert('This voucher has an unusual shape. Use Journal Entry to correct it.')
+    const dash = d.description.indexOf(' – ')
+    setEditing(d)
+    setF({
+      date: d.date, payee: dash >= 0 ? d.description.slice(0, dash) : d.description,
+      what: debit.account, amount: String(Number(debit.debit)), from: credit.account,
+      reference: d.reference ?? '', note: dash >= 0 ? d.description.slice(dash + 3) : '',
+    })
+    setPhoto(null); setError(''); setMode('form')
+  }
+
+  function startNew() {
+    setEditing(null); setF(blank); setPhoto(null); setError(''); setMode('form')
+  }
+
+  async function remove(d: DocRow) {
+    if (!confirm(`Delete ${d.doc_no}? This cannot be undone.`)) return
+    const { error } = await supabase.rpc('delete_journal', { p_id: d.id })
+    if (error) return alert(error.message)
+    load()
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -32,20 +64,38 @@ export function PaymentVoucher() {
     try {
       const attachment = photo ? await uploadReceipt(photo) : undefined
       const desc = [f.payee, f.note].filter(Boolean).join(' – ') || 'Payment'
-      const id = await postJournal(f.date, desc, [
+      const lines = [
         { account: f.what, debit: amount, memo: f.note },
         { account: f.from, credit: amount },
-      ], { source: 'pv', attachment, reference: f.reference })
-      setDone({ msg: `Payment of ${rm(amount)} saved`, doc: await docNo(id) })
-      setF({ ...blank, date: f.date, from: f.from }); setPhoto(null)
+      ]
+      if (editing) {
+        await updateJournal(editing.id, f.date, desc, lines, { reference: f.reference, attachment })
+        setDone({ msg: `${editing.doc_no} changed to ${rm(amount)}`, doc: editing.doc_no })
+      } else {
+        const id = await postJournal(f.date, desc, lines, { source: 'pv', attachment, reference: f.reference })
+        setDone({ msg: `Payment of ${rm(amount)} saved`, doc: await docNo(id) })
+      }
+      setF({ ...blank, date: f.date, from: f.from }); setPhoto(null); setEditing(null)
+      load()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
   }
 
-  if (done) return <Done msg={done.msg} doc={done.doc} again={() => setDone(null)} />
+  if (done) return <Done msg={done.msg} doc={done.doc}
+    again={() => { setDone(null); setMode('list') }} />
+
+  if (mode === 'list') return (
+    <DocumentList rows={rows} newLabel="New payment voucher"
+      emptyText="No payment vouchers in the last three months."
+      onNew={startNew} onEdit={startEdit} onDelete={remove} canEdit canDelete />
+  )
+
   return (
     <form onSubmit={submit} className="card max-w-2xl space-y-5 p-6">
-      <p className="muted">For bills bought on credit use <b>Purchase Invoice</b>; to pay those later use <b>Supplier Payment</b>.</p>
+      <button type="button" className="link" onClick={() => setMode('list')}>← Back to list</button>
+      {editing
+        ? <p className="muted">Changing <b className="font-mono">{editing.doc_no}</b>. It keeps the same number.</p>
+        : <p className="muted">For bills bought on credit use <b>Purchase Invoice</b>; to pay those later use <b>Supplier Payment</b>.</p>}
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
         <div><label>Cheque / Ref no.</label><input value={f.reference} onChange={e => set('reference', e.target.value)} placeholder="Optional" /></div>
@@ -64,10 +114,15 @@ export function PaymentVoucher() {
           </select>
         </div>
         <div><label>Description</label><input value={f.note} onChange={e => set('note', e.target.value)} placeholder="Optional" /></div>
-        <div className="sm:col-span-2"><label>Receipt / bill photo</label><input type="file" accept="image/*" capture="environment" onChange={e => setPhoto(e.target.files?.[0] ?? null)} /></div>
+        <div className="sm:col-span-2"><label>Receipt / bill photo</label>
+          <input type="file" accept="image/*" capture="environment" onChange={e => setPhoto(e.target.files?.[0] ?? null)} />
+          {editing?.attachment && !photo && <p className="muted mt-1">A photo is already attached. Choosing a new one replaces it.</p>}
+        </div>
       </div>
       {error && <p className="alert-error">{error}</p>}
-      <div className="flex justify-end"><button className="btn" disabled={busy}>{busy ? 'Saving…' : 'Save payment'}</button></div>
+      <div className="flex justify-end">
+        <button className="btn" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Save payment'}</button>
+      </div>
     </form>
   )
 }
