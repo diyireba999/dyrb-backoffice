@@ -169,7 +169,7 @@ export function JournalEntry() {
 
   return (
     <form onSubmit={submit} className="card space-y-5 p-6">
-      <button type="button" className="link" onClick={() => setMode('list')}>← Back to list</button>
+      <button type="button" className="link" onClick={() => { setMode('list'); setError('') }}>← Back to list</button>
       {editing && <p className="muted">Changing <b className="font-mono">{editing.doc_no}</b>. It keeps the same number.</p>}
       <div className="grid gap-4 sm:grid-cols-4">
         <div><label>Date</label><input type="date" value={head.date} onChange={e => setHead({ ...head, date: e.target.value })} required /></div>

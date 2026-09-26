@@ -95,7 +95,7 @@ export function PaymentVoucher() {
 
   return (
     <form onSubmit={submit} className="card max-w-2xl space-y-5 p-6">
-      <button type="button" className="link" onClick={() => setMode('list')}>← Back to list</button>
+      <button type="button" className="link" onClick={() => { setMode('list'); setError('') }}>← Back to list</button>
       {editing
         ? <p className="muted">Changing <b className="font-mono">{editing.doc_no}</b>. It keeps the same number.</p>
         : <p className="muted">For bills bought on credit use <b>Purchase Invoice</b>; to pay those later use <b>Supplier Payment</b>.</p>}
@@ -196,7 +196,7 @@ export function OfficialReceipt() {
 
   return (
     <form onSubmit={submit} className="card max-w-2xl space-y-5 p-6">
-      <button type="button" className="link" onClick={() => setMode('list')}>← Back to list</button>
+      <button type="button" className="link" onClick={() => { setMode('list'); setError('') }}>← Back to list</button>
       {editing
         ? <p className="muted">Changing <b className="font-mono">{editing.doc_no}</b>. It keeps the same number.</p>
         : <p className="muted">Daily sales come from Upload Sales. Use this for other money received: event deposits, owner capital, refunds.</p>}
@@ -288,7 +288,7 @@ export function Transfer() {
 
   return (
     <form onSubmit={submit} className="card max-w-2xl space-y-5 p-6">
-      <button type="button" className="link" onClick={() => setMode('list')}>← Back to list</button>
+      <button type="button" className="link" onClick={() => { setMode('list'); setError('') }}>← Back to list</button>
       {editing
         ? <p className="muted">Changing <b className="font-mono">{editing.doc_no}</b>. It keeps the same number.</p>
         : <p className="muted">Also use this when e-wallet money (TNG and the like) reaches the bank: From <b>1210 E-Wallet</b>, To <b>Bank</b>. E-wallets have no fee, so the full amount moves across. Card money is handled on the Card Settlement screen, because Fiuu takes a fee.</p>}
