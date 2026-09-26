@@ -151,7 +151,7 @@ export async function loadDocuments(source: string, months = 3): Promise<DocRow[
     .select('id, doc_no, date, description, reference, source, attachment, updated_at, journal_lines(account, debit, credit, memo, cleared_on)')
     .eq('source', source).gte('date', from)
     .order('date', { ascending: false }).order('id', { ascending: false })
-  if (error) console.error('Could not load the document list:', error.message)
+  if (error) throw new Error('Could not load the document list: ' + error.message)
   return (data as unknown as DocRow[]) ?? []
 }
 

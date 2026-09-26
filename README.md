@@ -72,6 +72,7 @@ Turn on two-step login for each account once created — this system holds salar
 - Supabase free projects pause after 7 days without use — normal daily use keeps it awake. If paused, open Supabase and click **Restore**.
 - Supabase free has no automatic backups (coming in Phase 6). Until then, once a month: Supabase → Table Editor → each table → export to CSV.
 - A wrong Payment Voucher, Official Receipt, Transfer or Journal Entry can be re-opened from its own screen and corrected — it keeps the same document number. An entry already ticked on the Bank Reconciliation must be unticked there first.
+- After pulling in a code update, also check whether a new file has appeared in the `supabase` folder (for example `supabase/018_docedit.sql`) and run it in Supabase → SQL Editor, same as Step 2.3–2.4. Pushing to GitHub updates the website by itself, but it does not touch the database — until the new file is run, the affected screens will look empty even though nothing was lost.
 
 ## Run on this computer (optional, for testing changes)
 

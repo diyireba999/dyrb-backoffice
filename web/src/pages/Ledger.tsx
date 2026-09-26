@@ -93,7 +93,7 @@ export function JournalEntry() {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ msg: string; doc: string } | null>(null)
   const [error, setError] = useState('')
-  const load = () => { loadDocuments('jv').then(setRows) }
+  const load = () => { loadDocuments('jv').then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
   useEffect(load, [])
 
   function startNew() {
@@ -159,9 +159,12 @@ export function JournalEntry() {
     again={() => { setDone(null); setMode('list') }} />
 
   if (mode === 'list') return (
-    <DocumentList rows={rows} newLabel="New journal entry"
-      emptyText="No journal entries in the last three months."
-      onNew={startNew} onEdit={startEdit} onDelete={remove} canEdit canDelete />
+    <>
+      {error && <p className="alert-error">{error}</p>}
+      <DocumentList rows={rows} newLabel="New journal entry"
+        emptyText="No journal entries in the last three months."
+        onNew={startNew} onEdit={startEdit} onDelete={remove} canEdit canDelete />
+    </>
   )
 
   return (

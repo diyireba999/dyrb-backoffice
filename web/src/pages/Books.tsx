@@ -27,7 +27,7 @@ export function PaymentVoucher() {
   const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
   const [error, setError] = useState('')
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
-  const load = () => { loadDocuments('pv').then(setRows) }
+  const load = () => { loadDocuments('pv').then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
   useEffect(load, [])
 
   // A payment voucher is always one debit (what for) and one credit (paid from).
@@ -85,9 +85,12 @@ export function PaymentVoucher() {
     again={() => { setDone(null); setMode('list') }} />
 
   if (mode === 'list') return (
-    <DocumentList rows={rows} newLabel="New payment voucher"
-      emptyText="No payment vouchers in the last three months."
-      onNew={startNew} onEdit={startEdit} onDelete={remove} canEdit canDelete />
+    <>
+      {error && <p className="alert-error">{error}</p>}
+      <DocumentList rows={rows} newLabel="New payment voucher"
+        emptyText="No payment vouchers in the last three months."
+        onNew={startNew} onEdit={startEdit} onDelete={remove} canEdit canDelete />
+    </>
   )
 
   return (
@@ -139,7 +142,7 @@ export function OfficialReceipt() {
   const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
   const [error, setError] = useState('')
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
-  const load = () => { loadDocuments('or').then(setRows) }
+  const load = () => { loadDocuments('or').then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
   useEffect(load, [])
 
   // A receipt is one debit (received into) and one credit (what kind of money).
@@ -182,10 +185,13 @@ export function OfficialReceipt() {
   if (done) return <Done msg={done.msg} doc={done.doc} again={() => { setDone(null); setMode('list') }} />
 
   if (mode === 'list') return (
-    <DocumentList rows={rows} newLabel="New official receipt"
-      emptyText="No official receipts in the last three months."
-      onNew={() => { setEditing(null); setF(blank); setError(''); setMode('form') }}
-      onEdit={startEdit} onDelete={remove} canEdit canDelete />
+    <>
+      {error && <p className="alert-error">{error}</p>}
+      <DocumentList rows={rows} newLabel="New official receipt"
+        emptyText="No official receipts in the last three months."
+        onNew={() => { setEditing(null); setF(blank); setError(''); setMode('form') }}
+        onEdit={startEdit} onDelete={remove} canEdit canDelete />
+    </>
   )
 
   return (
@@ -225,7 +231,7 @@ export function Transfer() {
   const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
   const [error, setError] = useState('')
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
-  const load = () => { loadDocuments('transfer').then(setRows) }
+  const load = () => { loadDocuments('transfer').then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
   useEffect(load, [])
   useEffect(() => { accountTotals(null, todayMY()).then(setBalances) }, [done, mode])
 
@@ -271,10 +277,13 @@ export function Transfer() {
   if (done) return <Done msg={done.msg} doc={done.doc} again={() => { setDone(null); setMode('list') }} />
 
   if (mode === 'list') return (
-    <DocumentList rows={rows} newLabel="New transfer"
-      emptyText="No transfers in the last three months."
-      onNew={() => { setEditing(null); setF(blank); setError(''); setMode('form') }}
-      onEdit={startEdit} onDelete={remove} canEdit canDelete />
+    <>
+      {error && <p className="alert-error">{error}</p>}
+      <DocumentList rows={rows} newLabel="New transfer"
+        emptyText="No transfers in the last three months."
+        onNew={() => { setEditing(null); setF(blank); setError(''); setMode('form') }}
+        onEdit={startEdit} onDelete={remove} canEdit canDelete />
+    </>
   )
 
   return (
