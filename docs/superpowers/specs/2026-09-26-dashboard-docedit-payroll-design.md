@@ -8,7 +8,7 @@ Status: approved for planning
 Three gaps came out of daily use of the back office:
 
 1. The dashboard shows balances but not timing, trend, or whether the month is going well.
-2. A posted document cannot be found again or corrected. Journals are immutable by design — `post_journal` and `delete_journal` are the only write paths, and `journal_lines` has `insert, update, delete` revoked from `authenticated`. The only correction available today is delete-and-retype, and only for some document types.
+2. A posted document cannot be found again or corrected. Journals are immutable by design — `post_journal` and `delete_journal` are the only write paths, and `journal_lines` has `insert, update, delete` revoked from `authenticated`. The only correction available today is delete-and-retype, and only for some document types. (`journals.created_by` does already exist; what is missing is any record of a change.)
 3. Payroll has no salary advance and no attendance. `payslips.hours` and `payslips.ot_hours` are typed in by hand each month with nothing feeding them, and advances are informally hidden inside `other_deduction` with no record of the balance owed.
 
 A fourth item — general UX simplification — is deliberately out of scope for this spec. Part 2 addresses the largest single cause of it.
@@ -106,6 +106,8 @@ update_journal(p_id, p_date, p_description, p_ref, p_attachment, p_lines)
 - keeps the same `journals.id` and therefore the same `doc_no`
 - the existing deferred `journal_balanced` constraint trigger still enforces debits = credits, so an unbalanced edit cannot commit
 - applies the same guards `post_journal` has: at least two lines, no inactive account, account 2000 requires a supplier
+
+**Bank reconciliation interaction.** `journal_lines` carries `cleared_on`, set by `set_cleared` when a line is ticked off against the bank statement. Because an edit deletes and re-inserts the lines, those ticks would be silently lost. `update_journal` therefore refuses to edit any entry with a line where `cleared_on is not null`, with the message "This entry is ticked on the bank reconciliation. Untick it there first." The same guard applies to `update_supplier_payment` and `replace_sales_day`.
 
 **Purchase Invoice.** `update_purchase_invoice` updates the journal and the `purchase_invoices` row in one transaction. Permitted only while the invoice is unpaid — the same condition `cancel_purchase_invoice` already enforces and the UI already checks (`Number(r.paid) === 0`).
 
