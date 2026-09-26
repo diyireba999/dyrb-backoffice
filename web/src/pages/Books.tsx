@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Paperclip, Trash2 } from 'lucide-react'
-import { MONEY_ACCOUNTS, accountTotals, dmy, downloadCsv, isDirector, loadDocuments, openReceipt, postJournal, rm, round2, supabase, todayMY, updateJournal, uploadReceipt, useAccounts, type Account, type DocRow } from '../lib'
+import { EDITABLE_SOURCES, MONEY_ACCOUNTS, accountTotals, dmy, downloadCsv, isDirector, loadDocuments, openReceipt, postJournal, rm, round2, supabase, todayMY, updateJournal, uploadReceipt, useAccounts, type Account, type DocRow } from '../lib'
 import { AccountSelect, Done, Empty, ReportBar } from '../ui'
 import { DocumentList } from '../DocumentList'
 
@@ -308,6 +308,14 @@ type EntryRow = {
   journal_lines: { account: string; debit: number; credit: number; accounts: { name: string } }[]
 }
 
+// Where each document type is edited — a wrong entry is fixed on the screen that made it.
+const OWNER_SCREEN: Record<string, string> = {
+  pv: '/cash/payment', or: '/cash/receipt', transfer: '/cash/transfer', jv: '/gl/journal',
+  pi: '/ap/invoices', sp: '/ap/payments', sales: '/sales/upload', fiuu: '/sales/fiuu',
+  payroll: '/payroll/run', claim: '/claims', accrual: '/gl/accruals', stock: '/stock/count',
+  cogs: '/sales/upload',
+}
+
 const TYPES: Record<string, string> = {
   '': 'All types', pv: 'Payment Voucher', or: 'Official Receipt', jv: 'Journal Entry', transfer: 'Bank Transfer',
   pi: 'Purchase Invoice', sp: 'Supplier Payment', claim: 'Claim', sales: 'Daily sales', cogs: 'Cost of sales',
@@ -378,6 +386,9 @@ export function JournalListing({ isOwner }: { isOwner: boolean }) {
                   <td className="text-right">{r.journal_lines.map((l, i) => <div key={i}>{l.credit ? rm(l.credit) : ' '}</div>)}</td>
                   <td className="no-print whitespace-nowrap text-right">
                     {r.attachment && <button title="View receipt" className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-brand" onClick={() => openReceipt(r.attachment!)}><Paperclip className="size-4" /></button>}
+                    {OWNER_SCREEN[r.source] && <Link to={OWNER_SCREEN[r.source]} className="link mr-2"
+                      title={EDITABLE_SOURCES.includes(r.source) ? 'Open this document' : 'Change this on the screen that made it'}>
+                      {EDITABLE_SOURCES.includes(r.source) ? 'Open' : 'Fix here'}</Link>}
                     {(['manual', 'pv', 'or', 'jv', 'transfer'].includes(r.source) || (isOwner && !['pi', 'sp'].includes(r.source))) &&
                       <button title="Delete" className="rounded-md p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600" onClick={() => remove(r.id)}><Trash2 className="size-4" /></button>}
                   </td>

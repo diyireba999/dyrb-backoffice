@@ -5,9 +5,10 @@ import { MONEY_ACCOUNTS, dmy, rm, round2, supabase, useAccounts, type Account, t
 import { cogsLinesFor, dayTotal, daySuspect, parseBillSummary, parseFiuu, parseProductSales, paymentTotal, salesLinesFor, type Day, type ItemSale, type Settlement } from '../zeoniq'
 import { AccountSelect, Empty } from '../ui'
 
-export function UploadSales() {
+export function UploadSales({ role }: { role: Role }) {
   const [days, setDays] = useState<Day[]>([])
   const [pick, setPick] = useState<Record<string, boolean>>({})
+  const [replace, setReplace] = useState<Record<string, boolean>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [fileName, setFileName] = useState('')
@@ -117,15 +118,17 @@ export function UploadSales() {
     setBusy(true)
     const out: Day[] = []
     for (const d of days) {
-      if (!pick[d.date] || d.posted) { out.push(d); continue }
+      const willReplace = d.posted && role === 'owner' && replace[d.date]
+      if (!willReplace && (!pick[d.date] || d.posted)) { out.push(d); continue }
       const split = splitFor(d)
       const usable = split && split.unknown.length === 0 && Math.abs(split.diff) <= 0.05 && split.lines.length > 0
-      const { error } = await supabase.rpc('post_sales_day', {
+      const rpc = d.posted ? 'replace_sales_day' : 'post_sales_day'
+      const { error } = await supabase.rpc(rpc, {
         p_date: d.date, p_sales: d.sales, p_service: d.service, p_tax: d.tax, p_rounding: d.rounding,
         p_payments: d.payments,
         p_sales_lines: usable ? split.lines.map(l => ({ account: l.account, amount: l.amount })) : null,
       })
-      if (error) console.error('post_sales_day', d.date, error)
+      if (error) console.error(rpc, d.date, error)
       const costError = error ? null : await postCogs(d)
       out.push({ ...d, posted: !error, result: error ? error.message : costError ?? 'ok' })
     }
@@ -135,6 +138,7 @@ export function UploadSales() {
   }
 
   const chosen = days.filter(d => pick[d.date] && !d.posted)
+  const replacing = role === 'owner' ? days.filter(d => d.posted && replace[d.date]) : []
   // Posted days whose split is ready to be applied.
   // Posted days whose items have costs, so cost of sales can be written.
   const costable = days.filter(d => {
@@ -174,7 +178,8 @@ export function UploadSales() {
               <thead><tr>
                 <th className="w-10"></th><th>Date</th><th className="text-right">Sales</th><th className="text-right">Service charge</th>
                 <th className="text-right">Tax</th><th className="text-right">Rounding</th><th className="text-right">Day total</th>
-                <th>Payments</th><th>Split</th><th className="text-right">Cost of sales</th><th></th>
+                <th>Payments</th><th>Split</th><th className="text-right">Cost of sales</th>
+                {role === 'owner' && <th className="w-16">Replace</th>}<th></th>
               </tr></thead>
               <tbody>
                 {days.map(d => {
@@ -208,6 +213,10 @@ export function UploadSales() {
                           </span>
                         )
                       })()}</td>
+                      {role === 'owner' && <td className="text-center">
+                        {d.posted && <input type="checkbox" checked={!!replace[d.date]}
+                          onChange={e => setReplace({ ...replace, [d.date]: e.target.checked })} />}
+                      </td>}
                       <td className="whitespace-nowrap text-right text-xs">
                         {d.result === 'cost' && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />Cost posted</span>}
                         {d.result === 'split' && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />Split applied</span>}
@@ -222,7 +231,7 @@ export function UploadSales() {
             </table>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <p className="muted">{chosen.length} day{chosen.length === 1 ? '' : 's'} ready · {rm(chosen.reduce((s, d) => s + d.netTotal, 0))}</p>
+            <p className="muted">{chosen.length} day{chosen.length === 1 ? '' : 's'} ready · {rm(chosen.reduce((s, d) => s + d.netTotal, 0))}{replacing.length > 0 && ` · ${replacing.length} to replace`}</p>
             <div className="ml-auto flex gap-2">
               {costable.length > 0 && (
                 <button className="btn-light" disabled={busy} onClick={postCogsOnly} title="Write the cost of sales for these days from the item costs">
@@ -234,14 +243,15 @@ export function UploadSales() {
                   {busy ? 'Working…' : `Re-split ${splittable.length} posted day${splittable.length === 1 ? '' : 's'}`}
                 </button>
               )}
-              <button className="btn" disabled={busy || chosen.length === 0} onClick={post}>
-                {busy ? 'Posting…' : `Post ${chosen.length} day${chosen.length === 1 ? '' : 's'}`}
+              <button className="btn" disabled={busy || chosen.length + replacing.length === 0} onClick={post}>
+                {busy ? 'Posting…' : `Post ${chosen.length + replacing.length} day${chosen.length + replacing.length === 1 ? '' : 's'}`}
               </button>
             </div>
           </div>
           {splittable.length > 0 && <p className="muted">Days already posted can take the split now — tick them and press <b>Re-split</b>. Only the sales lines change; payments, service charge and rounding stay as they are.</p>}
           <p className="muted">Cost of sales is posted as its own entry per day, from quantity sold times cost per unit. Fill in the costs on the <b>Item Costs</b> screen.</p>
           <p className="muted">Each day becomes one entry: money in by payment type, sales and service charge as income. A day already posted cannot go in twice.</p>
+          <p className="muted">A day already posted can be replaced — tick <b>Replace</b> and the old entry is swapped for the new one. Only the owner can do this.</p>
         </>
       )}
     </div>

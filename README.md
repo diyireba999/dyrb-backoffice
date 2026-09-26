@@ -32,7 +32,7 @@ Turn on two-step login for each account once created — this system holds salar
    - Plan: Free → **Create new project**. Wait about 2 minutes.
 3. Left menu **SQL Editor** → **New query**. Open `supabase/001_core.sql` in Notepad, copy everything, paste, click **Run**. It should say "Success. No rows returned".
 4. **New query** again → paste `supabase/002_claims.sql` → **Run**.
-   Then the same for `supabase/003_accounting.sql`, `supabase/004_payroll.sql`, `supabase/005_sales.sql`, `supabase/006_categories.sql`, `supabase/007_fiuu.sql`, `supabase/008_director.sql`, `supabase/009_fiuu_brands.sql`, `supabase/010_item_groups.sql`, `supabase/011_resplit.sql`, `supabase/012_stock.sql`, `supabase/013_accruals.sql`, `supabase/014_recurring.sql`, `supabase/015_fixes.sql`, `supabase/016_fixes2.sql` and `supabase/017_corkage.sql`.
+   Then the same for `supabase/003_accounting.sql`, `supabase/004_payroll.sql`, `supabase/005_sales.sql`, `supabase/006_categories.sql`, `supabase/007_fiuu.sql`, `supabase/008_director.sql`, `supabase/009_fiuu_brands.sql`, `supabase/010_item_groups.sql`, `supabase/011_resplit.sql`, `supabase/012_stock.sql`, `supabase/013_accruals.sql`, `supabase/014_recurring.sql`, `supabase/015_fixes.sql`, `supabase/016_fixes2.sql`, `supabase/017_corkage.sql` and `supabase/018_docedit.sql`.
 5. Left menu **Authentication** → **Sign In / Providers**: turn **off** "Allow new users to sign up", **Save**. Only you can add people.
 6. Still in Authentication → **Users** → **Add user** → **Create new user**: your email + a strong password, tick **Auto Confirm User** → **Create user**.
 7. Back to **SQL Editor** → New query → paste (with your name and email) → **Run**:
@@ -71,6 +71,7 @@ Turn on two-step login for each account once created — this system holds salar
 - Every change pushed to GitHub updates the website automatically.
 - Supabase free projects pause after 7 days without use — normal daily use keeps it awake. If paused, open Supabase and click **Restore**.
 - Supabase free has no automatic backups (coming in Phase 6). Until then, once a month: Supabase → Table Editor → each table → export to CSV.
+- A wrong Payment Voucher, Official Receipt, Transfer or Journal Entry can be re-opened from its own screen and corrected — it keeps the same document number. An entry already ticked on the Bank Reconciliation must be unticked there first.
 
 ## Run on this computer (optional, for testing changes)
 
@@ -85,6 +86,8 @@ npm run dev
 `npm run test:sales -- <file.xlsx>` checks a Zeoniq Bill Summary export adds up before importing.
 `npm run test:rls` checks what each role can see and do.
 `npm run test:repair` checks the repair file on a half-applied and on a complete database.
+
+If you build the site on this computer (`npm run build`) without doing the `.env.local` step above, it will finish with no errors but the site it makes will be empty — it quietly leaves the whole app out. Always copy `.env.example` to `.env.local` and fill in the two values before trusting a build made here. Cloudflare's own builds already have these values set, so they are not affected.
 
 ## Status
 - [x] Phase 1 – login, roles, chart of accounts
