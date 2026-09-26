@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react'
-import { MONEY_ACCOUNTS, accountTotals, addDays, dmy, downloadCsv, monthStart, postJournal, rm, round2, supabase, todayMY, useAccounts, useSuppliers, type Account, type Role } from '../lib'
+import { MONEY_ACCOUNTS, accountTotals, addDays, dmy, downloadCsv, loadDocuments, monthStart, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, useSuppliers, type Account, type DocRow, type Role } from '../lib'
 import { AccountSelect, Done, Empty, ReportBar } from '../ui'
+import { DocumentList } from '../DocumentList'
 
 const TYPE_LABEL: Record<Account['type'], string> = { asset: 'Asset', liability: 'Liability', equity: 'Equity', income: 'Income', expense: 'Expense' }
 // Assets and expenses grow on the debit side; the rest grow on the credit side.
@@ -84,11 +85,41 @@ const emptyLine = (): JvLine => ({ account: '', memo: '', debit: '', credit: '' 
 export function JournalEntry() {
   const accounts = useAccounts()
   const { list: suppliers } = useSuppliers()
+  const [mode, setMode] = useState<'list' | 'form'>('list')
+  const [editing, setEditing] = useState<DocRow | null>(null)
+  const [rows, setRows] = useState<DocRow[]>([])
   const [head, setHead] = useState({ date: todayMY(), description: '', reference: '', supplier: '' })
   const [lines, setLines] = useState<JvLine[]>([emptyLine(), emptyLine()])
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const load = () => { loadDocuments('jv').then(setRows) }
+  useEffect(load, [])
+
+  function startNew() {
+    setEditing(null)
+    setHead({ date: todayMY(), description: '', reference: '', supplier: '' })
+    setLines([emptyLine(), emptyLine()])
+    setError(''); setMode('form')
+  }
+
+  function startEdit(d: DocRow) {
+    setEditing(d)
+    setHead({ date: d.date, description: d.description, reference: d.reference ?? '', supplier: '' })
+    setLines(d.journal_lines.map(l => ({
+      account: l.account, memo: l.memo ?? '',
+      debit: Number(l.debit) ? String(Number(l.debit)) : '',
+      credit: Number(l.credit) ? String(Number(l.credit)) : '',
+    })))
+    setError(''); setMode('form')
+  }
+
+  async function remove(d: DocRow) {
+    if (!confirm(`Delete ${d.doc_no}? This cannot be undone.`)) return
+    const { error } = await supabase.rpc('delete_journal', { p_id: d.id })
+    if (error) return alert(error.message)
+    load()
+  }
 
   const setLine = (i: number, patch: Partial<JvLine>) => setLines(lines.map((l, j) => j === i ? { ...l, ...patch } : l))
   const dr = round2(lines.reduce((s, l) => s + Number(l.debit || 0), 0))
@@ -103,20 +134,40 @@ export function JournalEntry() {
     if (!balanced) return setError('Total debit must equal total credit')
     setBusy(true); setError('')
     try {
-      const id = await postJournal(head.date, head.description, used.map(l => ({
+      const payload = used.map(l => ({
         account: l.account, memo: l.memo || undefined,
         ...(Number(l.debit) ? { debit: round2(Number(l.debit)) } : { credit: round2(Number(l.credit)) }),
-      })), { source: 'jv', reference: head.reference, supplier: head.supplier ? Number(head.supplier) : undefined })
-      const { data } = await supabase.from('journals').select('doc_no').eq('id', id).single()
-      setDone(data?.doc_no ?? '')
-      setHead({ ...head, description: '', reference: '', supplier: '' }); setLines([emptyLine(), emptyLine()])
+      }))
+      if (editing) {
+        await updateJournal(editing.id, head.date, head.description, payload, { reference: head.reference })
+        setDone(editing.doc_no)
+      } else {
+        const id = await postJournal(head.date, head.description, payload,
+          { source: 'jv', reference: head.reference, supplier: head.supplier ? Number(head.supplier) : undefined })
+        const { data } = await supabase.from('journals').select('doc_no').eq('id', id).single()
+        setDone(data?.doc_no ?? '')
+      }
+      setEditing(null)
+      setHead({ ...head, description: '', reference: '', supplier: '' })
+      setLines([emptyLine(), emptyLine()])
+      load()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
   }
 
-  if (done !== null) return <Done msg="Journal entry saved" doc={done} again={() => setDone(null)} />
+  if (done !== null) return <Done msg={editing ? 'Journal entry changed' : 'Journal entry saved'} doc={done}
+    again={() => { setDone(null); setMode('list') }} />
+
+  if (mode === 'list') return (
+    <DocumentList rows={rows} newLabel="New journal entry"
+      emptyText="No journal entries in the last three months."
+      onNew={startNew} onEdit={startEdit} onDelete={remove} canEdit canDelete />
+  )
+
   return (
     <form onSubmit={submit} className="card space-y-5 p-6">
+      <button type="button" className="link" onClick={() => setMode('list')}>← Back to list</button>
+      {editing && <p className="muted">Changing <b className="font-mono">{editing.doc_no}</b>. It keeps the same number.</p>}
       <div className="grid gap-4 sm:grid-cols-4">
         <div><label>Date</label><input type="date" value={head.date} onChange={e => setHead({ ...head, date: e.target.value })} required /></div>
         <div className="sm:col-span-2"><label>Description</label><input value={head.description} onChange={e => setHead({ ...head, description: e.target.value })} placeholder="e.g. Depreciation September" required /></div>
