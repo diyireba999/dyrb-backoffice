@@ -297,8 +297,8 @@ begin
   if my_role() not in ('owner', 'accountant', 'manager') then raise exception 'Not allowed'; end if;
   select * into pay from supplier_payments where id = p_id;
   if pay.id is null then raise exception 'Payment not found'; end if;
-  if p_from not in ('1000', '1010', '1100', '3000') then
-    raise exception 'Pay from cash, petty cash, bank or owner'; end if;
+  if p_from not in ('1000', '1010', '1100', '3000') and not (p_from >= '2500' and p_from < '2600') then
+    raise exception 'Pay from cash, petty cash, bank, a director or owner capital'; end if;
   if exists (select 1 from journal_lines where journal_id = pay.journal_id and cleared_on is not null) then
     raise exception 'This payment is ticked on the bank reconciliation. Untick it there first.'; end if;
 
@@ -326,6 +326,18 @@ begin
   update supplier_payments set date = p_date, amount = v_total where id = p_id;
 end $$;
 ```
+
+Both functions must also reject a line against a switched-off account, the way `post_journal` does — they write `journal_lines` directly, so they do not inherit that check:
+
+```sql
+  if exists (select 1 from jsonb_array_elements(p_lines) l
+             join accounts a on a.code = l->>'account' where not a.active) then
+    raise exception 'Account is switched off'; end if;
+```
+
+(For `update_supplier_payment` the equivalent check is on `p_from`: `if not exists (select 1 from accounts where code = p_from and active) then raise exception 'Account is switched off'; end if;`)
+
+The `p_from` allow-list matches `pay_supplier` **as it stands now** in `supabase/008_director.sql:18`, which widened the original rule to let a director pay from their own pocket (2500–2599). Checking against the older `003_accounting.sql` version would make any director-funded payment impossible to edit afterwards.
 
 The `delete from payment_allocations` happens **before** the loop on purpose. `purchase_invoice_status.outstanding` subtracts all allocations, so leaving the old ones in place would make an unchanged payment look like an over-payment of itself.
 
