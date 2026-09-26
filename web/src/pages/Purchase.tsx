@@ -417,7 +417,7 @@ export function SupplierPayments({ role }: { role: Role }) {
                     <td className="pl-6 font-mono text-xs">{i.doc_no}</td><td>{i.invoice_no}</td>
                     <td className="text-slate-500">{dmy(i.date)}</td><td className="text-slate-500">{dmy(i.due_date)}</td>
                     <td className="text-right">{rm(i.outstanding)}</td>
-                    <td className="pr-6"><input className="text-right" type="number" step="0.01" min="0" max={i.outstanding} inputMode="decimal"
+                    <td className="pr-6"><input className="text-right" type="number" step="0.01" min="0" inputMode="decimal"
                       value={pay[i.id] ?? ''} onChange={e => setPay({ ...pay, [i.id]: e.target.value })} /></td>
                   </tr>
                 ))}
