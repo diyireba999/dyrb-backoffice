@@ -328,3 +328,47 @@ try { await db.query(`select update_journal(${e1}, '2026-10-11','x',null,null,
   console.log('FAIL: staff edited a document') }
 catch (e) { console.log('staff edit rejected:', e.message) }
 await db.exec(`update profiles set role='owner'`)
+
+// An unpaid purchase invoice can be corrected; a paid one cannot.
+const supE = (await db.query(`insert into suppliers (name) values ('Edit Test Supplier') returning id`)).rows[0].id
+const invE = (await db.query(`select create_purchase_invoice(${supE}, 'A1', '2026-10-12', '2026-11-12',
+  'Napkins', '[{"account":"5100","amount":100}]'::jsonb) id`)).rows[0].id
+await db.query(`select update_purchase_invoice(${invE}, 'A2', '2026-10-13', '2026-11-13',
+  'Napkins and straws', '[{"account":"5100","amount":80},{"account":"6900","amount":15}]'::jsonb)`)
+const pie = (await db.query(`select pi.invoice_no, pi.total::float total, pi.due_date::text due,
+  j.description, j.doc_no,
+  (select sum(l.credit)::float from journal_lines l where l.journal_id=pi.journal_id and l.account='2000') owed
+  from purchase_invoices pi join journals j on j.id=pi.journal_id where pi.id=${invE}`)).rows[0]
+console.log(pie.invoice_no === 'A2' && pie.total === 95 && pie.owed === 95
+  && pie.due === '2026-11-13' && pie.description === 'Napkins and straws'
+  ? 'purchase invoice edit ok' : 'FAIL pi edit ' + JSON.stringify(pie))
+
+// Cost-of-sales accounts stay barred on an edit, exactly as on create.
+try { await db.query(`select update_purchase_invoice(${invE}, 'A2', '2026-10-13', '2026-11-13',
+  'Beer', '[{"account":"5020","amount":50}]'::jsonb)`)
+  console.log('FAIL: edit booked a purchase to a cost account') }
+catch (e) { console.log('edit to cost account rejected:', e.message.split(' —')[0]) }
+
+const payE = (await db.query(`select pay_supplier(${supE}, '2026-10-20', '1100', 'CHQ1',
+  '[{"invoice_id":${invE},"amount":40}]'::jsonb) id`)).rows[0].id
+try { await db.query(`select update_purchase_invoice(${invE}, 'A3', '2026-10-13', '2026-11-13',
+  'x', '[{"account":"5100","amount":80}]'::jsonb)`)
+  console.log('FAIL: paid invoice edited') }
+catch (e) { console.log('paid invoice edit rejected:', e.message) }
+
+// A supplier payment can be corrected and the supplier balance follows.
+await db.query(`select update_supplier_payment(${payE}, '2026-10-21', '1000', 'CHQ2',
+  '[{"invoice_id":${invE},"amount":60}]'::jsonb)`)
+const spe = (await db.query(`select sp.amount::float amount, sp.date::text date, j.reference,
+  (select sum(l.credit)::float from journal_lines l where l.journal_id=sp.journal_id and l.account='1000') fromcash,
+  (select outstanding::float from purchase_invoice_status where id=${invE}) outstanding
+  from supplier_payments sp join journals j on j.id=sp.journal_id where sp.id=${payE}`)).rows[0]
+console.log(spe.amount === 60 && spe.fromcash === 60 && spe.reference === 'CHQ2'
+  && spe.outstanding === 35
+  ? 'supplier payment edit ok' : 'FAIL sp edit ' + JSON.stringify(spe))
+
+// Over-paying an invoice on an edit is refused, same as on create.
+try { await db.query(`select update_supplier_payment(${payE}, '2026-10-21', '1000', 'CHQ2',
+  '[{"invoice_id":${invE},"amount":500}]'::jsonb)`)
+  console.log('FAIL: edit paid more than owed') }
+catch (e) { console.log('over-payment on edit rejected:', e.message) }
