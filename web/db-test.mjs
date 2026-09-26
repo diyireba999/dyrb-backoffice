@@ -543,3 +543,43 @@ const gone = (await db.query(`select
   (select count(*)::int from staff_advances where id=${adv2}) a,
   (select count(*)::int from journals where id=${adv2j}) j`)).rows[0]
 console.log(gone.a === 0 && gone.j === 0 ? 'advance deleted ok' : 'FAIL advance delete ' + JSON.stringify(gone))
+
+// Advance recovery: the whole outstanding amount comes off the next payroll.
+const run1 = (await db.query(`select create_payroll_run('2026-12-01', '2026-12-31') id`)).rows[0].id
+const slip1 = (await db.query(`select id from payslips where run_id=${run1} and employee_id=${emp}`)).rows[0].id
+await db.query(`select save_payslip(${slip1}, '{}'::jsonb, true)`)
+const rec1 = (await db.query(`select advance_recovery::float ar, net_pay::float net, gross::float gross
+  from payslip_view where id=${slip1}`)).rows[0]
+console.log(rec1.ar === 600 ? 'advance recovery on payslip ok' : 'FAIL recovery ' + JSON.stringify(rec1))
+
+// Approving posts the credit to 1310 and marks the advance recovered.
+const pj = (await db.query(`select approve_payroll_run(${run1}) j`)).rows[0].j
+const posted = (await db.query(`select
+  (select coalesce(sum(l.credit),0)::float from journal_lines l where l.journal_id=${pj} and l.account='1310') cr,
+  (select outstanding::float from advance_balances where id=${adv}) o`)).rows[0]
+console.log(posted.cr === 600 && posted.o === 0
+  ? 'advance recovery posted ok' : 'FAIL recovery posted ' + JSON.stringify(posted))
+
+// The payroll journal still balances with the extra line.
+const bal1 = (await db.query(`select coalesce(sum(debit-credit),0)::float d from journal_lines where journal_id=${pj}`)).rows[0].d
+console.log(bal1 === 0 ? 'payroll journal balances with advance ok' : 'FAIL payroll balance ' + bal1)
+
+// Cancelling the run puts the advance back.
+await db.query(`select cancel_payroll_run(${run1})`)
+const back = (await db.query(`select outstanding::float o from advance_balances where id=${adv}`)).rows[0].o
+console.log(back === 600 ? 'advance restored on cancel ok' : 'FAIL advance restore ' + back)
+await db.query(`select delete_payroll_run(${run1})`)
+
+// A big advance is capped at net pay and the rest carries forward.
+const emp2 = (await db.query(`insert into employees (name, pay_type, rate, epf_on, socso_on, eis_on)
+  values ('Siti', 'monthly', 1500, false, false, false) returning id`)).rows[0].id
+const bigAdv = (await db.query(`select record_advance(${emp2}, '2026-11-02', 2000, '1100', null) id`)).rows[0].id
+const run3 = (await db.query(`select create_payroll_run('2026-11-01', '2026-11-30') id`)).rows[0].id
+const slip2 = (await db.query(`select id from payslips where run_id=${run3} and employee_id=${emp2}`)).rows[0].id
+await db.query(`select save_payslip(${slip2}, '{}'::jsonb, true)`)
+const capped = (await db.query(`select advance_recovery::float ar, net_pay::float net from payslip_view where id=${slip2}`)).rows[0]
+console.log(capped.ar === 1500 && capped.net === 0
+  ? 'advance capped at net pay ok' : 'FAIL cap ' + JSON.stringify(capped))
+await db.query(`select approve_payroll_run(${run3})`)
+const carried = (await db.query(`select outstanding::float o from advance_balances where id=${bigAdv}`)).rows[0].o
+console.log(carried === 500 ? 'advance remainder carried forward ok' : 'FAIL carry ' + carried)
