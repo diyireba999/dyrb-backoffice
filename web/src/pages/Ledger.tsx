@@ -91,7 +91,7 @@ export function JournalEntry() {
   const [head, setHead] = useState({ date: todayMY(), description: '', reference: '', supplier: '' })
   const [lines, setLines] = useState<JvLine[]>([emptyLine(), emptyLine()])
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<string | null>(null)
+  const [done, setDone] = useState<{ msg: string; doc: string } | null>(null)
   const [error, setError] = useState('')
   const load = () => { loadDocuments('jv').then(setRows) }
   useEffect(load, [])
@@ -140,12 +140,12 @@ export function JournalEntry() {
       }))
       if (editing) {
         await updateJournal(editing.id, head.date, head.description, payload, { reference: head.reference })
-        setDone(editing.doc_no)
+        setDone({ msg: `${editing.doc_no} changed`, doc: editing.doc_no })
       } else {
         const id = await postJournal(head.date, head.description, payload,
           { source: 'jv', reference: head.reference, supplier: head.supplier ? Number(head.supplier) : undefined })
         const { data } = await supabase.from('journals').select('doc_no').eq('id', id).single()
-        setDone(data?.doc_no ?? '')
+        setDone({ msg: 'Journal entry saved', doc: data?.doc_no ?? '' })
       }
       setEditing(null)
       setHead({ ...head, description: '', reference: '', supplier: '' })
@@ -155,7 +155,7 @@ export function JournalEntry() {
     setBusy(false)
   }
 
-  if (done !== null) return <Done msg={editing ? 'Journal entry changed' : 'Journal entry saved'} doc={done}
+  if (done !== null) return <Done msg={done.msg} doc={done.doc}
     again={() => { setDone(null); setMode('list') }} />
 
   if (mode === 'list') return (
@@ -173,7 +173,7 @@ export function JournalEntry() {
         <div className="sm:col-span-2"><label>Description</label><input value={head.description} onChange={e => setHead({ ...head, description: e.target.value })} placeholder="e.g. Depreciation September" required /></div>
         <div><label>Ref no.</label><input value={head.reference} onChange={e => setHead({ ...head, reference: e.target.value })} placeholder="Optional" /></div>
         {needsSupplier && <div className="sm:col-span-2"><label>Supplier (for Suppliers Owed line)</label>
-          <select value={head.supplier} onChange={e => setHead({ ...head, supplier: e.target.value })} required>
+          <select value={head.supplier} onChange={e => setHead({ ...head, supplier: e.target.value })} required={!editing}>
             <option value="">— choose —</option>
             {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
