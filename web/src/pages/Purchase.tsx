@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Plus, Trash2, XCircle } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Pencil, Plus, Trash2, XCircle } from 'lucide-react'
 import { MONEY_ACCOUNTS, MONEY_NAMES, addDays, dmy, isDirector, downloadCsv, openReceipt, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, useSuppliers, type Role } from '../lib'
 import { AccountSelect, Done, Empty, ReportBar } from '../ui'
 
@@ -89,16 +89,26 @@ export function Suppliers() {
 
 type PiLine = { account: string; memo: string; amount: string }
 
-function NewPurchaseInvoice({ onSaved }: { onSaved: (doc: string) => void }) {
+// The supplier can't be carried through an edit, so this only needs the fields
+// update_purchase_invoice actually takes, plus what the form displays.
+export type InvoiceForEdit = {
+  id: number; supplier_id: number; invoice_no: string | null; date: string; due_date: string
+  description: string; doc_no: string; lines: PiLine[]
+}
+
+function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: string; doc: string }) => void; editing?: InvoiceForEdit | null }) {
   const accounts = useAccounts()
   const { list: suppliers } = useSuppliers()
-  const [head, setHead] = useState({ supplier: '', invoice_no: '', date: todayMY(), terms: '30' })
-  const [lines, setLines] = useState<PiLine[]>([{ account: '', memo: '', amount: '' }])
+  const [head, setHead] = useState(editing
+    ? { supplier: String(editing.supplier_id), invoice_no: editing.invoice_no ?? '', date: editing.date, terms: '30', due: editing.due_date }
+    : { supplier: '', invoice_no: '', date: todayMY(), terms: '30', due: '' })
+  const [lines, setLines] = useState<PiLine[]>(editing ? editing.lines : [{ account: '', memo: '', amount: '' }])
   const [photo, setPhoto] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const total = round2(lines.reduce((s, l) => s + Number(l.amount || 0), 0))
   const setLine = (i: number, patch: Partial<PiLine>) => setLines(lines.map((l, j) => j === i ? { ...l, ...patch } : l))
+  const due = editing ? head.due : addDays(head.date, Number(head.terms))
 
   function pickSupplier(id: string) {
     const s = suppliers.find(s => String(s.id) === id)
@@ -112,17 +122,26 @@ function NewPurchaseInvoice({ onSaved }: { onSaved: (doc: string) => void }) {
     if (!used.length) return setError('Add at least one line with an amount')
     setBusy(true); setError('')
     try {
-      const attachment = photo ? await uploadReceipt(photo) : null
-      const s = suppliers.find(s => String(s.id) === head.supplier)!
-      const { data, error } = await supabase.rpc('create_purchase_invoice', {
-        p_supplier: s.id, p_invoice_no: head.invoice_no, p_date: head.date, p_due: addDays(head.date, Number(head.terms)),
-        p_description: `${s.name}${head.invoice_no ? ' inv ' + head.invoice_no : ''}`,
-        p_lines: used.map(l => ({ account: l.account, amount: round2(Number(l.amount)), memo: l.memo || null })),
-        p_attachment: attachment,
-      })
-      if (error) throw new Error(error.message)
-      const { data: inv } = await supabase.from('purchase_invoice_status').select('doc_no').eq('id', data).single()
-      onSaved(inv?.doc_no ?? '')
+      const payload = used.map(l => ({ account: l.account, amount: round2(Number(l.amount)), memo: l.memo || null }))
+      if (editing) {
+        const { error } = await supabase.rpc('update_purchase_invoice', {
+          p_id: editing.id, p_invoice_no: head.invoice_no, p_date: head.date, p_due: due,
+          p_description: editing.description, p_lines: payload,
+        })
+        if (error) throw new Error(error.message)
+        onSaved({ msg: `Invoice ${editing.invoice_no ?? ''} changed`, doc: editing.doc_no })
+      } else {
+        const attachment = photo ? await uploadReceipt(photo) : null
+        const s = suppliers.find(s => String(s.id) === head.supplier)!
+        const { data, error } = await supabase.rpc('create_purchase_invoice', {
+          p_supplier: s.id, p_invoice_no: head.invoice_no, p_date: head.date, p_due: due,
+          p_description: `${s.name}${head.invoice_no ? ' inv ' + head.invoice_no : ''}`,
+          p_lines: payload, p_attachment: attachment,
+        })
+        if (error) throw new Error(error.message)
+        const { data: inv } = await supabase.from('purchase_invoice_status').select('doc_no').eq('id', data).single()
+        onSaved({ msg: 'Purchase invoice saved', doc: inv?.doc_no ?? '' })
+      }
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
   }
@@ -131,20 +150,27 @@ function NewPurchaseInvoice({ onSaved }: { onSaved: (doc: string) => void }) {
     <form onSubmit={submit} className="card space-y-5 p-6">
       <div className="grid gap-4 sm:grid-cols-4">
         <div className="sm:col-span-2"><label>Supplier</label>
-          <select value={head.supplier} onChange={e => pickSupplier(e.target.value)} required>
+          <select value={head.supplier} onChange={e => pickSupplier(e.target.value)} required disabled={!!editing}>
             <option value="">— choose —</option>
             {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+          {editing && <p className="muted mt-1">To move this to another supplier, cancel it and enter it again.</p>}
         </div>
         <div><label>Supplier invoice no.</label><input value={head.invoice_no} onChange={e => setHead({ ...head, invoice_no: e.target.value })} required /></div>
         <div><label>Invoice date</label><input type="date" value={head.date} onChange={e => setHead({ ...head, date: e.target.value })} required /></div>
-        <div><label>Terms</label>
-          <select value={head.terms} onChange={e => setHead({ ...head, terms: e.target.value })}>
-            {[0, 7, 14, 30, 60].map(d => <option key={d} value={d}>{d === 0 ? 'Cash / due now' : `${d} days`}</option>)}
-          </select>
-        </div>
-        <div><label>Due date</label><input value={dmy(addDays(head.date, Number(head.terms)))} disabled /></div>
-        <div className="sm:col-span-2"><label>Invoice photo</label><input type="file" accept="image/*" onChange={e => setPhoto(e.target.files?.[0] ?? null)} /></div>
+        {editing ? (
+          <div><label>Due date</label><input type="date" value={head.due} onChange={e => setHead({ ...head, due: e.target.value })} required /></div>
+        ) : (
+          <>
+            <div><label>Terms</label>
+              <select value={head.terms} onChange={e => setHead({ ...head, terms: e.target.value })}>
+                {[0, 7, 14, 30, 60].map(d => <option key={d} value={d}>{d === 0 ? 'Cash / due now' : `${d} days`}</option>)}
+              </select>
+            </div>
+            <div><label>Due date</label><input value={dmy(due)} disabled /></div>
+            <div className="sm:col-span-2"><label>Invoice photo</label><input type="file" accept="image/*" onChange={e => setPhoto(e.target.files?.[0] ?? null)} /></div>
+          </>
+        )}
       </div>
       <div className="-mx-6 overflow-x-auto">
         <table>
@@ -168,14 +194,15 @@ function NewPurchaseInvoice({ onSaved }: { onSaved: (doc: string) => void }) {
         </table>
       </div>
       {error && <p className="alert-error">{error}</p>}
-      <div className="flex justify-end"><button className="btn" disabled={busy || total <= 0}>{busy ? 'Saving…' : 'Save invoice'}</button></div>
+      <div className="flex justify-end"><button className="btn" disabled={busy || total <= 0}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Save invoice'}</button></div>
     </form>
   )
 }
 
 export function PurchaseInvoices({ role }: { role: Role }) {
-  const [mode, setMode] = useState<'list' | 'new'>('list')
-  const [saved, setSaved] = useState<string | null>(null)
+  const [mode, setMode] = useState<'list' | 'new' | 'edit'>('list')
+  const [editing, setEditing] = useState<InvoiceForEdit | null>(null)
+  const [saved, setSaved] = useState<{ msg: string; doc: string } | null>(null)
   const [show, setShow] = useState<'open' | 'all'>('open')
   const [rows, setRows] = useState<Invoice[]>([])
   const load = () => { loadInvoices({ open: show === 'open' }).then(setRows) }
@@ -192,11 +219,27 @@ export function PurchaseInvoices({ role }: { role: Role }) {
     if (data?.attachment) openReceipt(data.attachment); else alert('No photo attached')
   }
 
-  if (saved !== null) return <Done msg="Purchase invoice saved" doc={saved} again={() => { setSaved(null); setMode('new') }} />
-  if (mode === 'new') return (
+  async function startEdit(inv: Invoice) {
+    const { data, error } = await supabase.from('purchase_invoices')
+      .select('id, supplier_id, invoice_no, date, due_date, journals(description, journal_lines(account, debit, memo))')
+      .eq('id', inv.id).single()
+    if (error || !data) return alert(error?.message ?? 'Could not open the invoice')
+    const j = data.journals as unknown as { description: string; journal_lines: { account: string; debit: number; memo: string | null }[] }
+    setEditing({
+      id: data.id, supplier_id: data.supplier_id, invoice_no: data.invoice_no,
+      date: data.date, due_date: data.due_date, description: j.description, doc_no: inv.doc_no,
+      lines: j.journal_lines.filter(l => l.account !== '2000' && Number(l.debit) > 0)
+        .map(l => ({ account: l.account, amount: String(Number(l.debit)), memo: l.memo ?? '' })),
+    })
+    setMode('edit')
+  }
+
+  if (saved !== null) return <Done msg={saved.msg} doc={saved.doc} again={() => { setSaved(null); setMode('new') }} />
+  if (mode !== 'list') return (
     <div className="space-y-4">
-      <button className="link" onClick={() => setMode('list')}>← Back to list</button>
-      <NewPurchaseInvoice onSaved={doc => { setSaved(doc); setMode('list'); load() }} />
+      <button className="link" onClick={() => { setMode('list'); setEditing(null) }}>← Back to list</button>
+      <NewPurchaseInvoice editing={editing}
+        onSaved={result => { setSaved(result); setMode('list'); setEditing(null); load() }} />
     </div>
   )
 
@@ -228,6 +271,9 @@ export function PurchaseInvoices({ role }: { role: Role }) {
                   <td className={`text-right font-semibold ${Number(r.outstanding) > 0 ? '' : 'text-emerald-600'}`}>{Number(r.outstanding) > 0 ? rm(r.outstanding) : 'Paid'}</td>
                   <td className="whitespace-nowrap text-right">
                     <button className="link mr-2" onClick={() => viewPhoto(r)}>Photo</button>
+                    {canCancel(role) && Number(r.paid) === 0 && <button title="Edit invoice"
+                      className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand"
+                      onClick={() => startEdit(r)}><Pencil className="size-4" /></button>}
                     {canCancel(role) && Number(r.paid) === 0 && <button title="Cancel invoice" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => cancel(r)}><XCircle className="size-4" /></button>}
                   </td>
                 </tr>
@@ -251,8 +297,14 @@ export function SupplierPayments({ role }: { role: Role }) {
   const [head, setHead] = useState({ date: todayMY(), from: '1100', reference: '' })
   const [history, setHistory] = useState<Payment[]>([])
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<string | null>(null)
+  const [done, setDone] = useState<{ msg: string; doc: string } | null>(null)
   const [error, setError] = useState('')
+  const [editing, setEditing] = useState<{ id: number; doc_no: string } | null>(null)
+  // Allocations loaded by startEdit, staged here until the invoice list (re)loads
+  // for the edited supplier, since the supplier-change effect below would
+  // otherwise wipe `pay` before the invoices even arrive. A ref, not state,
+  // so consuming it doesn't itself re-trigger the effect.
+  const pendingPay = useRef<Record<number, string> | null>(null)
 
   const loadHistory = () => {
     supabase.from('supplier_payments').select('id, date, amount, suppliers(name), journals(doc_no, reference)')
@@ -261,26 +313,67 @@ export function SupplierPayments({ role }: { role: Role }) {
   }
   useEffect(loadHistory, [])
   useEffect(() => {
-    setPay({})
-    if (supplier) loadInvoices({ supplier: Number(supplier), open: true }).then(r => setOpen(r.reverse()))
-    else setOpen([])
-  }, [supplier])
+    if (!supplier) { setPay({}); setOpen([]); return }
+    // While editing, this payment's own invoices are already settled, so show them all.
+    loadInvoices({ supplier: Number(supplier), open: !editing }).then(r => {
+      setOpen(r.reverse())
+      setPay(pendingPay.current ?? {})
+      pendingPay.current = null
+    })
+  }, [supplier, editing])
 
   const total = round2(Object.values(pay).reduce((s, v) => s + Number(v || 0), 0))
   const payAll = () => setPay(Object.fromEntries(open.map(i => [i.id, String(i.outstanding)])))
+
+  function cancelEdit() {
+    setEditing(null); setSupplier(''); setPay({})
+    setHead({ date: todayMY(), from: '1100', reference: '' })
+  }
+
+  async function startEdit(p: Payment) {
+    const { data, error } = await supabase.from('supplier_payments')
+      .select('id, supplier_id, date, journals(reference, journal_lines(account, credit)), payment_allocations(invoice_id, amount)')
+      .eq('id', p.id).single()
+    if (error || !data) return alert(error?.message ?? 'Could not open the payment')
+    const d = data as unknown as {
+      id: number; supplier_id: number; date: string
+      journals: { reference: string | null; journal_lines: { account: string; credit: number }[] }
+      payment_allocations: { invoice_id: number; amount: number }[]
+    }
+    // The money came out of the credit line that is not Suppliers Owed.
+    const from = d.journals.journal_lines.find(l => l.account !== '2000' && Number(l.credit) > 0)?.account ?? '1100'
+    pendingPay.current = Object.fromEntries(d.payment_allocations.map(a => [a.invoice_id, String(Number(a.amount))]))
+    setEditing({ id: d.id, doc_no: p.journals.doc_no })
+    setSupplier(String(d.supplier_id))
+    setHead({ date: d.date, from, reference: d.journals.reference ?? '' })
+    window.scrollTo({ top: 0 })
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     if (total <= 0) return setError('Enter the amount to pay against at least one invoice')
     setBusy(true); setError('')
+    const allocations = Object.entries(pay).filter(([, v]) => Number(v) > 0)
+      .map(([id, v]) => ({ invoice_id: Number(id), amount: round2(Number(v)) }))
+    if (editing) {
+      const { error } = await supabase.rpc('update_supplier_payment', {
+        p_id: editing.id, p_date: head.date, p_from: head.from,
+        p_reference: head.reference, p_allocations: allocations,
+      })
+      setBusy(false)
+      if (error) return setError(error.message)
+      setDone({ msg: 'Supplier payment changed', doc: editing.doc_no })
+      cancelEdit(); loadHistory()
+      return
+    }
     const { data, error } = await supabase.rpc('pay_supplier', {
       p_supplier: Number(supplier), p_date: head.date, p_from: head.from, p_reference: head.reference,
-      p_allocations: Object.entries(pay).filter(([, v]) => Number(v) > 0).map(([id, v]) => ({ invoice_id: Number(id), amount: round2(Number(v)) })),
+      p_allocations: allocations,
     })
     setBusy(false)
     if (error) return setError(error.message)
     const { data: p } = await supabase.from('supplier_payments').select('journals(doc_no)').eq('id', data).single()
-    setDone((p as unknown as { journals: { doc_no: string } })?.journals.doc_no ?? '')
+    setDone({ msg: 'Supplier payment saved', doc: (p as unknown as { journals: { doc_no: string } })?.journals.doc_no ?? '' })
     setSupplier(''); setHead({ ...head, reference: '' }); loadHistory()
   }
 
@@ -291,16 +384,18 @@ export function SupplierPayments({ role }: { role: Role }) {
     loadHistory()
   }
 
-  if (done !== null) return <Done msg="Supplier payment saved" doc={done} again={() => setDone(null)} />
+  if (done !== null) return <Done msg={done.msg} doc={done.doc} again={() => { setDone(null); cancelEdit() }} />
   return (
     <div className="space-y-6">
       <form onSubmit={submit} className="card space-y-5 p-6">
         <div className="grid gap-4 sm:grid-cols-4">
           <div className="sm:col-span-2"><label>Supplier</label>
-            <select value={supplier} onChange={e => setSupplier(e.target.value)} required>
+            <select value={supplier} onChange={e => setSupplier(e.target.value)} required disabled={!!editing}>
               <option value="">— choose —</option>
-              {suppliers.filter(s => s.owed > 0).map(s => <option key={s.id} value={s.id}>{s.name} ({rm(s.owed)})</option>)}
+              {suppliers.filter(s => s.owed > 0 || String(s.id) === supplier).map(s => <option key={s.id} value={s.id}>{s.name} ({rm(s.owed)})</option>)}
             </select>
+            {editing && <p className="muted mt-1">Changing <b className="font-mono">{editing.doc_no}</b>. To move it to another supplier, cancel it and enter it again.
+              {' '}<button type="button" className="link" onClick={cancelEdit}>Stop editing</button></p>}
           </div>
           <div><label>Payment date</label><input type="date" value={head.date} onChange={e => setHead({ ...head, date: e.target.value })} required /></div>
           <div><label>Paid from</label>
@@ -322,7 +417,7 @@ export function SupplierPayments({ role }: { role: Role }) {
                     <td className="pl-6 font-mono text-xs">{i.doc_no}</td><td>{i.invoice_no}</td>
                     <td className="text-slate-500">{dmy(i.date)}</td><td className="text-slate-500">{dmy(i.due_date)}</td>
                     <td className="text-right">{rm(i.outstanding)}</td>
-                    <td className="pr-6"><input className="text-right" type="number" step="0.01" min="0" max={i.outstanding} inputMode="decimal"
+                    <td className="pr-6"><input className="text-right" type="number" step="0.01" min="0" inputMode="decimal"
                       value={pay[i.id] ?? ''} onChange={e => setPay({ ...pay, [i.id]: e.target.value })} /></td>
                   </tr>
                 ))}
@@ -336,7 +431,7 @@ export function SupplierPayments({ role }: { role: Role }) {
           </div>
         )}
         {error && <p className="alert-error">{error}</p>}
-        <div className="flex justify-end"><button className="btn" disabled={busy || total <= 0}>{busy ? 'Saving…' : 'Save payment'}</button></div>
+        <div className="flex justify-end"><button className="btn" disabled={busy || total <= 0}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Save payment'}</button></div>
       </form>
 
       <div>
@@ -351,7 +446,12 @@ export function SupplierPayments({ role }: { role: Role }) {
                   <td className="font-mono text-xs">{p.journals.doc_no}</td><td className="text-slate-500">{dmy(p.date)}</td>
                   <td className="font-medium">{p.suppliers.name}</td><td>{p.journals.reference}</td>
                   <td className="text-right">{rm(p.amount)}</td>
-                  <td className="text-right">{canCancel(role) && <button title="Cancel payment" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => cancel(p)}><XCircle className="size-4" /></button>}</td>
+                  <td className="whitespace-nowrap text-right">
+                    {canCancel(role) && <button title="Edit payment"
+                      className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand"
+                      onClick={() => startEdit(p)}><Pencil className="size-4" /></button>}
+                    {canCancel(role) && <button title="Cancel payment" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => cancel(p)}><XCircle className="size-4" /></button>}
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -239,7 +239,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
               <Route path="/reports/tb" element={<TrialBalance />} />
               <Route path="/reports/pl" element={<ProfitAndLoss />} />
               <Route path="/reports/bs" element={<BalanceSheet />} />
-              <Route path="/sales/upload" element={<UploadSales />} />
+              <Route path="/sales/upload" element={<UploadSales role={profile.role} />} />
               <Route path="/sales/fiuu" element={<CardSettlement />} />
               <Route path="/sales/settings" element={<SalesSettings role={profile.role} />} />
               <Route path="/stock/costs" element={<ItemCosts role={profile.role} />} />

@@ -297,8 +297,8 @@ begin
   if my_role() not in ('owner', 'accountant', 'manager') then raise exception 'Not allowed'; end if;
   select * into pay from supplier_payments where id = p_id;
   if pay.id is null then raise exception 'Payment not found'; end if;
-  if p_from not in ('1000', '1010', '1100', '3000') then
-    raise exception 'Pay from cash, petty cash, bank or owner'; end if;
+  if p_from not in ('1000', '1010', '1100', '3000') and not (p_from >= '2500' and p_from < '2600') then
+    raise exception 'Pay from cash, petty cash, bank, a director or owner capital'; end if;
   if exists (select 1 from journal_lines where journal_id = pay.journal_id and cleared_on is not null) then
     raise exception 'This payment is ticked on the bank reconciliation. Untick it there first.'; end if;
 
@@ -326,6 +326,18 @@ begin
   update supplier_payments set date = p_date, amount = v_total where id = p_id;
 end $$;
 ```
+
+Both functions must also reject a line against a switched-off account, the way `post_journal` does — they write `journal_lines` directly, so they do not inherit that check:
+
+```sql
+  if exists (select 1 from jsonb_array_elements(p_lines) l
+             join accounts a on a.code = l->>'account' where not a.active) then
+    raise exception 'Account is switched off'; end if;
+```
+
+(For `update_supplier_payment` the equivalent check is on `p_from`: `if not exists (select 1 from accounts where code = p_from and active) then raise exception 'Account is switched off'; end if;`)
+
+The `p_from` allow-list matches `pay_supplier` **as it stands now** in `supabase/008_director.sql:18`, which widened the original rule to let a director pay from their own pocket (2500–2599). Checking against the older `003_accounting.sql` version would make any director-funded payment impossible to edit afterwards.
 
 The `delete from payment_allocations` happens **before** the loop on purpose. `purchase_invoice_status.outstanding` subtracts all allocations, so leaving the old ones in place would make an unchanged payment look like an over-payment of itself.
 
@@ -977,7 +989,7 @@ export function JournalEntry() {
   const [head, setHead] = useState({ date: todayMY(), description: '', reference: '', supplier: '' })
   const [lines, setLines] = useState<JvLine[]>([emptyLine(), emptyLine()])
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<string | null>(null)
+  const [done, setDone] = useState<{ msg: string; doc: string } | null>(null)
   const [error, setError] = useState('')
   const load = () => { loadDocuments('jv').then(setRows) }
   useEffect(load, [])
@@ -1021,12 +1033,12 @@ Replace the body of the `try` block in `submit`:
       }))
       if (editing) {
         await updateJournal(editing.id, head.date, head.description, payload, { reference: head.reference })
-        setDone(editing.doc_no)
+        setDone({ msg: `${editing.doc_no} changed`, doc: editing.doc_no })
       } else {
         const id = await postJournal(head.date, head.description, payload,
           { source: 'jv', reference: head.reference, supplier: head.supplier ? Number(head.supplier) : undefined })
         const { data } = await supabase.from('journals').select('doc_no').eq('id', id).single()
-        setDone(data?.doc_no ?? '')
+        setDone({ msg: 'Journal entry saved', doc: data?.doc_no ?? '' })
       }
       setEditing(null)
       setHead({ ...head, description: '', reference: '', supplier: '' })
@@ -1034,14 +1046,16 @@ Replace the body of the `try` block in `submit`:
       load()
 ```
 
-`update_journal` rejects any line on account 2000, so a JV that touches Suppliers Owed cannot be edited here. That is deliberate — the error message from the database says where to go instead.
+`update_journal` rejects any line on account 2000, so a JV that touches Suppliers Owed cannot be edited here. That is deliberate — the error message from the database says where to go instead. Make the supplier select `required={!editing}`, though: on an edit `head.supplier` is never sent, so leaving it required would force the user to pick an arbitrary supplier just to reach the real refusal.
+
+`done` holds `{ msg, doc }` rather than a bare doc number, matching the cash-book screens. Resolving the message at render time from `editing` does not work: `setDone` and `setEditing(null)` batch into one render, so the edit message would never appear.
 
 - [ ] **Step 3: Add the list branch and the back link**
 
 Immediately after the `if (done !== null) return <Done .../>` line, change that line and add the list branch:
 
 ```tsx
-  if (done !== null) return <Done msg={editing ? 'Journal entry changed' : 'Journal entry saved'} doc={done}
+  if (done) return <Done msg={done.msg} doc={done.doc}
     again={() => { setDone(null); setMode('list') }} />
 
   if (mode === 'list') return (
@@ -1200,7 +1214,7 @@ Add the state and the two functions:
     setEditing({ id: d.id, doc_no: p.journals.doc_no })
     setSupplier(String(d.supplier_id))
     setHead({ date: d.date, from, reference: d.journals.reference ?? '' })
-    setPendingPay(Object.fromEntries(d.payment_allocations.map(a => [a.invoice_id, String(Number(a.amount))])))
+    pendingPay.current = Object.fromEntries(d.payment_allocations.map(a => [a.invoice_id, String(Number(a.amount))]))
     window.scrollTo({ top: 0 })
   }
 
@@ -1210,21 +1224,23 @@ Add the state and the two functions:
   }
 ```
 
-The existing effect on `supplier` clears `pay` whenever the supplier changes, which would wipe the allocations `startEdit` just loaded. Hold them in a staging value and apply them after the invoice list arrives. Replace that effect with:
+The existing effect on `supplier` clears `pay` whenever the supplier changes, which would wipe the allocations `startEdit` just loaded. Stage them in a **ref**, not state, and apply them after the invoice list arrives. Replace that effect with:
 
 ```tsx
-  const [pendingPay, setPendingPay] = useState<Record<number, string> | null>(null)
+  const pendingPay = useRef<Record<number, string> | null>(null)
 
   useEffect(() => {
     if (!supplier) { setPay({}); setOpen([]); return }
     // While editing, this payment's own invoices are already settled, so show them all.
     loadInvoices({ supplier: Number(supplier), open: !editing }).then(r => {
       setOpen(r.reverse())
-      setPay(pendingPay ?? {})
-      setPendingPay(null)
+      setPay(pendingPay.current ?? {})
+      pendingPay.current = null
     })
-  }, [supplier, editing, pendingPay])
+  }, [supplier, editing])
 ```
+
+A ref, because staging in state and clearing it inside the effect re-fires the effect, and the second run's closure sees the cleared value and zeroes `pay` again. `startEdit` sets `pendingPay.current` synchronously before `setSupplier`.
 
 Branch `submit` on `editing`:
 
@@ -1258,12 +1274,19 @@ Add the pencil to each history row, beside the existing cancel button:
   onClick={() => startEdit(p)}><Pencil className="size-4" /></button>}
 ```
 
-And change the success message so an edit does not claim a new payment was saved:
+And change the success message so an edit does not claim a new payment was saved. Resolve the text at submit time, not at render time — `setDone` and `cancelEdit()` batch into one render, so reading `editing` in the render would always give the create wording. Use the `{ msg, doc }` shape the cash-book screens use, and keep `doc` a bare document number, because `Done` renders it as a badge:
 
 ```tsx
-  if (done !== null) return <Done msg={editing ? 'Supplier payment changed' : 'Supplier payment saved'}
-    doc={done} again={() => { setDone(null); cancelEdit() }} />
+  if (done) return <Done msg={done.msg} doc={done.doc} again={() => { setDone(null); cancelEdit() }} />
 ```
+
+Three more things the fragments above do not cover, all needed for the screen to work:
+
+- `InvoiceForEdit` needs a `doc_no` field, so the invoice screen's success badge shows a document number rather than a sentence.
+- The supplier dropdown filter must be `s.owed > 0 || String(s.id) === supplier`. Filtering on `owed > 0` alone hides the very supplier being edited whenever this payment settled them in full, leaving the disabled select with no matching option.
+- Wire `cancelEdit` to a visible "Stop editing" button on the payment form; otherwise there is no way out of edit mode on that screen.
+
+**Do not put `max={i.outstanding}` on the allocation amount input.** `purchase_invoice_status.outstanding` nets out *all* allocations including this payment's own, which are still present while editing — so the prefilled value exceeds the max, and native form validation silently blocks submit before `onSubmit` runs. Over-allocation is caught by the RPC, which measures against the correct baseline after deleting this payment's allocations.
 
 - [ ] **Step 4: Check it compiles and lints**
 

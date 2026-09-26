@@ -123,3 +123,39 @@ export async function accountTotals(from: string | null, to: string) {
   return new Map(((data ?? []) as { code: string; debit: number; credit: number }[])
     .map(r => [r.code, Number(r.debit) - Number(r.credit)]))
 }
+
+// Documents typed in by hand. Anything else is changed on the screen that made it.
+export const EDITABLE_SOURCES = ['manual', 'pv', 'or', 'jv', 'transfer']
+
+export async function updateJournal(id: number, date: string, description: string, lines: Line[],
+                                    opts: { reference?: string; attachment?: string } = {}) {
+  const { error } = await supabase.rpc('update_journal', {
+    p_id: id, p_date: date, p_description: description,
+    p_reference: opts.reference ?? null, p_attachment: opts.attachment ?? null, p_lines: lines,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export type DocRow = {
+  id: number; doc_no: string; date: string; description: string
+  reference: string | null; source: string; attachment: string | null
+  updated_at: string | null
+  journal_lines: { account: string; debit: number; credit: number; memo: string | null; cleared_on: string | null }[]
+}
+
+// One document type, newest first. Default window is the last three whole months.
+export async function loadDocuments(source: string, months = 3): Promise<DocRow[]> {
+  const [y, m] = monthStart().split('-').map(Number)
+  const from = new Date(Date.UTC(y, m - 1 - (months - 1), 1)).toISOString().slice(0, 10)
+  const { data, error } = await supabase.from('journals')
+    .select('id, doc_no, date, description, reference, source, attachment, updated_at, journal_lines(account, debit, credit, memo, cleared_on)')
+    .eq('source', source).gte('date', from)
+    .order('date', { ascending: false }).order('id', { ascending: false })
+  if (error) throw new Error('Could not load the document list: ' + error.message)
+  return (data as unknown as DocRow[]) ?? []
+}
+
+// Total of a document, for the list column. Debits and credits are equal.
+export const docTotal = (d: DocRow) => d.journal_lines.reduce((s, l) => s + Number(l.debit), 0)
+
+export const isReconciled = (d: DocRow) => d.journal_lines.some(l => l.cleared_on !== null)

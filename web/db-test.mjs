@@ -276,3 +276,225 @@ await db.query(`select resplit_sales_day('2026-10-08','[{"account":"4020","amoun
 const cork = Number((await db.query(`select coalesce(sum(l.credit),0)::float v from journal_lines l
   join journals j on j.id=l.journal_id where j.source_ref='2026-10-08' and l.account='4030'`)).rows[0].v)
 console.log(cork === 200 ? 'corkage split ok' : 'FAIL corkage split ' + cork)
+
+// ---- 018: correcting a document in place ----
+await db.exec(fs.readFileSync(new URL('../supabase/018_docedit.sql', import.meta.url), 'utf8'))
+await db.exec(`update profiles set role='owner'`)
+
+const e1 = (await db.query(`select post_journal('2026-10-10','Ice','pv',null,null,
+  '[{"account":"5010","debit":20},{"account":"1000","credit":20}]'::jsonb, null, 'R1') id`)).rows[0].id
+const e1doc = (await db.query(`select doc_no from journals where id=${e1}`)).rows[0].doc_no
+await db.query(`select update_journal(${e1}, '2026-10-11', 'Ice (corrected)', 'R2', null,
+  '[{"account":"5010","debit":18},{"account":"1000","credit":18}]'::jsonb)`)
+const ed = (await db.query(`select j.doc_no, j.date::text date, j.description, j.reference,
+  (select sum(l.debit)::float from journal_lines l where l.journal_id=j.id) d,
+  (j.updated_at is not null) stamped from journals j where j.id=${e1}`)).rows[0]
+console.log(ed.doc_no === e1doc && ed.d === 18 && ed.date === '2026-10-11'
+  && ed.description === 'Ice (corrected)' && ed.reference === 'R2' && ed.stamped
+  ? 'edit in place ok' : 'FAIL edit ' + JSON.stringify(ed))
+
+// An edit that does not balance must not commit.
+try { await db.query(`select update_journal(${e1}, '2026-10-11','x',null,null,
+  '[{"account":"5010","debit":18},{"account":"1000","credit":17}]'::jsonb)`)
+  console.log('FAIL: unbalanced edit accepted') }
+catch (e) { console.log('unbalanced edit rejected:', e.message) }
+
+// A generated document is edited from its own screen, never here.
+const genDoc = (await db.query(`select id from journals where source='sales' limit 1`)).rows[0].id
+try { await db.query(`select update_journal(${genDoc}, '2026-10-11','x',null,null,
+  '[{"account":"1000","debit":1},{"account":"4000","credit":1}]'::jsonb)`)
+  console.log('FAIL: generated document edited') }
+catch (e) { console.log('generated document edit rejected:', e.message) }
+
+// Editing would silently drop bank-reconciliation ticks, so it is refused.
+const clr = (await db.query(`select id from journal_lines where journal_id=${e1} and account='1000'`)).rows[0].id
+await db.query(`select set_cleared(array[${clr}]::bigint[], '2026-10-31')`)
+try { await db.query(`select update_journal(${e1}, '2026-10-11','x',null,null,
+  '[{"account":"5010","debit":19},{"account":"1000","credit":19}]'::jsonb)`)
+  console.log('FAIL: reconciled entry edited') }
+catch (e) { console.log('reconciled edit rejected:', e.message) }
+await db.query(`select set_cleared(array[${clr}]::bigint[], null)`)
+
+// A supplier line belongs to Purchase Invoice / Supplier Payment.
+try { await db.query(`select update_journal(${e1}, '2026-10-11','x',null,null,
+  '[{"account":"5010","debit":5},{"account":"2000","credit":5}]'::jsonb)`)
+  console.log('FAIL: supplier line accepted on a cash-book edit') }
+catch (e) { console.log('supplier line on edit rejected:', e.message) }
+
+// Staff may not edit at all.
+await db.exec(`update profiles set role='staff'`)
+try { await db.query(`select update_journal(${e1}, '2026-10-11','x',null,null,
+  '[{"account":"5010","debit":18},{"account":"1000","credit":18}]'::jsonb)`)
+  console.log('FAIL: staff edited a document') }
+catch (e) { console.log('staff edit rejected:', e.message) }
+await db.exec(`update profiles set role='owner'`)
+
+// An unpaid purchase invoice can be corrected; a paid one cannot.
+const supE = (await db.query(`insert into suppliers (name) values ('Edit Test Supplier') returning id`)).rows[0].id
+const invE = (await db.query(`select create_purchase_invoice(${supE}, 'A1', '2026-10-12', '2026-11-12',
+  'Napkins', '[{"account":"5100","amount":100}]'::jsonb) id`)).rows[0].id
+await db.query(`select update_purchase_invoice(${invE}, 'A2', '2026-10-13', '2026-11-13',
+  'Napkins and straws', '[{"account":"5100","amount":80},{"account":"6900","amount":15}]'::jsonb)`)
+const pie = (await db.query(`select pi.invoice_no, pi.total::float total, pi.due_date::text due,
+  j.description, j.doc_no,
+  (select sum(l.credit)::float from journal_lines l where l.journal_id=pi.journal_id and l.account='2000') owed
+  from purchase_invoices pi join journals j on j.id=pi.journal_id where pi.id=${invE}`)).rows[0]
+console.log(pie.invoice_no === 'A2' && pie.total === 95 && pie.owed === 95
+  && pie.due === '2026-11-13' && pie.description === 'Napkins and straws'
+  ? 'purchase invoice edit ok' : 'FAIL pi edit ' + JSON.stringify(pie))
+
+// Cost-of-sales accounts stay barred on an edit, exactly as on create.
+try { await db.query(`select update_purchase_invoice(${invE}, 'A2', '2026-10-13', '2026-11-13',
+  'Beer', '[{"account":"5020","amount":50}]'::jsonb)`)
+  console.log('FAIL: edit booked a purchase to a cost account') }
+catch (e) { console.log('edit to cost account rejected:', e.message.split(' —')[0]) }
+
+const payE = (await db.query(`select pay_supplier(${supE}, '2026-10-20', '1100', 'CHQ1',
+  '[{"invoice_id":${invE},"amount":40}]'::jsonb) id`)).rows[0].id
+try { await db.query(`select update_purchase_invoice(${invE}, 'A3', '2026-10-13', '2026-11-13',
+  'x', '[{"account":"5100","amount":80}]'::jsonb)`)
+  console.log('FAIL: paid invoice edited') }
+catch (e) { console.log('paid invoice edit rejected:', e.message) }
+
+// A supplier payment can be corrected and the supplier balance follows.
+await db.query(`select update_supplier_payment(${payE}, '2026-10-21', '1000', 'CHQ2',
+  '[{"invoice_id":${invE},"amount":60}]'::jsonb)`)
+const spe = (await db.query(`select sp.amount::float amount, sp.date::text date, j.reference,
+  (select sum(l.credit)::float from journal_lines l where l.journal_id=sp.journal_id and l.account='1000') fromcash,
+  (select outstanding::float from purchase_invoice_status where id=${invE}) outstanding
+  from supplier_payments sp join journals j on j.id=sp.journal_id where sp.id=${payE}`)).rows[0]
+console.log(spe.amount === 60 && spe.fromcash === 60 && spe.reference === 'CHQ2'
+  && spe.outstanding === 35
+  ? 'supplier payment edit ok' : 'FAIL sp edit ' + JSON.stringify(spe))
+
+// Over-paying an invoice on an edit is refused, same as on create.
+try { await db.query(`select update_supplier_payment(${payE}, '2026-10-21', '1000', 'CHQ2',
+  '[{"invoice_id":${invE},"amount":500}]'::jsonb)`)
+  console.log('FAIL: edit paid more than owed') }
+catch (e) { console.log('over-payment on edit rejected:', e.message) }
+
+// A supplier payment funded from a director account can be edited.
+const supDir = (await db.query(`insert into suppliers (name) values ('Dir Test Supplier') returning id`)).rows[0].id
+const invDir = (await db.query(`select create_purchase_invoice(${supDir}, 'DIR1', '2026-10-15', '2026-11-15',
+  'Director purchase', '[{"account":"5100","amount":200}]'::jsonb) id`)).rows[0].id
+const payDir = (await db.query(`select pay_supplier(${supDir}, '2026-10-20', '2500', 'DIRPAY',
+  '[{"invoice_id":${invDir},"amount":200}]'::jsonb) id`)).rows[0].id
+await db.query(`select update_supplier_payment(${payDir}, '2026-10-22', '2500', 'DIRPAY2',
+  '[{"invoice_id":${invDir},"amount":200}]'::jsonb)`)
+const dirpay = (await db.query(`select sp.date::text date, j.reference from supplier_payments sp
+  join journals j on j.id=sp.journal_id where sp.id=${payDir}`)).rows[0]
+console.log(dirpay.date === '2026-10-22' && dirpay.reference === 'DIRPAY2'
+  ? 'director account payment edit ok' : 'FAIL dir pay ' + JSON.stringify(dirpay))
+
+// Deactivated account rejects purchase invoice edit.
+const supDeact = (await db.query(`insert into suppliers (name) values ('Deact Test Supplier') returning id`)).rows[0].id
+const invDeact = (await db.query(`select create_purchase_invoice(${supDeact}, 'DEACT1', '2026-10-15', '2026-11-15',
+  'Test deactivation', '[{"account":"5100","amount":50}]'::jsonb) id`)).rows[0].id
+await db.exec(`update accounts set active=false where code='5100'`)
+try { await db.query(`select update_purchase_invoice(${invDeact}, 'DEACT2', '2026-10-13', '2026-11-13',
+  'x', '[{"account":"5100","amount":80}]'::jsonb)`)
+  console.log('FAIL: deactivated account accepted on invoice edit') }
+catch (e) { console.log('deactivated account on invoice edit rejected:', e.message) }
+await db.exec(`update accounts set active=true where code='5100'`)
+
+// Deactivated account rejects supplier payment edit.
+const supPayDeact = (await db.query(`insert into suppliers (name) values ('Pay Deact Test Supplier') returning id`)).rows[0].id
+const invPayDeact = (await db.query(`select create_purchase_invoice(${supPayDeact}, 'PAYDEACT1', '2026-10-15', '2026-11-15',
+  'Test pay deactivation', '[{"account":"5100","amount":100}]'::jsonb) id`)).rows[0].id
+const payPayDeact = (await db.query(`select pay_supplier(${supPayDeact}, '2026-10-20', '1100', 'CHQ_DEACT',
+  '[{"invoice_id":${invPayDeact},"amount":100}]'::jsonb) id`)).rows[0].id
+await db.exec(`update accounts set active=false where code='1100'`)
+try { await db.query(`select update_supplier_payment(${payPayDeact}, '2026-10-21', '1100', 'CHQ_DEACT2',
+  '[{"invoice_id":${invPayDeact},"amount":100}]'::jsonb)`)
+  console.log('FAIL: deactivated account accepted on payment edit') }
+catch (e) { console.log('deactivated account on payment edit rejected:', e.message) }
+await db.exec(`update accounts set active=true where code='1100'`)
+
+// A posted day can be replaced outright, leaving exactly one sales entry for it.
+await db.exec(`update profiles set role='owner'`)
+await db.query(`select post_sales_day('2026-10-14', 1000, 100, 0, 0,
+  '[{"code":"CASH","amount":1100}]'::jsonb)`)
+await db.query(`select replace_sales_day('2026-10-14', 1200, 120, 0, 0,
+  '[{"code":"CASH","amount":1320}]'::jsonb)`)
+const repDay = (await db.query(`select count(*)::int c,
+  coalesce(sum(l.debit),0)::float cash from journals j
+  join journal_lines l on l.journal_id=j.id and l.account='1000'
+  where j.source='sales' and j.source_ref='2026-10-14'`)).rows[0]
+const repDayN = (await db.query(`select count(*)::int c from journals
+  where source='sales' and source_ref='2026-10-14'`)).rows[0].c
+console.log(repDayN === 1 && repDay.cash === 1320
+  ? 'replace sales day ok' : `FAIL replace day ${repDayN} ${repDay.cash}`)
+
+// Only the owner may replace a day that is already in the books.
+await db.exec(`update profiles set role='manager'`)
+try { await db.query(`select replace_sales_day('2026-10-14', 900, 90, 0, 0,
+  '[{"code":"CASH","amount":990}]'::jsonb)`)
+  console.log('FAIL: manager replaced a posted day') }
+catch (e) { console.log('manager blocked from replacing a day:', e.message) }
+await db.exec(`update profiles set role='owner'`)
+
+// A day whose cash line is reconciled must be unticked first.
+const repDayLine = (await db.query(`select l.id from journal_lines l join journals j on j.id=l.journal_id
+  where j.source='sales' and j.source_ref='2026-10-14' and l.account='1000' limit 1`)).rows[0].id
+await db.query(`select set_cleared(array[${repDayLine}]::bigint[], '2026-10-31')`)
+try { await db.query(`select replace_sales_day('2026-10-14', 800, 80, 0, 0,
+  '[{"code":"CASH","amount":880}]'::jsonb)`)
+  console.log('FAIL: replaced a reconciled day') }
+catch (e) { console.log('reconciled day replace rejected:', e.message) }
+await db.query(`select set_cleared(array[${repDayLine}]::bigint[], null)`)
+
+// ---- Final review fixes: a reconciled document could be deleted around the edit guard ----
+
+// A manual entry ticked on the bank reconciliation cannot be deleted; unticking allows it.
+const delRecId = (await db.query(`select post_journal('2026-10-17','Test recon delete','manual',null,null,
+  '[{"account":"6900","debit":9},{"account":"1000","credit":9}]'::jsonb) id`)).rows[0].id
+const delRecLine = (await db.query(`select id from journal_lines where journal_id=${delRecId} and account='1000'`)).rows[0].id
+await db.query(`select set_cleared(array[${delRecLine}]::bigint[], '2026-10-31')`)
+try { await db.query(`select delete_journal(${delRecId})`); console.log('FAIL: deleted a reconciled entry') }
+catch (e) { console.log('reconciled entry delete rejected:', e.message) }
+await db.query(`select set_cleared(array[${delRecLine}]::bigint[], null)`)
+await db.query(`select delete_journal(${delRecId})`)
+const delRecGone = (await db.query(`select count(*)::int c from journals where id=${delRecId}`)).rows[0].c
+console.log(delRecGone === 0 ? 'reconciled entry deleted after unticking ok' : 'FAIL reconciled delete after untick ' + delRecGone)
+
+// A purchase invoice ticked on the bank reconciliation cannot be cancelled.
+const supRecPi = (await db.query(`insert into suppliers (name) values ('Recon Test Supplier') returning id`)).rows[0].id
+const invRecPi = (await db.query(`select create_purchase_invoice(${supRecPi}, 'RECON1', '2026-10-17', '2026-11-17',
+  'Recon test', '[{"account":"5100","amount":40}]'::jsonb) id`)).rows[0].id
+const invRecPiJournal = (await db.query(`select journal_id from purchase_invoices where id=${invRecPi}`)).rows[0].journal_id
+const invRecPiLine = (await db.query(`select id from journal_lines where journal_id=${invRecPiJournal} and account='2000'`)).rows[0].id
+await db.query(`select set_cleared(array[${invRecPiLine}]::bigint[], '2026-10-31')`)
+try { await db.query(`select cancel_purchase_invoice(${invRecPi})`); console.log('FAIL: cancelled a reconciled purchase invoice') }
+catch (e) { console.log('reconciled purchase invoice cancel rejected:', e.message) }
+await db.query(`select set_cleared(array[${invRecPiLine}]::bigint[], null)`)
+
+// A supplier payment ticked on the bank reconciliation cannot be cancelled.
+const supRecSp = (await db.query(`insert into suppliers (name) values ('Recon Pay Supplier') returning id`)).rows[0].id
+const invRecSp = (await db.query(`select create_purchase_invoice(${supRecSp}, 'RECON2', '2026-10-17', '2026-11-17',
+  'Recon pay test', '[{"account":"5100","amount":60}]'::jsonb) id`)).rows[0].id
+const payRecSp = (await db.query(`select pay_supplier(${supRecSp}, '2026-10-18', '1100', 'RECONPAY',
+  '[{"invoice_id":${invRecSp},"amount":60}]'::jsonb) id`)).rows[0].id
+const payRecSpJournal = (await db.query(`select journal_id from supplier_payments where id=${payRecSp}`)).rows[0].journal_id
+const payRecSpLine = (await db.query(`select id from journal_lines where journal_id=${payRecSpJournal} and account='1100'`)).rows[0].id
+await db.query(`select set_cleared(array[${payRecSpLine}]::bigint[], '2026-10-31')`)
+try { await db.query(`select cancel_supplier_payment(${payRecSp})`); console.log('FAIL: cancelled a reconciled supplier payment') }
+catch (e) { console.log('reconciled supplier payment cancel rejected:', e.message) }
+await db.query(`select set_cleared(array[${payRecSpLine}]::bigint[], null)`)
+
+// A JV with a 2000 line is fine when the journal already has a supplier attached.
+const jvWithSupplier = (await db.query(`select post_journal('2026-10-17','JV with supplier','jv',null,null,
+  '[{"account":"5000","debit":50},{"account":"2000","credit":50}]'::jsonb, ${sup}) id`)).rows[0].id
+await db.query(`select update_journal(${jvWithSupplier}, '2026-10-17','JV with supplier (edited)',null,null,
+  '[{"account":"5000","debit":70},{"account":"2000","credit":70}]'::jsonb)`)
+const jvSupChk = (await db.query(`select supplier_id::int supplier_id,
+  (select sum(l.credit)::float from journal_lines l where l.journal_id=journals.id and l.account='2000') owed
+  from journals where id=${jvWithSupplier}`)).rows[0]
+console.log(jvSupChk.supplier_id === sup && jvSupChk.owed === 70
+  ? '2000 line with a supplier edited ok' : 'FAIL jv 2000 edit ' + JSON.stringify(jvSupChk))
+
+// A journal with a 2000 line and no supplier is refused, with post_journal's own message.
+try { await db.query(`select update_journal(${e1}, '2026-10-11','x',null,null,
+  '[{"account":"5010","debit":5},{"account":"2000","credit":5}]'::jsonb)`)
+  console.log('FAIL: 2000 line without a supplier accepted on edit') }
+catch (e) { console.log(e.message === 'Choose which supplier (add them in Suppliers first)'
+  ? '2000 line without a supplier on edit rejected correctly' : 'FAIL wrong message: ' + e.message) }
