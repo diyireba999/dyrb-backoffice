@@ -176,7 +176,7 @@ export function StaffAdvances({ role }: { role: Role }) {
   const [f, setF] = useState(blankAdvance)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [done, setDone] = useState<{ msg: string } | null>(null)
+  const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
   const canEdit = role === 'owner' || role === 'accountant'
   const nameOf = (id: number) => employees.find(e => e.id === id)?.name ?? '—'
   const outstandingFor = (id: number) => rows.filter(r => r.employee_id === id).reduce((s, r) => s + Number(r.outstanding), 0)
@@ -197,12 +197,20 @@ export function StaffAdvances({ role }: { role: Role }) {
     const amount = round2(Number(f.amount))
     if (!(amount > 0)) return setError('Enter an amount')
     setBusy(true); setError('')
-    const { error } = await supabase.rpc('record_advance', {
+    const { data, error } = await supabase.rpc('record_advance', {
       p_employee: Number(f.employee), p_date: f.date, p_amount: amount, p_from: f.from, p_note: f.note || null,
     })
     setBusy(false)
     if (error) return setError(error.message)
-    setDone({ msg: `Salary advance of ${rm(amount)} given to ${nameOf(Number(f.employee))}` })
+    const msg = `Salary advance of ${rm(amount)} given to ${nameOf(Number(f.employee))}`
+    // The advance is already saved at this point; a failed doc-number lookup
+    // should not stop the success screen from showing, just its badge.
+    let doc: string | undefined
+    try {
+      const { data: adv } = await supabase.from('staff_advances').select('journals(doc_no)').eq('id', data).single()
+      doc = (adv as unknown as { journals: { doc_no: string } } | null)?.journals?.doc_no
+    } catch { /* no badge, but the save already succeeded */ }
+    setDone({ msg, doc })
     setF(blankAdvance)
     load()
   }
@@ -214,7 +222,7 @@ export function StaffAdvances({ role }: { role: Role }) {
     load()
   }
 
-  if (done) return <Done msg={done.msg} again={() => { setDone(null); setMode('list') }} />
+  if (done) return <Done msg={done.msg} doc={done.doc} again={() => { setDone(null); setMode('list') }} />
 
   if (mode === 'form') {
     const chosen = f.employee ? Number(f.employee) : null
