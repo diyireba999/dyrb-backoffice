@@ -276,3 +276,55 @@ await db.query(`select resplit_sales_day('2026-10-08','[{"account":"4020","amoun
 const cork = Number((await db.query(`select coalesce(sum(l.credit),0)::float v from journal_lines l
   join journals j on j.id=l.journal_id where j.source_ref='2026-10-08' and l.account='4030'`)).rows[0].v)
 console.log(cork === 200 ? 'corkage split ok' : 'FAIL corkage split ' + cork)
+
+// ---- 018: correcting a document in place ----
+await db.exec(fs.readFileSync(new URL('../supabase/018_docedit.sql', import.meta.url), 'utf8'))
+await db.exec(`update profiles set role='owner'`)
+
+const e1 = (await db.query(`select post_journal('2026-10-10','Ice','pv',null,null,
+  '[{"account":"5010","debit":20},{"account":"1000","credit":20}]'::jsonb, null, 'R1') id`)).rows[0].id
+const e1doc = (await db.query(`select doc_no from journals where id=${e1}`)).rows[0].doc_no
+await db.query(`select update_journal(${e1}, '2026-10-11', 'Ice (corrected)', 'R2', null,
+  '[{"account":"5010","debit":18},{"account":"1000","credit":18}]'::jsonb)`)
+const ed = (await db.query(`select j.doc_no, j.date::text date, j.description, j.reference,
+  (select sum(l.debit)::float from journal_lines l where l.journal_id=j.id) d,
+  (j.updated_at is not null) stamped from journals j where j.id=${e1}`)).rows[0]
+console.log(ed.doc_no === e1doc && ed.d === 18 && ed.date === '2026-10-11'
+  && ed.description === 'Ice (corrected)' && ed.reference === 'R2' && ed.stamped
+  ? 'edit in place ok' : 'FAIL edit ' + JSON.stringify(ed))
+
+// An edit that does not balance must not commit.
+try { await db.query(`select update_journal(${e1}, '2026-10-11','x',null,null,
+  '[{"account":"5010","debit":18},{"account":"1000","credit":17}]'::jsonb)`)
+  console.log('FAIL: unbalanced edit accepted') }
+catch (e) { console.log('unbalanced edit rejected:', e.message) }
+
+// A generated document is edited from its own screen, never here.
+const genDoc = (await db.query(`select id from journals where source='sales' limit 1`)).rows[0].id
+try { await db.query(`select update_journal(${genDoc}, '2026-10-11','x',null,null,
+  '[{"account":"1000","debit":1},{"account":"4000","credit":1}]'::jsonb)`)
+  console.log('FAIL: generated document edited') }
+catch (e) { console.log('generated document edit rejected:', e.message) }
+
+// Editing would silently drop bank-reconciliation ticks, so it is refused.
+const clr = (await db.query(`select id from journal_lines where journal_id=${e1} and account='1000'`)).rows[0].id
+await db.query(`select set_cleared(array[${clr}]::bigint[], '2026-10-31')`)
+try { await db.query(`select update_journal(${e1}, '2026-10-11','x',null,null,
+  '[{"account":"5010","debit":19},{"account":"1000","credit":19}]'::jsonb)`)
+  console.log('FAIL: reconciled entry edited') }
+catch (e) { console.log('reconciled edit rejected:', e.message) }
+await db.query(`select set_cleared(array[${clr}]::bigint[], null)`)
+
+// A supplier line belongs to Purchase Invoice / Supplier Payment.
+try { await db.query(`select update_journal(${e1}, '2026-10-11','x',null,null,
+  '[{"account":"5010","debit":5},{"account":"2000","credit":5}]'::jsonb)`)
+  console.log('FAIL: supplier line accepted on a cash-book edit') }
+catch (e) { console.log('supplier line on edit rejected:', e.message) }
+
+// Staff may not edit at all.
+await db.exec(`update profiles set role='staff'`)
+try { await db.query(`select update_journal(${e1}, '2026-10-11','x',null,null,
+  '[{"account":"5010","debit":18},{"account":"1000","credit":18}]'::jsonb)`)
+  console.log('FAIL: staff edited a document') }
+catch (e) { console.log('staff edit rejected:', e.message) }
+await db.exec(`update profiles set role='owner'`)
