@@ -467,7 +467,7 @@ export function Timesheet({ role }: { role: Role }) {
                   const differs = !closeEnough(ds.hours, dt.hours) || !closeEnough(ds.ot, dt.ot)
                   return (
                     <td key={d} className="px-1 text-center text-xs tabular-nums">
-                      {ds.hours || ds.ot ? `${ds.hours}/${ds.ot}` : ''}
+                      {ds.hours || ds.ot ? `${ds.hours.toFixed(2)}/${ds.ot.toFixed(2)}` : ''}
                       {differs && <div className="text-[9px] font-normal normal-case text-amber-600">unsaved</div>}
                     </td>
                   )
@@ -563,11 +563,11 @@ export function PayrollRun({ role }: { role: Role }) {
 
   const total = (k: keyof Payslip) => slips.reduce((s, p) => s + n(p[k] as number), 0)
   const csv = () => downloadCsv(`payroll-${run?.month}.csv`, [
-    ['Staff', 'Bank', 'Account', 'Basic', 'OT', 'Allowance', 'Service charge', 'Gross', 'EPF (staff)', 'SOCSO (staff)', 'EIS (staff)', 'PCB', 'Other', 'Net pay', 'EPF (employer)', 'SOCSO (employer)', 'EIS (employer)'],
+    ['Staff', 'Bank', 'Account', 'Basic', 'OT', 'Allowance', 'Service charge', 'Gross', 'EPF (staff)', 'SOCSO (staff)', 'EIS (staff)', 'PCB', 'Other', 'Advance recovery', 'Net pay', 'EPF (employer)', 'SOCSO (employer)', 'EIS (employer)'],
     ...slips.map(p => [p.name, p.bank_name ?? '', p.bank_account ?? '', n(p.basic), n(p.ot_amount), n(p.allowance), n(p.service_charge), n(p.gross),
-      n(p.epf_employee), n(p.socso_employee), n(p.eis_employee), n(p.pcb), n(p.other_deduction), n(p.net_pay), n(p.epf_employer), n(p.socso_employer), n(p.eis_employer)]),
+      n(p.epf_employee), n(p.socso_employee), n(p.eis_employee), n(p.pcb), n(p.other_deduction), n(p.advance_recovery), n(p.net_pay), n(p.epf_employer), n(p.socso_employer), n(p.eis_employer)]),
     ['Total', '', '', '', '', '', '', round2(total('gross')), round2(total('epf_employee')), round2(total('socso_employee')),
-      round2(total('eis_employee')), round2(total('pcb')), round2(total('other_deduction')), round2(total('net_pay')),
+      round2(total('eis_employee')), round2(total('pcb')), round2(total('other_deduction')), round2(total('advance_recovery')), round2(total('net_pay')),
       round2(total('epf_employer')), round2(total('socso_employer')), round2(total('eis_employer'))],
   ])
 
@@ -652,7 +652,7 @@ export function PayrollRun({ role }: { role: Role }) {
               <thead><tr>
                 <th>Staff</th><th className="text-right">Basic</th><th className="text-right">OT</th><th className="text-right">Allowance</th>
                 <th className="text-right">Gross</th><th className="text-right">EPF</th><th className="text-right">SOCSO</th><th className="text-right">EIS</th>
-                <th className="text-right">PCB</th><th className="text-right">Other</th><th className="text-right">Net pay</th><th className="no-print"></th>
+                <th className="text-right">PCB</th><th className="text-right">Other</th><th className="text-right">Recovery</th><th className="text-right">Net pay</th><th className="no-print"></th>
               </tr></thead>
               <tbody>
                 {slips.map(p => (
@@ -667,6 +667,7 @@ export function PayrollRun({ role }: { role: Role }) {
                     <td className="text-right">{rm(p.eis_employee)}</td>
                     <td className="text-right">{rm(p.pcb)}</td>
                     <td className="text-right">{rm(p.other_deduction)}</td>
+                    <td className="text-right">{rm(p.advance_recovery)}</td>
                     <td className="text-right font-semibold">{rm(p.net_pay)}</td>
                     <td className="no-print text-right">
                       {canEdit && run.status === 'draft' &&
@@ -685,6 +686,7 @@ export function PayrollRun({ role }: { role: Role }) {
                   <td className="text-right">{rm(total('eis_employee'))}</td>
                   <td className="text-right">{rm(total('pcb'))}</td>
                   <td className="text-right">{rm(total('other_deduction'))}</td>
+                  <td className="text-right">{rm(total('advance_recovery'))}</td>
                   <td className="text-right">{rm(total('net_pay'))}</td>
                   <td className="no-print"></td>
                 </tr>
