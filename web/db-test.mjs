@@ -583,3 +583,37 @@ console.log(capped.ar === 1500 && capped.net === 0
 await db.query(`select approve_payroll_run(${run3})`)
 const carried = (await db.query(`select outstanding::float o from advance_balances where id=${bigAdv}`)).rows[0].o
 console.log(carried === 500 ? 'advance remainder carried forward ok' : 'FAIL carry ' + carried)
+
+// ---- 020: timesheet feeds the payroll run ----
+await db.exec(fs.readFileSync(new URL('../supabase/020_timesheet.sql', import.meta.url), 'utf8'))
+await db.exec(`update profiles set role='owner'`)
+
+const hourlyTs = (await db.query(`insert into employees (name, pay_type, rate, epf_on, socso_on, eis_on)
+  values ('Part timer', 'hourly', 10, false, false, false) returning id`)).rows[0].id
+await db.exec(`insert into timesheets (employee_id, work_date, hours, ot_hours) values
+  (${hourlyTs}, '2027-01-01', 8, 0), (${hourlyTs}, '2027-01-02', 7.5, 2), (${hourlyTs}, '2027-01-03', 6, 0)`)
+
+const run4 = (await db.query(`select create_payroll_run('2027-01-01', '2027-01-31') id`)).rows[0].id
+const slip3 = (await db.query(`select id from payslips where run_id=${run4} and employee_id=${hourlyTs}`)).rows[0].id
+const ts = (await db.query(`select hours::float h, ot_hours::float ot, basic::float basic, ot_amount::float ota
+  from payslip_view where id=${slip3}`)).rows[0]
+// 21.5 hours x RM10 = 215; 2 OT hours x RM10 x 1.5 = 30
+console.log(ts.h === 21.5 && ts.ot === 2 && ts.basic === 215 && ts.ota === 30
+  ? 'timesheet feeds payroll ok' : 'FAIL timesheet ' + JSON.stringify(ts))
+
+// A hand override survives a later save.
+await db.query(`select save_payslip(${slip3}, '{"hours":20}'::jsonb, true)`)
+const overridden = (await db.query(`select hours::float h, basic::float basic from payslip_view where id=${slip3}`)).rows[0]
+console.log(overridden.h === 20 && overridden.basic === 200
+  ? 'timesheet override ok' : 'FAIL override ' + JSON.stringify(overridden))
+
+// One row per person per day.
+try { await db.exec(`insert into timesheets (employee_id, work_date, hours) values (${hourlyTs}, '2027-01-01', 5)`)
+  console.log('FAIL: duplicate timesheet day accepted') }
+catch (e) { console.log('duplicate timesheet day rejected:', e.message) }
+
+// Negative hours are a typo, not a correction.
+try { await db.exec(`insert into timesheets (employee_id, work_date, hours) values (${hourlyTs}, '2027-01-04', -3)`)
+  console.log('FAIL: negative hours accepted') }
+catch (e) { console.log('negative hours rejected:', e.message) }
+await db.query(`select delete_payroll_run(${run4})`)
