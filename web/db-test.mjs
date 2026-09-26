@@ -515,6 +515,9 @@ console.log(advRow.amount === 600 && advRow.dr === 600 && advRow.cr === 600 && a
 const advBal = (await db.query(`select outstanding::float o from advance_balances where id=${adv}`)).rows[0].o
 console.log(advBal === 600 ? 'advance outstanding ok' : 'FAIL advance outstanding ' + advBal)
 
+const advDoc = (await db.query(`select j.doc_no from staff_advances a join journals j on j.id=a.journal_id where a.id=${adv}`)).rows[0].doc_no
+console.log(advDoc.startsWith('SA-') ? 'advance doc number ok' : 'FAIL advance doc no ' + advDoc)
+
 // Money must come from cash, petty cash or bank.
 try { await db.query(`select record_advance(${emp}, '2026-10-05', 100, '6000', null)`)
   console.log('FAIL: advance paid from an expense account') }

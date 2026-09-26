@@ -6,6 +6,18 @@
 -- taken out of a payslip. Recovery is recorded per run in advance_recoveries,
 -- so cancelling a payroll run puts the balance back by itself.
 
+-- Map 'advance' source to document prefix 'SA' (Staff Advance).
+-- Must be defined before any advance journals are posted.
+create or replace function doc_prefix(p_source text) returns text language sql immutable as $$
+  select case p_source
+    when 'pv' then 'PV' when 'or' then 'OR' when 'transfer' then 'TR'
+    when 'pi' then 'PI' when 'sp' then 'SP' when 'claim' then 'CL'
+    when 'sales' then 'SL' when 'fiuu' then 'FS' when 'payroll' then 'PR'
+    when 'cogs' then 'CS' when 'accrual' then 'AC' when 'stock' then 'SC'
+    when 'advance' then 'SA'
+    else 'JV' end
+$$;
+
 insert into accounts (code, name, type) values
   ('1310', 'Staff Advances', 'asset')
 on conflict (code) do nothing;
