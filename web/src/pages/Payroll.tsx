@@ -18,7 +18,7 @@ type Payslip = {
   basic: number; hours: number; hourly_rate: number; ot_hours: number; ot_amount: number
   allowance: number; service_charge: number; unpaid_leave: number; other_deduction: number
   epf_employee: number; epf_employer: number; socso_employee: number; socso_employer: number
-  eis_employee: number; eis_employer: number; pcb: number; note: string | null
+  eis_employee: number; eis_employer: number; pcb: number; note: string | null; advance_recovery: number
   gross: number; net_pay: number; employer_cost: number; month: string; pay_date: string; status: 'draft' | 'approved'
 }
 
@@ -505,6 +505,9 @@ export function PayrollRun({ role }: { role: Role }) {
   const [editing, setEditing] = useState<Payslip | null>(null)
   const [busyRun, setBusyRun] = useState(false)
   const [error, setError] = useState('')
+  // Employee -> total currently outstanding across all their advances (not
+  // this run's recovery alone). Used to note when a recovery was capped.
+  const [advanceMap, setAdvanceMap] = useState<Record<number, number>>({})
   const canEdit = role === 'owner' || role === 'accountant'
   const run = runs.find(r => r.id === runId)
 
@@ -517,8 +520,17 @@ export function PayrollRun({ role }: { role: Role }) {
     supabase.from('payslip_view').select('*').eq('run_id', runId).order('name')
       .then(({ data }) => setSlips((data as Payslip[]) ?? []))
   }
+  const loadAdvances = () => {
+    supabase.from('advance_balances').select('employee_id, outstanding').gt('outstanding', 0)
+      .then(({ data }) => {
+        const m: Record<number, number> = {}
+        for (const r of (data as { employee_id: number; outstanding: number }[]) ?? []) m[r.employee_id] = (m[r.employee_id] ?? 0) + Number(r.outstanding)
+        setAdvanceMap(m)
+      })
+  }
   useEffect(loadRuns, [])
   useEffect(loadSlips, [runId])
+  useEffect(loadAdvances, [runId])
 
   async function create() {
     if (busyRun) return
@@ -546,7 +558,7 @@ export function PayrollRun({ role }: { role: Role }) {
     const { error } = await supabase.rpc(fn, { p_id: runId })
     if (error) return setError(error.message)
     if (fn === 'delete_payroll_run') setRunId(null)
-    setError(''); loadRuns(); loadSlips()
+    setError(''); loadRuns(); loadSlips(); loadAdvances()
   }
 
   const total = (k: keyof Payslip) => slips.reduce((s, p) => s + n(p[k] as number), 0)
@@ -579,8 +591,10 @@ export function PayrollRun({ role }: { role: Role }) {
           <div key={k}><label>{label}{k === 'hours' ? '' : ' (RM)'}</label>
             <input name={k} type="number" step="0.01" min="0" inputMode="decimal" defaultValue={n(editing[k])} /></div>
         ))}
+        <div><label>Salary advance recovered (RM)</label>
+          <input type="number" step="0.01" value={n(editing.advance_recovery).toFixed(2)} disabled /></div>
       </div>
-      <p className="muted">Hours only matter for staff paid by the hour: pay becomes hours × rate ({rm(editing.hourly_rate)}/hour).</p>
+      <p className="muted">Hours only matter for staff paid by the hour: pay becomes hours × rate ({rm(editing.hourly_rate)}/hour). Salary advance recovered is set automatically from the Staff Advance screen — to change it, adjust the advance, not the payslip.</p>
       <div className="rounded-xl bg-slate-50 p-4">
         <label className="flex items-center gap-2 font-normal">
           <input type="checkbox" name="recalc" defaultChecked />
@@ -684,16 +698,26 @@ export function PayrollRun({ role }: { role: Role }) {
               <div key={label as string} className="card p-4"><div className="muted">{label}</div><div className="mt-1 text-lg font-semibold tabular-nums">{rm(v as number)}</div></div>
             ))}
           </div>
-          <Payslips slips={slips} />
+          <Payslips slips={slips} advanceMap={advanceMap} />
         </>
       )}
     </div>
   )
 }
 
-// Printable payslips, one per staff member.
-function Payslips({ slips }: { slips: Payslip[] }) {
+// Printable payslips, one per staff member. `advanceMap` (office view only) is
+// each employee's current total outstanding advance, used to note when this
+// run's recovery was capped and the rest carries to next month.
+function Payslips({ slips, advanceMap }: { slips: Payslip[]; advanceMap?: Record<number, number> }) {
   const [show, setShow] = useState(false)
+  // Still owed after this run: for an approved run, advance_recoveries were
+  // already recorded, so `outstanding` already reflects it. For a draft run,
+  // recovery hasn't been recorded yet, so subtract this payslip's own share.
+  const stillOwed = (p: Payslip) => {
+    if (!advanceMap) return 0
+    const total = advanceMap[p.employee_id] ?? 0
+    return p.status === 'approved' ? total : Math.max(round2(total - n(p.advance_recovery)), 0)
+  }
   if (slips.length === 0) return null
   return (
     <div>
@@ -729,7 +753,7 @@ function Payslips({ slips }: { slips: Payslip[] }) {
                 <div>
                   <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Deductions</h4>
                   <dl className="space-y-1.5 text-sm">
-                    {[['EPF', p.epf_employee], ['SOCSO', p.socso_employee], ['EIS', p.eis_employee], ['PCB (income tax)', p.pcb], ['Other', p.other_deduction]]
+                    {[['EPF', p.epf_employee], ['SOCSO', p.socso_employee], ['EIS', p.eis_employee], ['PCB (income tax)', p.pcb], ['Salary advance recovered', p.advance_recovery], ['Other', p.other_deduction]]
                       .filter(([, v]) => n(v as number) !== 0)
                       .map(([label, v]) => <div key={label as string} className="flex justify-between"><dt className="text-slate-600">{label}</dt><dd className="tabular-nums">{rm(v as number)}</dd></div>)}
                     <div className="flex justify-between border-t border-slate-200 pt-1.5 font-semibold"><dt>Total deductions</dt>
@@ -741,6 +765,10 @@ function Payslips({ slips }: { slips: Payslip[] }) {
                 <span className="font-semibold text-brand-dark">Net pay</span>
                 <span className="text-lg font-bold text-brand-dark tabular-nums">{rm(p.net_pay)}</span>
               </div>
+              {stillOwed(p) > 0 &&
+                <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Still owes {rm(stillOwed(p))} on a salary advance — it will come off next month's pay.
+                </p>}
               <div className="mt-3 flex flex-wrap justify-between gap-2 text-xs text-slate-500">
                 <span>Paid on {dmy(p.pay_date)} {p.bank_name ? `to ${p.bank_name} ${p.bank_account}` : 'in cash'}</span>
                 <span>Employer paid: EPF {rm(p.epf_employer)} · SOCSO {rm(p.socso_employer)} · EIS {rm(p.eis_employer)}</span>
@@ -757,12 +785,22 @@ function Payslips({ slips }: { slips: Payslip[] }) {
 
 export function MyPayslips({ profile }: { profile: Profile }) {
   const [slips, setSlips] = useState<Payslip[]>([])
+  const [advance, setAdvance] = useState(0)
   useEffect(() => {
     supabase.from('payslip_view').select('*').eq('status', 'approved').order('month', { ascending: false })
       .then(({ data }) => setSlips((data as Payslip[]) ?? []))
+    // RLS lets a staff member read only their own advance_balances rows;
+    // several outstanding advances are summed into one figure.
+    supabase.from('advance_balances').select('outstanding').gt('outstanding', 0)
+      .then(({ data }) => setAdvance((data as { outstanding: number }[] ?? []).reduce((s, r) => s + Number(r.outstanding), 0)))
   }, [profile.id])
-  if (slips.length === 0) return <Empty text="No payslips yet." />
-  return <Payslips slips={slips} />
+  return (
+    <div className="space-y-4">
+      {advance > 0 &&
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">You still owe {rm(advance)} on a salary advance — it comes off your pay automatically.</p>}
+      {slips.length === 0 ? <Empty text="No payslips yet." /> : <Payslips slips={slips} />}
+    </div>
+  )
 }
 
 // ---------------------------------------------------------------- Yearly summary (for EA forms)
