@@ -131,11 +131,34 @@ export function PaymentVoucher() {
 export function OfficialReceipt() {
   const accounts = useAccounts()
   const blank = { date: todayMY(), from: '', kind: '4900', amount: '', into: '1100', reference: '' }
+  const [mode, setMode] = useState<'list' | 'form'>('list')
+  const [editing, setEditing] = useState<DocRow | null>(null)
+  const [rows, setRows] = useState<DocRow[]>([])
   const [f, setF] = useState(blank)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
   const [error, setError] = useState('')
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
+  const load = () => { loadDocuments('or').then(setRows) }
+  useEffect(load, [])
+
+  // A receipt is one debit (received into) and one credit (what kind of money).
+  function startEdit(d: DocRow) {
+    const debit = d.journal_lines.find(l => Number(l.debit) > 0)
+    const credit = d.journal_lines.find(l => Number(l.credit) > 0)
+    if (!debit || !credit) return alert('This receipt has an unusual shape. Use Journal Entry to correct it.')
+    setEditing(d)
+    setF({ date: d.date, from: d.description, kind: credit.account,
+           amount: String(Number(debit.debit)), into: debit.account, reference: d.reference ?? '' })
+    setError(''); setMode('form')
+  }
+
+  async function remove(d: DocRow) {
+    if (!confirm(`Delete ${d.doc_no}? This cannot be undone.`)) return
+    const { error } = await supabase.rpc('delete_journal', { p_id: d.id })
+    if (error) return alert(error.message)
+    load()
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -143,20 +166,34 @@ export function OfficialReceipt() {
     if (!(amount > 0)) return setError('Enter an amount')
     setBusy(true); setError('')
     try {
-      const id = await postJournal(f.date, f.from || 'Receipt', [
-        { account: f.into, debit: amount },
-        { account: f.kind, credit: amount },
-      ], { source: 'or', reference: f.reference })
-      setDone({ msg: `Receipt of ${rm(amount)} saved`, doc: await docNo(id) })
-      setF({ ...blank, date: f.date })
+      const lines = [{ account: f.into, debit: amount }, { account: f.kind, credit: amount }]
+      if (editing) {
+        await updateJournal(editing.id, f.date, f.from || 'Receipt', lines, { reference: f.reference })
+        setDone({ msg: `${editing.doc_no} changed to ${rm(amount)}`, doc: editing.doc_no })
+      } else {
+        const id = await postJournal(f.date, f.from || 'Receipt', lines, { source: 'or', reference: f.reference })
+        setDone({ msg: `Receipt of ${rm(amount)} saved`, doc: await docNo(id) })
+      }
+      setF({ ...blank, date: f.date }); setEditing(null); load()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
   }
 
-  if (done) return <Done msg={done.msg} doc={done.doc} again={() => setDone(null)} />
+  if (done) return <Done msg={done.msg} doc={done.doc} again={() => { setDone(null); setMode('list') }} />
+
+  if (mode === 'list') return (
+    <DocumentList rows={rows} newLabel="New official receipt"
+      emptyText="No official receipts in the last three months."
+      onNew={() => { setEditing(null); setF(blank); setError(''); setMode('form') }}
+      onEdit={startEdit} onDelete={remove} canEdit canDelete />
+  )
+
   return (
     <form onSubmit={submit} className="card max-w-2xl space-y-5 p-6">
-      <p className="muted">Daily sales come from Upload Sales. Use this for other money received: event deposits, owner capital, refunds.</p>
+      <button type="button" className="link" onClick={() => setMode('list')}>← Back to list</button>
+      {editing
+        ? <p className="muted">Changing <b className="font-mono">{editing.doc_no}</b>. It keeps the same number.</p>
+        : <p className="muted">Daily sales come from Upload Sales. Use this for other money received: event deposits, owner capital, refunds.</p>}
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
         <div><label>Ref no.</label><input value={f.reference} onChange={e => set('reference', e.target.value)} placeholder="Optional" /></div>
@@ -169,21 +206,45 @@ export function OfficialReceipt() {
         <div><label>Received into</label><AccountSelect accounts={accounts} value={f.into} onChange={v => set('into', v)} filter={money} /></div>
       </div>
       {error && <p className="alert-error">{error}</p>}
-      <div className="flex justify-end"><button className="btn" disabled={busy}>{busy ? 'Saving…' : 'Save receipt'}</button></div>
+      <div className="flex justify-end">
+        <button className="btn" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Save receipt'}</button>
+      </div>
     </form>
   )
 }
 
 export function Transfer() {
   const accounts = useAccounts()
-  const [f, setF] = useState({ date: todayMY(), from: '1000', to: '1100', amount: '', reference: '' })
+  const blank = { date: todayMY(), from: '1000', to: '1100', amount: '', reference: '' }
+  const [mode, setMode] = useState<'list' | 'form'>('list')
+  const [editing, setEditing] = useState<DocRow | null>(null)
+  const [rows, setRows] = useState<DocRow[]>([])
+  const [f, setF] = useState(blank)
   const [balances, setBalances] = useState<Map<string, number>>(new Map())
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
-  // Reload after a transfer, so the amount still waiting is up to date.
-  useEffect(() => { accountTotals(null, todayMY()).then(setBalances) }, [done])
   const [error, setError] = useState('')
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
+  const load = () => { loadDocuments('transfer').then(setRows) }
+  useEffect(load, [])
+  useEffect(() => { accountTotals(null, todayMY()).then(setBalances) }, [done, mode])
+
+  function startEdit(d: DocRow) {
+    const debit = d.journal_lines.find(l => Number(l.debit) > 0)
+    const credit = d.journal_lines.find(l => Number(l.credit) > 0)
+    if (!debit || !credit) return alert('This transfer has an unusual shape. Use Journal Entry to correct it.')
+    setEditing(d)
+    setF({ date: d.date, from: credit.account, to: debit.account,
+           amount: String(Number(debit.debit)), reference: d.reference ?? '' })
+    setError(''); setMode('form')
+  }
+
+  async function remove(d: DocRow) {
+    if (!confirm(`Delete ${d.doc_no}? This cannot be undone.`)) return
+    const { error } = await supabase.rpc('delete_journal', { p_id: d.id })
+    if (error) return alert(error.message)
+    load()
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -193,20 +254,35 @@ export function Transfer() {
     setBusy(true); setError('')
     try {
       const name = (c: string) => accounts.find(a => a.code === c)?.name
-      const id = await postJournal(f.date, `Transfer ${name(f.from)} to ${name(f.to)}`, [
-        { account: f.to, debit: amount },
-        { account: f.from, credit: amount },
-      ], { source: 'transfer', reference: f.reference })
-      setDone({ msg: `Moved ${rm(amount)}`, doc: await docNo(id) })
-      setF({ ...f, amount: '', reference: '' })
+      const desc = `Transfer ${name(f.from)} to ${name(f.to)}`
+      const lines = [{ account: f.to, debit: amount }, { account: f.from, credit: amount }]
+      if (editing) {
+        await updateJournal(editing.id, f.date, desc, lines, { reference: f.reference })
+        setDone({ msg: `${editing.doc_no} changed to ${rm(amount)}`, doc: editing.doc_no })
+      } else {
+        const id = await postJournal(f.date, desc, lines, { source: 'transfer', reference: f.reference })
+        setDone({ msg: `Moved ${rm(amount)}`, doc: await docNo(id) })
+      }
+      setF({ ...f, amount: '', reference: '' }); setEditing(null); load()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
   }
 
-  if (done) return <Done msg={done.msg} doc={done.doc} again={() => setDone(null)} />
+  if (done) return <Done msg={done.msg} doc={done.doc} again={() => { setDone(null); setMode('list') }} />
+
+  if (mode === 'list') return (
+    <DocumentList rows={rows} newLabel="New transfer"
+      emptyText="No transfers in the last three months."
+      onNew={() => { setEditing(null); setF(blank); setError(''); setMode('form') }}
+      onEdit={startEdit} onDelete={remove} canEdit canDelete />
+  )
+
   return (
     <form onSubmit={submit} className="card max-w-2xl space-y-5 p-6">
-      <p className="muted">Also use this when e-wallet money (TNG and the like) reaches the bank: From <b>1210 E-Wallet</b>, To <b>Bank</b>. E-wallets have no fee, so the full amount moves across. Card money is handled on the Card Settlement screen, because Fiuu takes a fee.</p>
+      <button type="button" className="link" onClick={() => setMode('list')}>← Back to list</button>
+      {editing
+        ? <p className="muted">Changing <b className="font-mono">{editing.doc_no}</b>. It keeps the same number.</p>
+        : <p className="muted">Also use this when e-wallet money (TNG and the like) reaches the bank: From <b>1210 E-Wallet</b>, To <b>Bank</b>. E-wallets have no fee, so the full amount moves across. Card money is handled on the Card Settlement screen, because Fiuu takes a fee.</p>}
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
         <div><label>Ref no. (bank-in slip)</label><input value={f.reference} onChange={e => set('reference', e.target.value)} placeholder="Optional" /></div>
@@ -220,7 +296,9 @@ export function Transfer() {
         <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required /></div>
       </div>
       {error && <p className="alert-error">{error}</p>}
-      <div className="flex justify-end"><button className="btn" disabled={busy}>{busy ? 'Saving…' : 'Save transfer'}</button></div>
+      <div className="flex justify-end">
+        <button className="btn" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Save transfer'}</button>
+      </div>
     </form>
   )
 }
