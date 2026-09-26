@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Pencil, Plus, Printer, Trash2, XCircle } from 'lucide-react'
 import { dmy, downloadCsv, MONEY_ACCOUNTS, MONEY_NAMES, rm, round2, supabase, todayMY, type Profile, type Role } from '../lib'
 import { Done, Empty, ReportBar } from '../ui'
@@ -286,17 +286,35 @@ export function StaffAdvances({ role }: { role: Role }) {
 
 type TsCell = { hours: string; ot_hours: string }
 type TsRow = { employee_id: number; work_date: string; hours: number; ot_hours: number }
+type TsSaved = { hours: number; ot_hours: number }
 
 const daysInMonth = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m, 0).getDate() }
+const closeEnough = (a: number, b: number) => Math.abs(a - b) < 0.005
 
 export function Timesheet({ role }: { role: Role }) {
   const [month, setMonth] = useState(todayMY().slice(0, 7))
   const [employees, setEmployees] = useState<Employee[]>([])
   const [showMonthly, setShowMonthly] = useState(false)
-  const [data, setData] = useState<Record<string, TsCell>>({})
+  const [data, setDataState] = useState<Record<string, TsCell>>({})
+  // What the server actually has, per cell — totals are built from this, never
+  // from what's merely typed, so a total never claims a figure payroll won't get.
+  const [saved, setSaved] = useState<Record<string, TsSaved>>({})
   const [failed, setFailed] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
   const canEdit = role !== 'staff'
+
+  // Mirrors `data` so a queued save can read the value current at the moment it
+  // actually runs, not the value that was current when it was queued.
+  const dataRef = useRef<Record<string, TsCell>>({})
+  const setData = (updater: (d: Record<string, TsCell>) => Record<string, TsCell>) => {
+    dataRef.current = updater(dataRef.current)
+    setDataState(dataRef.current)
+  }
+
+  // One promise chain per cell: two writes to the same (employee, day) row can
+  // never be in flight together, so a Tab from Hours to OT can't let the
+  // Hours-only upsert land after the combined one and silently revert the OT.
+  const inFlight = useRef<Record<string, Promise<unknown>>>({})
 
   useEffect(() => {
     supabase.from('employees').select('*').eq('active', true).order('name').then(({ data }) => setEmployees((data as Employee[]) ?? []))
@@ -309,9 +327,14 @@ export function Timesheet({ role }: { role: Role }) {
       .gte('work_date', first).lte('work_date', last)
       .then(({ data: rows, error }) => {
         if (error) return setError(error.message)
-        const next: Record<string, TsCell> = {}
-        for (const r of (rows as TsRow[]) ?? []) next[`${r.employee_id}:${r.work_date}`] = { hours: String(r.hours), ot_hours: String(r.ot_hours) }
-        setData(next); setFailed(new Set()); setError('')
+        const nextData: Record<string, TsCell> = {}
+        const nextSaved: Record<string, TsSaved> = {}
+        for (const r of (rows as TsRow[]) ?? []) {
+          const key = `${r.employee_id}:${r.work_date}`
+          nextData[key] = { hours: String(r.hours), ot_hours: String(r.ot_hours) }
+          nextSaved[key] = { hours: Number(r.hours), ot_hours: Number(r.ot_hours) }
+        }
+        setData(() => nextData); setSaved(nextSaved); setFailed(new Set()); setError('')
       })
   }, [month])
 
@@ -319,30 +342,40 @@ export function Timesheet({ role }: { role: Role }) {
   const days = Array.from({ length: daysInMonth(month) }, (_, i) => i + 1)
   const dateFor = (d: number) => `${month}-${String(d).padStart(2, '0')}`
   const cellOf = (id: number, date: string): TsCell => data[`${id}:${date}`] ?? { hours: '', ot_hours: '' }
+  const savedOf = (id: number, date: string): TsSaved => saved[`${id}:${date}`] ?? { hours: 0, ot_hours: 0 }
 
   function setCell(id: number, date: string, patch: Partial<TsCell>) {
     const key = `${id}:${date}`
-    setData(d => ({ ...d, [key]: { ...cellOf(id, date), ...patch } }))
+    setData(d => ({ ...d, [key]: { ...(d[key] ?? { hours: '', ot_hours: '' }), ...patch } }))
   }
 
-  async function save(id: number, date: string) {
+  function save(id: number, date: string) {
     const key = `${id}:${date}`
-    const c = cellOf(id, date)
-    const hours = round2(Number(c.hours) || 0)
-    const ot_hours = round2(Number(c.ot_hours) || 0)
-    setData(d => ({ ...d, [key]: { hours: String(hours), ot_hours: String(ot_hours) } }))
-    const { error } = await supabase.from('timesheets')
-      .upsert({ employee_id: id, work_date: date, hours, ot_hours }, { onConflict: 'employee_id,work_date' })
-    setFailed(prev => { const next = new Set(prev); if (error) next.add(key); else next.delete(key); return next })
-    if (error) setError(`Could not save that cell — ${error.message}. Check your connection; the last change you typed there was not saved.`)
+    const chained = (inFlight.current[key] ?? Promise.resolve())
+      .catch(() => {}) // a previous failure on this cell must not block later saves to it
+      .then(async () => {
+        // Read at the moment this actually runs, not when it was queued, so a
+        // save chained behind another one still carries both fields.
+        const c = dataRef.current[key] ?? { hours: '', ot_hours: '' }
+        const hours = round2(Number(c.hours) || 0)
+        const ot_hours = round2(Number(c.ot_hours) || 0)
+        setData(d => ({ ...d, [key]: { hours: String(hours), ot_hours: String(ot_hours) } }))
+        const { error } = await supabase.from('timesheets')
+          .upsert({ employee_id: id, work_date: date, hours, ot_hours }, { onConflict: 'employee_id,work_date' })
+        setFailed(prev => { const next = new Set(prev); if (error) next.add(key); else next.delete(key); return next })
+        if (error) setError(`Could not save that cell — ${error.message}. Check your connection; the last change you typed there was not saved.`)
+        else setSaved(s => ({ ...s, [key]: { hours, ot_hours } }))
+      })
+    inFlight.current[key] = chained
   }
 
-  const staffTotal = (id: number) => days.reduce((s, d) => {
-    const c = cellOf(id, dateFor(d)); return { hours: s.hours + (Number(c.hours) || 0), ot: s.ot + (Number(c.ot_hours) || 0) }
-  }, { hours: 0, ot: 0 })
-  const dayTotal = (date: string) => shown.reduce((s, e) => {
-    const c = cellOf(e.id, date); return { hours: s.hours + (Number(c.hours) || 0), ot: s.ot + (Number(c.ot_hours) || 0) }
-  }, { hours: 0, ot: 0 })
+  // "Saved" totals are what create_payroll_run will actually read. "Typed"
+  // totals are what's currently on screen, which may be ahead of that (still
+  // in flight, or failed) — the gap between them is what gets called out.
+  const staffSaved = (id: number) => days.reduce((s, d) => { const c = savedOf(id, dateFor(d)); return { hours: s.hours + c.hours, ot: s.ot + c.ot_hours } }, { hours: 0, ot: 0 })
+  const staffTyped = (id: number) => days.reduce((s, d) => { const c = cellOf(id, dateFor(d)); return { hours: s.hours + (Number(c.hours) || 0), ot: s.ot + (Number(c.ot_hours) || 0) } }, { hours: 0, ot: 0 })
+  const daySaved = (date: string) => shown.reduce((s, e) => { const c = savedOf(e.id, date); return { hours: s.hours + c.hours, ot: s.ot + c.ot_hours } }, { hours: 0, ot: 0 })
+  const dayTyped = (date: string) => shown.reduce((s, e) => { const c = cellOf(e.id, date); return { hours: s.hours + (Number(c.hours) || 0), ot: s.ot + (Number(c.ot_hours) || 0) } }, { hours: 0, ot: 0 })
 
   return (
     <div className="space-y-4">
@@ -368,7 +401,9 @@ export function Timesheet({ role }: { role: Role }) {
             </thead>
             <tbody>
               {shown.map(e => {
-                const t = staffTotal(e.id)
+                const st = staffSaved(e.id)
+                const tt = staffTyped(e.id)
+                const differs = !closeEnough(st.hours, tt.hours) || !closeEnough(st.ot, tt.ot)
                 return (
                   <tr key={e.id}>
                     <td className="sticky left-0 z-10 bg-white font-medium">{e.name}</td>
@@ -394,15 +429,26 @@ export function Timesheet({ role }: { role: Role }) {
                         </td>
                       )
                     })}
-                    <td className="px-2 text-right text-xs font-medium tabular-nums">{t.hours.toFixed(2)}<span className="text-slate-400"> / {t.ot.toFixed(2)}</span></td>
+                    <td className="px-2 text-right text-xs font-medium tabular-nums">
+                      {st.hours.toFixed(2)}<span className="text-slate-400"> / {st.ot.toFixed(2)}</span>
+                      {differs && <div className="text-[10px] font-normal normal-case text-amber-600">not all typed hours saved yet</div>}
+                    </td>
                   </tr>
                 )
               })}
               <tr className="bg-slate-50 font-semibold">
                 <td className="sticky left-0 z-10 bg-slate-50">Total</td>
                 {days.map(d => {
-                  const t = dayTotal(dateFor(d))
-                  return <td key={d} className="px-1 text-center text-xs tabular-nums">{t.hours || t.ot ? `${t.hours}/${t.ot}` : ''}</td>
+                  const date = dateFor(d)
+                  const ds = daySaved(date)
+                  const dt = dayTyped(date)
+                  const differs = !closeEnough(ds.hours, dt.hours) || !closeEnough(ds.ot, dt.ot)
+                  return (
+                    <td key={d} className="px-1 text-center text-xs tabular-nums">
+                      {ds.hours || ds.ot ? `${ds.hours}/${ds.ot}` : ''}
+                      {differs && <div className="text-[9px] font-normal normal-case text-amber-600">unsaved</div>}
+                    </td>
+                  )
                 })}
                 <td></td>
               </tr>
@@ -410,6 +456,7 @@ export function Timesheet({ role }: { role: Role }) {
           </table>
         )}
       </div>
+      {shown.length > 0 && <p className="muted">Totals count only what has actually saved. "Not all typed hours saved yet" means a change is still on its way, or failed — check for a red cell above.</p>}
     </div>
   )
 }
