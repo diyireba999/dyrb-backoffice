@@ -989,7 +989,7 @@ export function JournalEntry() {
   const [head, setHead] = useState({ date: todayMY(), description: '', reference: '', supplier: '' })
   const [lines, setLines] = useState<JvLine[]>([emptyLine(), emptyLine()])
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<string | null>(null)
+  const [done, setDone] = useState<{ msg: string; doc: string } | null>(null)
   const [error, setError] = useState('')
   const load = () => { loadDocuments('jv').then(setRows) }
   useEffect(load, [])
@@ -1033,12 +1033,12 @@ Replace the body of the `try` block in `submit`:
       }))
       if (editing) {
         await updateJournal(editing.id, head.date, head.description, payload, { reference: head.reference })
-        setDone(editing.doc_no)
+        setDone({ msg: `${editing.doc_no} changed`, doc: editing.doc_no })
       } else {
         const id = await postJournal(head.date, head.description, payload,
           { source: 'jv', reference: head.reference, supplier: head.supplier ? Number(head.supplier) : undefined })
         const { data } = await supabase.from('journals').select('doc_no').eq('id', id).single()
-        setDone(data?.doc_no ?? '')
+        setDone({ msg: 'Journal entry saved', doc: data?.doc_no ?? '' })
       }
       setEditing(null)
       setHead({ ...head, description: '', reference: '', supplier: '' })
@@ -1046,14 +1046,16 @@ Replace the body of the `try` block in `submit`:
       load()
 ```
 
-`update_journal` rejects any line on account 2000, so a JV that touches Suppliers Owed cannot be edited here. That is deliberate — the error message from the database says where to go instead.
+`update_journal` rejects any line on account 2000, so a JV that touches Suppliers Owed cannot be edited here. That is deliberate — the error message from the database says where to go instead. Make the supplier select `required={!editing}`, though: on an edit `head.supplier` is never sent, so leaving it required would force the user to pick an arbitrary supplier just to reach the real refusal.
+
+`done` holds `{ msg, doc }` rather than a bare doc number, matching the cash-book screens. Resolving the message at render time from `editing` does not work: `setDone` and `setEditing(null)` batch into one render, so the edit message would never appear.
 
 - [ ] **Step 3: Add the list branch and the back link**
 
 Immediately after the `if (done !== null) return <Done .../>` line, change that line and add the list branch:
 
 ```tsx
-  if (done !== null) return <Done msg={editing ? 'Journal entry changed' : 'Journal entry saved'} doc={done}
+  if (done) return <Done msg={done.msg} doc={done.doc}
     again={() => { setDone(null); setMode('list') }} />
 
   if (mode === 'list') return (
