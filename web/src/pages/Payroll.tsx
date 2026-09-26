@@ -282,6 +282,138 @@ export function StaffAdvances({ role }: { role: Role }) {
   )
 }
 
+// ---------------------------------------------------------------- Timesheet
+
+type TsCell = { hours: string; ot_hours: string }
+type TsRow = { employee_id: number; work_date: string; hours: number; ot_hours: number }
+
+const daysInMonth = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m, 0).getDate() }
+
+export function Timesheet({ role }: { role: Role }) {
+  const [month, setMonth] = useState(todayMY().slice(0, 7))
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [showMonthly, setShowMonthly] = useState(false)
+  const [data, setData] = useState<Record<string, TsCell>>({})
+  const [failed, setFailed] = useState<Set<string>>(new Set())
+  const [error, setError] = useState('')
+  const canEdit = role !== 'staff'
+
+  useEffect(() => {
+    supabase.from('employees').select('*').eq('active', true).order('name').then(({ data }) => setEmployees((data as Employee[]) ?? []))
+  }, [])
+
+  useEffect(() => {
+    const first = `${month}-01`
+    const last = `${month}-${String(daysInMonth(month)).padStart(2, '0')}`
+    supabase.from('timesheets').select('employee_id, work_date, hours, ot_hours')
+      .gte('work_date', first).lte('work_date', last)
+      .then(({ data: rows, error }) => {
+        if (error) return setError(error.message)
+        const next: Record<string, TsCell> = {}
+        for (const r of (rows as TsRow[]) ?? []) next[`${r.employee_id}:${r.work_date}`] = { hours: String(r.hours), ot_hours: String(r.ot_hours) }
+        setData(next); setFailed(new Set()); setError('')
+      })
+  }, [month])
+
+  const shown = employees.filter(e => showMonthly || e.pay_type === 'hourly')
+  const days = Array.from({ length: daysInMonth(month) }, (_, i) => i + 1)
+  const dateFor = (d: number) => `${month}-${String(d).padStart(2, '0')}`
+  const cellOf = (id: number, date: string): TsCell => data[`${id}:${date}`] ?? { hours: '', ot_hours: '' }
+
+  function setCell(id: number, date: string, patch: Partial<TsCell>) {
+    const key = `${id}:${date}`
+    setData(d => ({ ...d, [key]: { ...cellOf(id, date), ...patch } }))
+  }
+
+  async function save(id: number, date: string) {
+    const key = `${id}:${date}`
+    const c = cellOf(id, date)
+    const hours = round2(Number(c.hours) || 0)
+    const ot_hours = round2(Number(c.ot_hours) || 0)
+    setData(d => ({ ...d, [key]: { hours: String(hours), ot_hours: String(ot_hours) } }))
+    const { error } = await supabase.from('timesheets')
+      .upsert({ employee_id: id, work_date: date, hours, ot_hours }, { onConflict: 'employee_id,work_date' })
+    setFailed(prev => { const next = new Set(prev); if (error) next.add(key); else next.delete(key); return next })
+    if (error) setError(`Could not save that cell — ${error.message}. Check your connection; the last change you typed there was not saved.`)
+  }
+
+  const staffTotal = (id: number) => days.reduce((s, d) => {
+    const c = cellOf(id, dateFor(d)); return { hours: s.hours + (Number(c.hours) || 0), ot: s.ot + (Number(c.ot_hours) || 0) }
+  }, { hours: 0, ot: 0 })
+  const dayTotal = (date: string) => shown.reduce((s, e) => {
+    const c = cellOf(e.id, date); return { hours: s.hours + (Number(c.hours) || 0), ot: s.ot + (Number(c.ot_hours) || 0) }
+  }, { hours: 0, ot: 0 })
+
+  return (
+    <div className="space-y-4">
+      <div className="card flex flex-wrap items-end gap-4">
+        <div className="w-44"><label>Month</label><input type="month" value={month} onChange={e => setMonth(e.target.value)} /></div>
+        <label className="flex items-center gap-2 pb-2.5 text-sm font-normal text-slate-700">
+          <input type="checkbox" checked={showMonthly} onChange={e => setShowMonthly(e.target.checked)} />
+          Include monthly staff (to log their overtime)
+        </label>
+      </div>
+      <p className="muted">These hours feed the payroll run at the moment it is created. Editing a timesheet afterwards does not change a run already started — figures can still be corrected on the payslip itself.</p>
+      {error && <p className="alert-error">{error}</p>}
+      <div className="card overflow-x-auto p-0">
+        {shown.length === 0 && <Empty text="No staff to show." />}
+        {shown.length > 0 && (
+          <table>
+            <thead>
+              <tr>
+                <th className="sticky left-0 z-10 bg-slate-50">Staff</th>
+                {days.map(d => <th key={d} className="px-1 py-2 text-center">{d}</th>)}
+                <th className="px-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map(e => {
+                const t = staffTotal(e.id)
+                return (
+                  <tr key={e.id}>
+                    <td className="sticky left-0 z-10 bg-white font-medium">{e.name}</td>
+                    {days.map(d => {
+                      const date = dateFor(d)
+                      const key = `${e.id}:${date}`
+                      const c = cellOf(e.id, date)
+                      return (
+                        <td key={d} className={`p-0.5 align-top ${failed.has(key) ? 'bg-red-50' : ''}`}>
+                          <div className="flex flex-col items-center gap-0.5">
+                            <input type="number" step="0.5" min="0" inputMode="decimal" title="Hours" disabled={!canEdit}
+                              className="h-7 w-12 rounded border-slate-200 px-1 text-center text-xs"
+                              value={c.hours} placeholder="H"
+                              onChange={ev => setCell(e.id, date, { hours: ev.target.value })}
+                              onBlur={() => canEdit && save(e.id, date)} />
+                            <input type="number" step="0.5" min="0" inputMode="decimal" title="OT hours" disabled={!canEdit}
+                              className="h-7 w-12 rounded border-slate-200 px-1 text-center text-xs text-slate-500"
+                              value={c.ot_hours} placeholder="OT"
+                              onChange={ev => setCell(e.id, date, { ot_hours: ev.target.value })}
+                              onBlur={() => canEdit && save(e.id, date)} />
+                          </div>
+                          {failed.has(key) && <div className="text-center text-[10px] font-medium text-red-600">not saved</div>}
+                        </td>
+                      )
+                    })}
+                    <td className="px-2 text-right text-xs font-medium tabular-nums">{t.hours.toFixed(2)}<span className="text-slate-400"> / {t.ot.toFixed(2)}</span></td>
+                  </tr>
+                )
+              })}
+              <tr className="bg-slate-50 font-semibold">
+                <td className="sticky left-0 z-10 bg-slate-50">Total</td>
+                {days.map(d => {
+                  const t = dayTotal(dateFor(d))
+                  return <td key={d} className="px-1 text-center text-xs tabular-nums">{t.hours || t.ot ? `${t.hours}/${t.ot}` : ''}</td>
+                })}
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------- Payroll run
 
 const FIELDS = [
