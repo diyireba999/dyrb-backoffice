@@ -409,3 +409,36 @@ try { await db.query(`select update_supplier_payment(${payPayDeact}, '2026-10-21
   console.log('FAIL: deactivated account accepted on payment edit') }
 catch (e) { console.log('deactivated account on payment edit rejected:', e.message) }
 await db.exec(`update accounts set active=true where code='1100'`)
+
+// A posted day can be replaced outright, leaving exactly one sales entry for it.
+await db.exec(`update profiles set role='owner'`)
+await db.query(`select post_sales_day('2026-10-14', 1000, 100, 0, 0,
+  '[{"code":"CASH","amount":1100}]'::jsonb)`)
+await db.query(`select replace_sales_day('2026-10-14', 1200, 120, 0, 0,
+  '[{"code":"CASH","amount":1320}]'::jsonb)`)
+const repDay = (await db.query(`select count(*)::int c,
+  coalesce(sum(l.debit),0)::float cash from journals j
+  join journal_lines l on l.journal_id=j.id and l.account='1000'
+  where j.source='sales' and j.source_ref='2026-10-14'`)).rows[0]
+const repDayN = (await db.query(`select count(*)::int c from journals
+  where source='sales' and source_ref='2026-10-14'`)).rows[0].c
+console.log(repDayN === 1 && repDay.cash === 1320
+  ? 'replace sales day ok' : `FAIL replace day ${repDayN} ${repDay.cash}`)
+
+// Only the owner may replace a day that is already in the books.
+await db.exec(`update profiles set role='manager'`)
+try { await db.query(`select replace_sales_day('2026-10-14', 900, 90, 0, 0,
+  '[{"code":"CASH","amount":990}]'::jsonb)`)
+  console.log('FAIL: manager replaced a posted day') }
+catch (e) { console.log('manager blocked from replacing a day:', e.message) }
+await db.exec(`update profiles set role='owner'`)
+
+// A day whose cash line is reconciled must be unticked first.
+const repDayLine = (await db.query(`select l.id from journal_lines l join journals j on j.id=l.journal_id
+  where j.source='sales' and j.source_ref='2026-10-14' and l.account='1000' limit 1`)).rows[0].id
+await db.query(`select set_cleared(array[${repDayLine}]::bigint[], '2026-10-31')`)
+try { await db.query(`select replace_sales_day('2026-10-14', 800, 80, 0, 0,
+  '[{"code":"CASH","amount":880}]'::jsonb)`)
+  console.log('FAIL: replaced a reconciled day') }
+catch (e) { console.log('reconciled day replace rejected:', e.message) }
+await db.query(`select set_cleared(array[${repDayLine}]::bigint[], null)`)

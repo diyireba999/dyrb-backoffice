@@ -126,3 +126,23 @@ begin
    where id = pay.journal_id;
   update supplier_payments set date = p_date, amount = v_total where id = p_id;
 end $$;
+
+-- ---------- Replacing a day's sales ----------
+-- A day can only be posted once, so correcting one used to mean deleting it and
+-- re-uploading as two separate steps. This does both in one transaction: if the
+-- new figures are rejected, the old day is still there.
+create or replace function replace_sales_day(p_date date, p_sales numeric, p_service numeric,
+                                             p_tax numeric, p_rounding numeric, p_payments jsonb,
+                                             p_sales_lines jsonb default null)
+returns bigint language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if my_role() <> 'owner' then
+    raise exception 'Only the owner can replace a day that is already posted'; end if;
+  if exists (select 1 from journal_lines l join journals j on j.id = l.journal_id
+             where j.source = 'sales' and j.source_ref = p_date::text and l.cleared_on is not null) then
+    raise exception 'This day is ticked on the bank reconciliation. Untick it there first.'; end if;
+  -- The day's cost of sales belongs to the day, and goes with it.
+  delete from journals where source = 'cogs' and source_ref = p_date::text;
+  delete from journals where source = 'sales' and source_ref = p_date::text;
+  return post_sales_day(p_date, p_sales, p_service, p_tax, p_rounding, p_payments, p_sales_lines);
+end $$;
