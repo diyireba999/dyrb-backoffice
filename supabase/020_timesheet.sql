@@ -24,10 +24,12 @@ create table if not exists timesheets (
 );
 
 alter table timesheets enable row level security;
-create policy "office reads all, staff read own" on timesheets for select
+do $$ begin create policy "office reads all, staff read own" on timesheets for select
   using (is_office() or exists (select 1 from employees e where e.id = employee_id and e.profile_id = auth.uid()));
-create policy "office writes" on timesheets for all
+exception when duplicate_object then null; end $$;
+do $$ begin create policy "office writes" on timesheets for all
   using (is_office()) with check (is_office());
+exception when duplicate_object then null; end $$;
 
 -- Monthly totals per person, for the payroll run to pick up.
 create or replace view timesheet_months with (security_invoker = true) as
@@ -50,18 +52,21 @@ begin
   insert into payroll_runs (month, pay_date) values (first_day, p_pay_date) returning id into run;
   for e in select * from employees where active and (join_date is null or join_date <= (first_day + interval '1 month' - interval '1 day'))
                                      and (leave_date is null or leave_date >= first_day) loop
-    pay := case when e.pay_type = 'monthly' then e.rate else 0 end;
-    select * into s from statutory_for(pay, pay, e.is_local, e.epf_on, e.socso_on, e.eis_on);
-
     select coalesce(t.hours, 0), coalesce(t.ot_hours, 0) into ts_hours, ts_ot
       from timesheet_months t where t.employee_id = e.id and t.month = first_day;
     if not found then ts_hours := 0; ts_ot := 0; end if;
+
+    -- Seed basic and OT first, then base EPF/SOCSO/EIS on those actual figures
+    -- (same wage-base split save_payslip uses) — not on 0, which is what an
+    -- hourly employee's pay used to be before the timesheet fed it a real
+    -- number. EPF excludes OT; SOCSO includes it.
+    pay := case when e.pay_type = 'monthly' then e.rate else round(ts_hours * e.rate, 2) end;
     ot_pay := round(ts_ot * (case when e.pay_type = 'hourly' then e.rate else 0 end) * rates.ot_normal, 2);
+    select * into s from statutory_for(pay, pay + ot_pay, e.is_local, e.epf_on, e.socso_on, e.eis_on);
 
     insert into payslips (run_id, employee_id, basic, hourly_rate, hours, ot_hours, ot_amount,
                           epf_employee, epf_employer, socso_employee, socso_employer, eis_employee, eis_employer)
-      values (run, e.id,
-              case when e.pay_type = 'hourly' then round(ts_hours * e.rate, 2) else pay end,
+      values (run, e.id, pay,
               case when e.pay_type = 'hourly' then e.rate else 0 end,
               ts_hours, ts_ot, ot_pay,
               s.epf_employee, s.epf_employer, s.socso_employee, s.socso_employer, s.eis_employee, s.eis_employer);

@@ -617,3 +617,19 @@ try { await db.exec(`insert into timesheets (employee_id, work_date, hours) valu
   console.log('FAIL: negative hours accepted') }
 catch (e) { console.log('negative hours rejected:', e.message) }
 await db.query(`select delete_payroll_run(${run4})`)
+
+// A LOCAL hourly employee with statutory contributions switched on must get
+// real EPF/SOCSO from their timesheet-derived basic, not 0. (The fixture
+// employee above has epf_on/socso_on/eis_on all false, which hid this bug —
+// use a fresh one with the (true) defaults instead.)
+const hourlyLocal = (await db.query(`insert into employees (name, pay_type, rate)
+  values ('Timesheet EPF Check', 'hourly', 10) returning id`)).rows[0].id
+await db.exec(`insert into timesheets (employee_id, work_date, hours, ot_hours) values (${hourlyLocal}, '2027-02-01', 160, 0)`)
+const run5 = (await db.query(`select create_payroll_run('2027-02-01', '2027-02-28') id`)).rows[0].id
+const slip5 = (await db.query(`select basic::float basic, epf_employee::float epf, epf_employer::float epf_er,
+  socso_employee::float socso, socso_employer::float socso_er
+  from payslip_view where run_id=${run5} and employee_id=${hourlyLocal}`)).rows[0]
+// 160 hours x RM10 = RM1,600 basic. EPF 11%/13% of 1600 rounded up; SOCSO 0.5%/1.75% of 1600.
+console.log(slip5.basic === 1600 && slip5.epf === 176 && slip5.epf_er === 208 && slip5.socso === 8 && slip5.socso_er === 28
+  ? 'hourly staff get real EPF/SOCSO from timesheet basic ok' : 'FAIL hourly statutory ' + JSON.stringify(slip5))
+await db.query(`select delete_payroll_run(${run5})`)
