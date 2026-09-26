@@ -146,3 +146,92 @@ begin
   delete from journals where source = 'sales' and source_ref = p_date::text;
   return post_sales_day(p_date, p_sales, p_service, p_tax, p_rounding, p_payments, p_sales_lines);
 end $$;
+
+-- ---------- A journal touching Suppliers Owed was a dead end ----------
+-- update_journal used to reject any 2000 line outright, but JournalEntry lets you
+-- post one when a supplier is chosen (post_journal's own rule). Bring update_journal
+-- in line: a 2000 line is fine when the journal already has a supplier attached; it
+-- is only refused when there is none to attribute it to. The supplier itself is not
+-- an edit parameter and is not changed here.
+create or replace function update_journal(p_id bigint, p_date date, p_description text,
+                                          p_reference text, p_attachment text, p_lines jsonb)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare src text; v_supplier bigint;
+begin
+  if not is_office() then raise exception 'Not allowed'; end if;
+  select source, supplier_id into src, v_supplier from journals where id = p_id;
+  if src is null then raise exception 'Entry not found'; end if;
+  if src not in ('manual', 'pv', 'or', 'jv', 'transfer') then
+    raise exception 'This document is changed on the screen that created it, not here'; end if;
+  if exists (select 1 from journal_lines where journal_id = p_id and cleared_on is not null) then
+    raise exception 'This entry is ticked on the bank reconciliation. Untick it there first.'; end if;
+  if jsonb_array_length(p_lines) < 2 then raise exception 'An entry needs at least two lines'; end if;
+  if exists (select 1 from jsonb_array_elements(p_lines) l
+             join accounts a on a.code = l->>'account' where not a.active) then
+    raise exception 'Account is switched off'; end if;
+  if v_supplier is null and exists (select 1 from jsonb_array_elements(p_lines) l where l->>'account' = '2000') then
+    raise exception 'Choose which supplier (add them in Suppliers first)'; end if;
+
+  delete from journal_lines where journal_id = p_id;
+  insert into journal_lines (journal_id, account, debit, credit, memo)
+    select p_id, l->>'account', coalesce((l->>'debit')::numeric, 0),
+           coalesce((l->>'credit')::numeric, 0), l->>'memo'
+    from jsonb_array_elements(p_lines) l;
+  update journals
+     set date = p_date, description = p_description,
+         reference = nullif(p_reference, ''),
+         attachment = coalesce(p_attachment, attachment),
+         updated_at = now(), updated_by = auth.uid()
+   where id = p_id;
+end $$;
+
+-- ---------- A reconciled document could not be edited, but could still be deleted ----------
+-- Same guard the edit functions above already use, added to the deletion path.
+-- Bodies below are copied from where each function currently lives (016_fixes2.sql
+-- for delete_journal and cancel_supplier_payment, 003_accounting.sql for
+-- cancel_purchase_invoice) with only the bank-reconciliation guard added.
+
+create or replace function delete_journal(p_id bigint) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare src text; ref text;
+begin
+  select source, source_ref into src, ref from journals where id = p_id;
+  if src is null then raise exception 'Entry not found'; end if;
+  if src in ('pi', 'sp') then raise exception 'Cancel this from Purchase Invoice / Supplier Payment instead'; end if;
+  if not (my_role() = 'owner' or (is_office() and src in ('manual', 'pv', 'or', 'jv', 'transfer'))) then
+    raise exception 'Not allowed to delete this entry'; end if;
+  if exists (select 1 from journal_lines where journal_id = p_id and cleared_on is not null) then
+    raise exception 'This entry is ticked on the bank reconciliation. Untick it there first.'; end if;
+  -- A day's cost of sales belongs to that day's sales; it goes with it.
+  if src = 'sales' and ref is not null then
+    delete from journals where source = 'cogs' and source_ref = ref;
+  end if;
+  delete from journals where id = p_id;
+end $$;
+
+create or replace function cancel_purchase_invoice(p_id bigint) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare j bigint;
+begin
+  if my_role() not in ('owner', 'accountant') then raise exception 'Only owner or accountant can cancel'; end if;
+  if exists (select 1 from payment_allocations where invoice_id = p_id) then
+    raise exception 'Invoice has payments. Cancel the payment first.'; end if;
+  select journal_id into j from purchase_invoices where id = p_id;
+  if exists (select 1 from journal_lines where journal_id = j and cleared_on is not null) then
+    raise exception 'This invoice is ticked on the bank reconciliation. Untick it there first.'; end if;
+  delete from purchase_invoices where id = p_id returning journal_id into j;
+  delete from journals where id = j;
+end $$;
+
+create or replace function cancel_supplier_payment(p_id bigint) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare j bigint;
+begin
+  if my_role() not in ('owner', 'accountant') then raise exception 'Only owner or accountant can cancel'; end if;
+  select journal_id into j from supplier_payments where id = p_id;
+  if j is null then raise exception 'Payment not found'; end if;
+  if exists (select 1 from journal_lines where journal_id = j and cleared_on is not null) then
+    raise exception 'This payment is ticked on the bank reconciliation. Untick it there first.'; end if;
+  delete from supplier_payments where id = p_id;
+  delete from journals where id = j;
+end $$;

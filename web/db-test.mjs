@@ -442,3 +442,59 @@ try { await db.query(`select replace_sales_day('2026-10-14', 800, 80, 0, 0,
   console.log('FAIL: replaced a reconciled day') }
 catch (e) { console.log('reconciled day replace rejected:', e.message) }
 await db.query(`select set_cleared(array[${repDayLine}]::bigint[], null)`)
+
+// ---- Final review fixes: a reconciled document could be deleted around the edit guard ----
+
+// A manual entry ticked on the bank reconciliation cannot be deleted; unticking allows it.
+const delRecId = (await db.query(`select post_journal('2026-10-17','Test recon delete','manual',null,null,
+  '[{"account":"6900","debit":9},{"account":"1000","credit":9}]'::jsonb) id`)).rows[0].id
+const delRecLine = (await db.query(`select id from journal_lines where journal_id=${delRecId} and account='1000'`)).rows[0].id
+await db.query(`select set_cleared(array[${delRecLine}]::bigint[], '2026-10-31')`)
+try { await db.query(`select delete_journal(${delRecId})`); console.log('FAIL: deleted a reconciled entry') }
+catch (e) { console.log('reconciled entry delete rejected:', e.message) }
+await db.query(`select set_cleared(array[${delRecLine}]::bigint[], null)`)
+await db.query(`select delete_journal(${delRecId})`)
+const delRecGone = (await db.query(`select count(*)::int c from journals where id=${delRecId}`)).rows[0].c
+console.log(delRecGone === 0 ? 'reconciled entry deleted after unticking ok' : 'FAIL reconciled delete after untick ' + delRecGone)
+
+// A purchase invoice ticked on the bank reconciliation cannot be cancelled.
+const supRecPi = (await db.query(`insert into suppliers (name) values ('Recon Test Supplier') returning id`)).rows[0].id
+const invRecPi = (await db.query(`select create_purchase_invoice(${supRecPi}, 'RECON1', '2026-10-17', '2026-11-17',
+  'Recon test', '[{"account":"5100","amount":40}]'::jsonb) id`)).rows[0].id
+const invRecPiJournal = (await db.query(`select journal_id from purchase_invoices where id=${invRecPi}`)).rows[0].journal_id
+const invRecPiLine = (await db.query(`select id from journal_lines where journal_id=${invRecPiJournal} and account='2000'`)).rows[0].id
+await db.query(`select set_cleared(array[${invRecPiLine}]::bigint[], '2026-10-31')`)
+try { await db.query(`select cancel_purchase_invoice(${invRecPi})`); console.log('FAIL: cancelled a reconciled purchase invoice') }
+catch (e) { console.log('reconciled purchase invoice cancel rejected:', e.message) }
+await db.query(`select set_cleared(array[${invRecPiLine}]::bigint[], null)`)
+
+// A supplier payment ticked on the bank reconciliation cannot be cancelled.
+const supRecSp = (await db.query(`insert into suppliers (name) values ('Recon Pay Supplier') returning id`)).rows[0].id
+const invRecSp = (await db.query(`select create_purchase_invoice(${supRecSp}, 'RECON2', '2026-10-17', '2026-11-17',
+  'Recon pay test', '[{"account":"5100","amount":60}]'::jsonb) id`)).rows[0].id
+const payRecSp = (await db.query(`select pay_supplier(${supRecSp}, '2026-10-18', '1100', 'RECONPAY',
+  '[{"invoice_id":${invRecSp},"amount":60}]'::jsonb) id`)).rows[0].id
+const payRecSpJournal = (await db.query(`select journal_id from supplier_payments where id=${payRecSp}`)).rows[0].journal_id
+const payRecSpLine = (await db.query(`select id from journal_lines where journal_id=${payRecSpJournal} and account='1100'`)).rows[0].id
+await db.query(`select set_cleared(array[${payRecSpLine}]::bigint[], '2026-10-31')`)
+try { await db.query(`select cancel_supplier_payment(${payRecSp})`); console.log('FAIL: cancelled a reconciled supplier payment') }
+catch (e) { console.log('reconciled supplier payment cancel rejected:', e.message) }
+await db.query(`select set_cleared(array[${payRecSpLine}]::bigint[], null)`)
+
+// A JV with a 2000 line is fine when the journal already has a supplier attached.
+const jvWithSupplier = (await db.query(`select post_journal('2026-10-17','JV with supplier','jv',null,null,
+  '[{"account":"5000","debit":50},{"account":"2000","credit":50}]'::jsonb, ${sup}) id`)).rows[0].id
+await db.query(`select update_journal(${jvWithSupplier}, '2026-10-17','JV with supplier (edited)',null,null,
+  '[{"account":"5000","debit":70},{"account":"2000","credit":70}]'::jsonb)`)
+const jvSupChk = (await db.query(`select supplier_id::int supplier_id,
+  (select sum(l.credit)::float from journal_lines l where l.journal_id=journals.id and l.account='2000') owed
+  from journals where id=${jvWithSupplier}`)).rows[0]
+console.log(jvSupChk.supplier_id === sup && jvSupChk.owed === 70
+  ? '2000 line with a supplier edited ok' : 'FAIL jv 2000 edit ' + JSON.stringify(jvSupChk))
+
+// A journal with a 2000 line and no supplier is refused, with post_journal's own message.
+try { await db.query(`select update_journal(${e1}, '2026-10-11','x',null,null,
+  '[{"account":"5010","debit":5},{"account":"2000","credit":5}]'::jsonb)`)
+  console.log('FAIL: 2000 line without a supplier accepted on edit') }
+catch (e) { console.log(e.message === 'Choose which supplier (add them in Suppliers first)'
+  ? '2000 line without a supplier on edit rejected correctly' : 'FAIL wrong message: ' + e.message) }

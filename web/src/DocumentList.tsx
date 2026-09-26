@@ -58,7 +58,7 @@ export function DocumentList({ rows, newLabel, emptyText, onNew, onEdit, onDelet
                     {canEdit && !isReconciled(d) && <button title="Edit"
                       className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-brand"
                       onClick={() => onEdit(d)}><Pencil className="size-4" /></button>}
-                    {canDelete && <button title="Delete"
+                    {canDelete && !isReconciled(d) && <button title="Delete"
                       className="rounded-md p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600"
                       onClick={() => onDelete(d)}><Trash2 className="size-4" /></button>}
                   </td>
