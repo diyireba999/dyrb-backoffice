@@ -298,22 +298,28 @@ export function Timesheet({ role }: { role: Role }) {
   const [data, setDataState] = useState<Record<string, TsCell>>({})
   // What the server actually has, per cell — totals are built from this, never
   // from what's merely typed, so a total never claims a figure payroll won't get.
-  const [saved, setSaved] = useState<Record<string, TsSaved>>({})
+  const [saved, setSavedState] = useState<Record<string, TsSaved>>({})
   const [failed, setFailed] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
   const canEdit = role !== 'staff'
 
-  // Mirrors `data` so a queued save can read the value current at the moment it
-  // actually runs, not the value that was current when it was queued.
+  // Mirror `data` / `saved` in refs purely so a cell's queued write can be
+  // captured synchronously (see `save` below) without waiting on a render.
   const dataRef = useRef<Record<string, TsCell>>({})
   const setData = (updater: (d: Record<string, TsCell>) => Record<string, TsCell>) => {
     dataRef.current = updater(dataRef.current)
     setDataState(dataRef.current)
   }
+  const savedRef = useRef<Record<string, TsSaved>>({})
+  const setSaved = (updater: (s: Record<string, TsSaved>) => Record<string, TsSaved>) => {
+    savedRef.current = updater(savedRef.current)
+    setSavedState(savedRef.current)
+  }
 
   // One promise chain per cell: two writes to the same (employee, day) row can
   // never be in flight together, so a Tab from Hours to OT can't let the
   // Hours-only upsert land after the combined one and silently revert the OT.
+  // Pruned once a chain settles with nothing queued behind it (see `save`).
   const inFlight = useRef<Record<string, Promise<unknown>>>({})
 
   useEffect(() => {
@@ -334,7 +340,7 @@ export function Timesheet({ role }: { role: Role }) {
           nextData[key] = { hours: String(r.hours), ot_hours: String(r.ot_hours) }
           nextSaved[key] = { hours: Number(r.hours), ot_hours: Number(r.ot_hours) }
         }
-        setData(() => nextData); setSaved(nextSaved); setFailed(new Set()); setError('')
+        setData(() => nextData); setSaved(() => nextSaved); setFailed(new Set()); setError('')
       })
   }, [month])
 
@@ -351,15 +357,28 @@ export function Timesheet({ role }: { role: Role }) {
 
   function save(id: number, date: string) {
     const key = `${id}:${date}`
+    // Capture what to write right now, at blur time — not later, when this
+    // write's turn in the chain actually arrives. A queued write must land on
+    // whichever row it was meant for with the values intended for it, even if
+    // the month (or anything else in `data`) has since moved on.
+    const c = dataRef.current[key] ?? { hours: '', ot_hours: '' }
+    const hours = round2(Number(c.hours) || 0)
+    const ot_hours = round2(Number(c.ot_hours) || 0)
+
+    // Nothing to do: the cell has no value and never had a saved one either.
+    // Don't create a zero row just because a blur passed through it.
+    if (hours === 0 && ot_hours === 0 && !(key in savedRef.current)) {
+      setFailed(prev => { if (!prev.has(key)) return prev; const next = new Set(prev); next.delete(key); return next })
+      return
+    }
+
+    // Reflect the normalised value right away — this is independent of the
+    // queue below, so it's correct even if the write itself has to wait.
+    setData(d => ({ ...d, [key]: { hours: String(hours), ot_hours: String(ot_hours) } }))
+
     const chained = (inFlight.current[key] ?? Promise.resolve())
       .catch(() => {}) // a previous failure on this cell must not block later saves to it
       .then(async () => {
-        // Read at the moment this actually runs, not when it was queued, so a
-        // save chained behind another one still carries both fields.
-        const c = dataRef.current[key] ?? { hours: '', ot_hours: '' }
-        const hours = round2(Number(c.hours) || 0)
-        const ot_hours = round2(Number(c.ot_hours) || 0)
-        setData(d => ({ ...d, [key]: { hours: String(hours), ot_hours: String(ot_hours) } }))
         const { error } = await supabase.from('timesheets')
           .upsert({ employee_id: id, work_date: date, hours, ot_hours }, { onConflict: 'employee_id,work_date' })
         setFailed(prev => { const next = new Set(prev); if (error) next.add(key); else next.delete(key); return next })
@@ -367,6 +386,9 @@ export function Timesheet({ role }: { role: Role }) {
         else setSaved(s => ({ ...s, [key]: { hours, ot_hours } }))
       })
     inFlight.current[key] = chained
+    // Once this link settles with nothing newer queued behind it, drop the
+    // entry rather than let the map grow forever.
+    chained.finally(() => { if (inFlight.current[key] === chained) delete inFlight.current[key] })
   }
 
   // "Saved" totals are what create_payroll_run will actually read. "Typed"
