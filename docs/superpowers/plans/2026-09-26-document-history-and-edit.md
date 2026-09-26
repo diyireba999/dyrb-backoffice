@@ -1214,7 +1214,7 @@ Add the state and the two functions:
     setEditing({ id: d.id, doc_no: p.journals.doc_no })
     setSupplier(String(d.supplier_id))
     setHead({ date: d.date, from, reference: d.journals.reference ?? '' })
-    setPendingPay(Object.fromEntries(d.payment_allocations.map(a => [a.invoice_id, String(Number(a.amount))])))
+    pendingPay.current = Object.fromEntries(d.payment_allocations.map(a => [a.invoice_id, String(Number(a.amount))]))
     window.scrollTo({ top: 0 })
   }
 
@@ -1224,21 +1224,23 @@ Add the state and the two functions:
   }
 ```
 
-The existing effect on `supplier` clears `pay` whenever the supplier changes, which would wipe the allocations `startEdit` just loaded. Hold them in a staging value and apply them after the invoice list arrives. Replace that effect with:
+The existing effect on `supplier` clears `pay` whenever the supplier changes, which would wipe the allocations `startEdit` just loaded. Stage them in a **ref**, not state, and apply them after the invoice list arrives. Replace that effect with:
 
 ```tsx
-  const [pendingPay, setPendingPay] = useState<Record<number, string> | null>(null)
+  const pendingPay = useRef<Record<number, string> | null>(null)
 
   useEffect(() => {
     if (!supplier) { setPay({}); setOpen([]); return }
     // While editing, this payment's own invoices are already settled, so show them all.
     loadInvoices({ supplier: Number(supplier), open: !editing }).then(r => {
       setOpen(r.reverse())
-      setPay(pendingPay ?? {})
-      setPendingPay(null)
+      setPay(pendingPay.current ?? {})
+      pendingPay.current = null
     })
-  }, [supplier, editing, pendingPay])
+  }, [supplier, editing])
 ```
+
+A ref, because staging in state and clearing it inside the effect re-fires the effect, and the second run's closure sees the cleared value and zeroes `pay` again. `startEdit` sets `pendingPay.current` synchronously before `setSupplier`.
 
 Branch `submit` on `editing`:
 
@@ -1272,12 +1274,19 @@ Add the pencil to each history row, beside the existing cancel button:
   onClick={() => startEdit(p)}><Pencil className="size-4" /></button>}
 ```
 
-And change the success message so an edit does not claim a new payment was saved:
+And change the success message so an edit does not claim a new payment was saved. Resolve the text at submit time, not at render time — `setDone` and `cancelEdit()` batch into one render, so reading `editing` in the render would always give the create wording. Use the `{ msg, doc }` shape the cash-book screens use, and keep `doc` a bare document number, because `Done` renders it as a badge:
 
 ```tsx
-  if (done !== null) return <Done msg={editing ? 'Supplier payment changed' : 'Supplier payment saved'}
-    doc={done} again={() => { setDone(null); cancelEdit() }} />
+  if (done) return <Done msg={done.msg} doc={done.doc} again={() => { setDone(null); cancelEdit() }} />
 ```
+
+Three more things the fragments above do not cover, all needed for the screen to work:
+
+- `InvoiceForEdit` needs a `doc_no` field, so the invoice screen's success badge shows a document number rather than a sentence.
+- The supplier dropdown filter must be `s.owed > 0 || String(s.id) === supplier`. Filtering on `owed > 0` alone hides the very supplier being edited whenever this payment settled them in full, leaving the disabled select with no matching option.
+- Wire `cancelEdit` to a visible "Stop editing" button on the payment form; otherwise there is no way out of edit mode on that screen.
+
+**Do not put `max={i.outstanding}` on the allocation amount input.** `purchase_invoice_status.outstanding` nets out *all* allocations including this payment's own, which are still present while editing — so the prefilled value exceeds the max, and native form validation silently blocks submit before `onSubmit` runs. Over-allocation is caught by the RPC, which measures against the correct baseline after deleting this payment's allocations.
 
 - [ ] **Step 4: Check it compiles and lints**
 
