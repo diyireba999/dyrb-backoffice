@@ -362,12 +362,20 @@ On hover show the date and the amount, reusing the tooltip pattern already in `S
 - [ ] **Step 3: Break-even, and when to hide it**
 
 ```
-F = average monthly total of accounts 6000–6999 EXCLUDING 6200, over the last 3 complete months
-v = variableRate({ costOfSales: 5000–5099, cardFees: 6200, sales: 4000–4099 }) over the same 3 months
+F = total of accounts 6000–6999 EXCLUDING 6200 over the last 3 complete months,
+    divided by the number of complete months actually covered by data (2 or 3)
+v = variableRate({ costOfSales: 5000–5999, cardFees: 6200, sales: 4000–4099 }) over the same window
 line = breakEven({ fixed: F, variableRate: v, daysInMonth: daysInMonth(thisMonth) })
 ```
 
-Use **complete** months only — the current partial month would drag the average down and make break-even look easy. Expense figures come from `dailyNet` negated, as noted in Task 2.
+Use **complete** months only — the current partial month would drag the average down and make break-even look easy.
+
+Two things this formula gets wrong if written carelessly, both of which understate break-even and flatter the month:
+
+- **Divide by the months actually covered, not a hard-coded 3.** The history gate admits two complete months, so a business two months old would otherwise have its fixed costs divided by three and be told break-even is a third lower than it is. Derive the count from the earliest journal date, and exclude a partial first month from it.
+- **Cost of sales is 5000–5999, not 5000–5099.** The narrower range orphans `5100 Packaging & Consumables` — counted as neither variable nor fixed, so it vanishes from the formula. It also contradicts the gross-margin figure on the same screen, which treats 5000–5999 as cost of sales.
+
+Period aggregates come from the `accountTotals` RPC, **not** from `dailyNet` — see Task 2. `dailyNet` is narrow-range only and will throw rather than return a truncated series.
 
 Caption it plainly: `Break even at RM 4,180 a day. Averaging RM 4,720 a day this month.` The second figure is this month's sales to date divided by days elapsed.
 
