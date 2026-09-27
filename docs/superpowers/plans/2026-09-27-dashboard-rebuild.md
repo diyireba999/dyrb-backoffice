@@ -473,7 +473,7 @@ While the figures are loading, the bands should not flash misleading zeros. Foll
 
 In the **Status** section, extend or add the Phase 6 line to record that the dashboard now shows money due, a weekday-matched sales trend, break-even and margin health. Match the existing phase-line style.
 
-Under **Everyday notes**, add one short bullet in the README's plain voice: the dashboard compares against the same weekday a week ago because trade swings by day of week, and the break-even figure is worked out from the last three complete months, so it settles down once there is a few months of history.
+Under **Everyday notes**, add one short bullet in the README's plain voice: the dashboard compares against the same weekday a week ago because trade swings by day of week, and the break-even figure is worked out from the last two or three complete months — whichever the records cover — so it settles down once there are a few months of history. Do **not** write "three complete months": the code averages over however many complete months exist, and needs only two, so that wording would be false for a young business.
 
 Add `npm run test:dash` to the list of test commands in the "Run on this computer" section, alongside the existing ones.
 
