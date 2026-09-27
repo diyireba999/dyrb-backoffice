@@ -53,6 +53,7 @@ type SalesBand = {
   monthStarted: boolean
   breakEvenLine: number | null
   breakEvenNote: string | null // shown instead of the line when a figure would be a lie
+  monthsCovered: number // how many complete months the break-even figure is based on
 }
 
 function Trend({ label, vsLabel, now, before }: { label: string; vsLabel: string; now: number; before: number }) {
@@ -87,6 +88,12 @@ export function Dashboard({ profile }: { profile: Profile }) {
   const [due, setDue] = useState<{ dueSoon: number; overdue: number } | null | undefined>(undefined)
   const [salesBand, setSalesBand] = useState<SalesBand | undefined>(undefined)
   const [salesBandError, setSalesBandError] = useState<string | null>(null)
+  // The inline accounts fetch below feeds Sales, Cost of sales, Gross profit, Running
+  // costs, Profit so far and Owed to director. rowsOf() logs a fetch failure and
+  // returns [], which reads as "no accounts" rather than "could not load accounts" —
+  // so those figures would render a confident RM0.00 instead of an error. Caught here,
+  // local to this screen, without changing rowsOf() (other screens rely on its behaviour).
+  const [accountsError, setAccountsError] = useState<string | null>(null)
   // Guards the top KPI band and the month card against flashing a confident RM0.00
   // before the balances have actually loaded.
   const [loaded, setLoaded] = useState(false)
@@ -104,7 +111,10 @@ export function Dashboard({ profile }: { profile: Profile }) {
     Promise.all([
       claimsP,
       supabase.from('accounts').select('*').order('code')
-        .then(r => setAccounts(rowsOf(r, 'the account list')), () => {}),
+        .then(r => {
+          if (r.error) setAccountsError(r.error.message)
+          setAccounts(rowsOf(r, 'the account list'))
+        }, (e: Error) => setAccountsError(e.message)),
       accountTotals(null, todayMY()).then(setAll),
       accountTotals(monthStart(), todayMY()).then(setMonth),
       accountTotals(lastMonthStart, lastMonthEnd).then(setLastMonth),
@@ -163,9 +173,15 @@ export function Dashboard({ profile }: { profile: Profile }) {
       // Cost of sales is 5000-5999 throughout this screen (matches the gross-profit
       // figure above), which includes 5100 Packaging & Consumables — it scales with sales.
       const v = variableRate({ costOfSales: codeSum('5000', '6000'), cardFees, sales: -codeSum('4000', '4100') })
-      const line = enoughHistory ? breakEven({ fixed, variableRate: v, daysInMonth: daysInMonth(today.slice(0, 7)) }) : null
+      // A net credit across 6000-6999 (e.g. a large refund) makes `fixed` zero or negative.
+      // Feeding that into breakEven() would draw the rule off the bottom of the chart and
+      // caption a negative break-even figure, so it gets the same treatment as the other
+      // cases where a number would be meaningless rather than useful.
+      const line = enoughHistory && fixed > 0 ? breakEven({ fixed, variableRate: v, daysInMonth: daysInMonth(today.slice(0, 7)) }) : null
       const breakEvenNote = !enoughHistory
         ? 'Not enough history yet — break-even needs at least 2 complete months of records.'
+        : fixed <= 0
+        ? 'Fixed costs came out at zero or a credit over that period, so a break-even figure would be meaningless.'
         : v === null
         ? 'No sales in the last 3 months, so a variable cost rate cannot be worked out.'
         : line === null
@@ -176,7 +192,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
         yesterday: { amount: sumRange(salesDays, yesterday, yesterday), compare: sumRange(salesDays, sameWeekdayLastWeek(yesterday), sameWeekdayLastWeek(yesterday)) },
         week: { amount: sumRange(salesDays, weekStart, yesterday), compare: sumRange(salesDays, weekStartLastWeek, sameWeekdayLastWeek(yesterday)) },
         month: { amount: monthAmt, compare: monthCompare },
-        strip, avgPerDay, monthStarted, breakEvenLine: line, breakEvenNote,
+        strip, avgPerDay, monthStarted, breakEvenLine: line, breakEvenNote, monthsCovered,
       })
     }).catch((e: Error) => setSalesBandError(e.message))
   }, [office])
@@ -206,7 +222,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
     ['Liquor', '4020', '5020'],
   ] as const).map(([label, salesCode, costCode]) => ({
     label, sales: -(month.get(salesCode) ?? 0), cost: month.get(costCode) ?? 0,
-  })).filter(l => l.sales !== 0)
+  })).filter(l => l.sales > 0)
   // Corkage 4030 has no cost account (no stock behind it) and is excluded from the margin
   // split on purpose, but shown as its own line when non-zero so the money isn't hidden.
   const corkage = -(month.get('4030') ?? 0)
@@ -246,7 +262,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
         <Kpi icon={Banknote} label="Cash on hand" value={kpiValue(bal(['1000', '1010']))} note="Drawer + petty cash" tone="bg-emerald-50 text-emerald-600" />
         <Kpi icon={Truck} label="Owed to suppliers" value={kpiValue(bal(['2000'], -1))} note={supplierDueNote(due)} tone="bg-rose-50 text-rose-600" />
         <Kpi icon={Receipt} label="Claims to settle" value={kpiValue(claimsTotal)} note={loaded ? `${openClaims.length} pending or approved` : undefined} tone="bg-amber-50 text-amber-600" />
-        <Kpi icon={HandCoins} label="Owed to director" value={kpiValue(directorOwed)} note="Paid from their own pocket" tone="bg-violet-50 text-violet-600" />
+        <Kpi icon={HandCoins} label="Owed to director" value={accountsError ? '—' : kpiValue(directorOwed)} note={accountsError ? 'Could not be loaded' : 'Paid from their own pocket'} tone="bg-violet-50 text-violet-600" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -271,21 +287,23 @@ export function Dashboard({ profile }: { profile: Profile }) {
                 {salesBand.breakEvenLine === null
                   ? salesBand.breakEvenNote
                   : salesBand.monthStarted
-                  ? `Break even at ${rm(salesBand.breakEvenLine)} a day. Averaging ${rm(salesBand.avgPerDay)} a day this month.`
-                  : `Break even at ${rm(salesBand.breakEvenLine)} a day. This month has not started yet.`}
+                  ? `Break even averages ${rm(salesBand.breakEvenLine)} a day (from the last ${salesBand.monthsCovered} complete months' costs). Averaging ${rm(salesBand.avgPerDay)} a day this month.`
+                  : `Break even averages ${rm(salesBand.breakEvenLine)} a day (from the last ${salesBand.monthsCovered} complete months' costs). This month has not started yet.`}
               </p>
             </>
           )}
         </div>
         <div className="card">
           <h3 className="font-semibold">{monthName}</h3>
-          {!loaded ? <p className="muted mt-4">Loading…</p> : (
+          {!loaded ? <p className="muted mt-4">Loading…</p> : accountsError ? (
+            <p className="mt-4 text-sm text-rose-600">Could not load the account list, so these figures are unavailable: {accountsError}</p>
+          ) : (
             <>
               <dl className="mt-4 space-y-3 text-sm">
                 <div className="flex justify-between"><dt className="text-slate-500">Sales (food &amp; drink)</dt><dd className="font-medium tabular-nums">{rm(sales)}</dd></div>
                 <div className="flex justify-between"><dt className="text-slate-500">Cost of sales</dt><dd className="font-medium tabular-nums">{rm(costOfSales)}</dd></div>
                 <div className="flex justify-between border-t border-slate-100 pt-3">
-                  <dt className="font-medium">Gross profit{marginPct !== null ? ` (${marginPct.toFixed(0)}%)` : ''}</dt>
+                  <dt className="font-medium">Gross profit{marginPct !== null ? ` (${Math.round(marginPct)}%)` : ''}</dt>
                   <dd className="font-semibold tabular-nums">{rm(grossProfit)}</dd>
                 </div>
                 {marginPct !== null && (
@@ -302,7 +320,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
                       const m = (l.sales - l.cost) / l.sales * 100
                       return (
                         <div key={l.label} className="flex justify-between">
-                          <dt className="text-slate-500">{l.label} ({m.toFixed(0)}%)</dt>
+                          <dt className="text-slate-500">{l.label} ({Math.round(m)}%)</dt>
                           <dd className="font-medium tabular-nums">{rm(l.sales)}</dd>
                         </div>
                       )
