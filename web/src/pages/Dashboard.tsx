@@ -1,11 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowDownLeft, ArrowUpRight, Banknote, FileText, HandCoins, Landmark, Receipt, Truck, type LucideIcon } from 'lucide-react'
-import { accountTotals, dailyNet, dmy, isDirector, monthStart, rm, round2, supabase, supplierDue, todayMY, useAccounts, type Account, type Profile } from '../lib'
+import { accountTotals, dailyNet, isDirector, monthStart, rm, round2, supabase, supplierDue, todayMY, useAccounts, type Account, type Profile } from '../lib'
 import { addDaysISO, breakEven, daysInMonth, pctChange, sameWeekdayLastWeek, sumRange, variableRate, type DayAmount } from '../dashboard-math'
 import { DailyBars, RankedBars } from '../charts'
-
-type Recent = { id: number; doc_no: string; date: string; description: string; journal_lines: { debit: number }[] }
 
 function Kpi({ icon: Icon, label, value, note, tone }: { icon: LucideIcon; label: string; value: string; note?: ReactNode; tone: string }) {
   return (
@@ -20,10 +18,12 @@ function Kpi({ icon: Icon, label, value, note, tone }: { icon: LucideIcon; label
   )
 }
 
-// undefined = still loading (no note yet), null = supplierDue() threw.
+// undefined = still loading, null = supplierDue() threw. Kept distinct from "nothing due"
+// (zeros with no note) so a glance mid-load can't be read as "nothing is overdue".
 function supplierDueNote(due: { dueSoon: number; overdue: number } | null | undefined): ReactNode {
+  if (due === undefined) return 'Checking due dates…'
   if (due === null) return 'Due dates could not be loaded'
-  if (!due || (!due.dueSoon && !due.overdue)) return undefined
+  if (!due.dueSoon && !due.overdue) return undefined
   const soon = due.dueSoon ? <span key="soon">{rm(due.dueSoon)} due in 7 days</span> : null
   const overdue = due.overdue ? <span key="overdue" className="text-rose-600">{rm(due.overdue)} overdue</span> : null
   return soon && overdue ? <>{soon} &middot; {overdue}</> : soon ?? overdue
@@ -81,25 +81,27 @@ export function Dashboard({ profile }: { profile: Profile }) {
   const [month, setMonth] = useState<Map<string, number>>(new Map())
   const [lastMonth, setLastMonth] = useState<Map<string, number>>(new Map())
   const [claims, setClaims] = useState<{ status: string; amount: number; staff_id: string }[]>([])
-  const [recent, setRecent] = useState<Recent[]>([])
   const [due, setDue] = useState<{ dueSoon: number; overdue: number } | null | undefined>(undefined)
   const [salesBand, setSalesBand] = useState<SalesBand | undefined>(undefined)
   const [salesBandError, setSalesBandError] = useState<string | null>(null)
+  // Guards the top KPI band and the month card against flashing a confident RM0.00
+  // before the balances have actually loaded.
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    supabase.from('claims').select('status, amount, staff_id').in('status', ['pending', 'approved'])
+    const claimsP = supabase.from('claims').select('status, amount, staff_id').in('status', ['pending', 'approved'])
       .then(({ data }) => setClaims(data ?? []))
-    if (!office) return
-    accountTotals(null, todayMY()).then(setAll)
-    accountTotals(monthStart(), todayMY()).then(setMonth)
+    if (!office) { claimsP.then(() => setLoaded(true)); return }
     // Same-day-of-month cutoff last month, so "this month so far" is compared like for like.
     const lastMonthStart = monthStartOffset(todayMY(), 1)
     const lastMonthEnd = addDaysISO(lastMonthStart, Math.min(Number(todayMY().slice(8, 10)), daysInMonth(lastMonthStart.slice(0, 7))) - 1)
-    accountTotals(lastMonthStart, lastMonthEnd).then(setLastMonth)
-    supabase.from('journals').select('id, doc_no, date, description, journal_lines(debit)')
-      .order('date', { ascending: false }).order('id', { ascending: false }).limit(6)
-      .then(({ data }) => setRecent((data as Recent[]) ?? []))
-    supplierDue(todayMY()).then(setDue).catch(() => setDue(null))
+    Promise.all([
+      claimsP,
+      accountTotals(null, todayMY()).then(setAll),
+      accountTotals(monthStart(), todayMY()).then(setMonth),
+      accountTotals(lastMonthStart, lastMonthEnd).then(setLastMonth),
+      supplierDue(todayMY()).then(setDue).catch(() => setDue(null)),
+    ]).then(() => setLoaded(true))
   }, [office])
 
   // Sales band: three weekday-matched comparisons, the 42-day strip, and break-even.
@@ -172,6 +174,8 @@ export function Dashboard({ profile }: { profile: Profile }) {
   }, [office])
 
   const bal = (codes: string[], sign = 1) => codes.reduce((s, c) => s + sign * (all.get(c) ?? 0), 0)
+  // A muted placeholder, not RM0.00, while the balances are still in flight.
+  const kpiValue = (n: number) => (loaded ? rm(n) : '—')
   const sales = -sumCodes(accounts, month, '4000', '4100')
   const service = -sumCodes(accounts, month, '4100', '4900')
   const otherIncome = -sumCodes(accounts, month, '4900', '5000')
@@ -215,7 +219,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
   if (!office) return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2">
-        <Kpi icon={Receipt} label="My claims in progress" value={rm(claimsTotal)} note={`${openClaims.length} waiting`} tone="bg-amber-50 text-amber-600" />
+        <Kpi icon={Receipt} label="My claims in progress" value={kpiValue(claimsTotal)} note={loaded ? `${openClaims.length} waiting` : undefined} tone="bg-amber-50 text-amber-600" />
       </div>
       <QuickButton to="/claims" icon={Receipt} label="Submit a claim" />
     </div>
@@ -230,11 +234,11 @@ export function Dashboard({ profile }: { profile: Profile }) {
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
-        <Kpi icon={Landmark} label="Bank balance" value={rm(bal(['1100']))} tone="bg-blue-50 text-blue-600" />
-        <Kpi icon={Banknote} label="Cash on hand" value={rm(bal(['1000', '1010']))} note="Drawer + petty cash" tone="bg-emerald-50 text-emerald-600" />
-        <Kpi icon={Truck} label="Owed to suppliers" value={rm(bal(['2000'], -1))} note={supplierDueNote(due)} tone="bg-rose-50 text-rose-600" />
-        <Kpi icon={Receipt} label="Claims to settle" value={rm(claimsTotal)} note={`${openClaims.length} pending or approved`} tone="bg-amber-50 text-amber-600" />
-        <Kpi icon={HandCoins} label="Owed to director" value={rm(directorOwed)} note="Paid from their own pocket" tone="bg-violet-50 text-violet-600" />
+        <Kpi icon={Landmark} label="Bank balance" value={kpiValue(bal(['1100']))} tone="bg-blue-50 text-blue-600" />
+        <Kpi icon={Banknote} label="Cash on hand" value={kpiValue(bal(['1000', '1010']))} note="Drawer + petty cash" tone="bg-emerald-50 text-emerald-600" />
+        <Kpi icon={Truck} label="Owed to suppliers" value={kpiValue(bal(['2000'], -1))} note={supplierDueNote(due)} tone="bg-rose-50 text-rose-600" />
+        <Kpi icon={Receipt} label="Claims to settle" value={kpiValue(claimsTotal)} note={loaded ? `${openClaims.length} pending or approved` : undefined} tone="bg-amber-50 text-amber-600" />
+        <Kpi icon={HandCoins} label="Owed to director" value={kpiValue(directorOwed)} note="Paid from their own pocket" tone="bg-violet-50 text-violet-600" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -267,75 +271,53 @@ export function Dashboard({ profile }: { profile: Profile }) {
         </div>
         <div className="card">
           <h3 className="font-semibold">{monthName}</h3>
-          <dl className="mt-4 space-y-3 text-sm">
-            <div className="flex justify-between"><dt className="text-slate-500">Sales (food &amp; drink)</dt><dd className="font-medium tabular-nums">{rm(sales)}</dd></div>
-            <div className="flex justify-between"><dt className="text-slate-500">Cost of sales</dt><dd className="font-medium tabular-nums">{rm(costOfSales)}</dd></div>
-            <div className="flex justify-between border-t border-slate-100 pt-3">
-              <dt className="font-medium">Gross profit{marginPct !== null ? ` (${marginPct.toFixed(0)}%)` : ''}</dt>
-              <dd className="font-semibold tabular-nums">{rm(grossProfit)}</dd>
-            </div>
-            {marginPct !== null && (
-              <div className={`-mt-2 text-xs font-medium ${
-                marginPointsChange === null ? 'text-slate-400' : marginPointsChange === 0 ? 'text-slate-500' : marginPointsChange > 0 ? 'text-emerald-600' : 'text-rose-600'
-              }`}>
-                {marginPointsChange === null ? 'no figure to compare' : marginPointsChange === 0 ? 'flat vs last month' : `${marginPointsChange > 0 ? '+' : ''}${marginPointsChange} points vs last month`}
-              </div>
-            )}
-            {(splitLines.length > 0 || corkage !== 0) && (
-              <div className="space-y-1.5 border-t border-slate-100 pt-3">
-                <div className="text-xs font-semibold text-slate-500">Food, beverage &amp; liquor</div>
-                {splitLines.map(l => {
-                  const m = (l.sales - l.cost) / l.sales * 100
-                  return (
-                    <div key={l.label} className="flex justify-between">
-                      <dt className="text-slate-500">{l.label} ({m.toFixed(0)}%)</dt>
-                      <dd className="font-medium tabular-nums">{rm(l.sales)}</dd>
-                    </div>
-                  )
-                })}
-                {corkage !== 0 && (
-                  <div className="flex justify-between">
-                    <dt className="text-slate-500">Corkage</dt>
-                    <dd className="font-medium tabular-nums">{rm(corkage)}</dd>
+          {!loaded ? <p className="muted mt-4">Loading…</p> : (
+            <>
+              <dl className="mt-4 space-y-3 text-sm">
+                <div className="flex justify-between"><dt className="text-slate-500">Sales (food &amp; drink)</dt><dd className="font-medium tabular-nums">{rm(sales)}</dd></div>
+                <div className="flex justify-between"><dt className="text-slate-500">Cost of sales</dt><dd className="font-medium tabular-nums">{rm(costOfSales)}</dd></div>
+                <div className="flex justify-between border-t border-slate-100 pt-3">
+                  <dt className="font-medium">Gross profit{marginPct !== null ? ` (${marginPct.toFixed(0)}%)` : ''}</dt>
+                  <dd className="font-semibold tabular-nums">{rm(grossProfit)}</dd>
+                </div>
+                {marginPct !== null && (
+                  <div className={`-mt-2 text-xs font-medium ${
+                    marginPointsChange === null ? 'text-slate-400' : marginPointsChange === 0 ? 'text-slate-500' : marginPointsChange > 0 ? 'text-emerald-600' : 'text-rose-600'
+                  }`}>
+                    {marginPointsChange === null ? 'no figure to compare' : marginPointsChange === 0 ? 'flat vs last month' : `${marginPointsChange > 0 ? '+' : ''}${marginPointsChange} points vs last month`}
                   </div>
                 )}
-              </div>
-            )}
-            <div className="flex justify-between"><dt className="text-slate-500">Service charge</dt><dd className="font-medium tabular-nums">{rm(service)}</dd></div>
-            {otherIncome !== 0 && <div className="flex justify-between"><dt className="text-slate-500">Other income</dt><dd className="font-medium tabular-nums">{rm(otherIncome)}</dd></div>}
-            <div className="flex justify-between"><dt className="text-slate-500">Running costs</dt><dd className="font-medium tabular-nums">{rm(expense)}</dd></div>
-            <div className="flex justify-between border-t border-slate-100 pt-3">
-              <dt className="font-medium">Profit so far</dt>
-              <dd className={`font-semibold tabular-nums ${income - costOfSales - expense < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{rm(income - costOfSales - expense)}</dd>
-            </div>
-          </dl>
-          <h4 className="mb-3 mt-6 text-sm font-semibold text-slate-500">Top running costs this month</h4>
-          {topExpenses.length ? <RankedBars rows={topExpenses} /> : <p className="muted">No expenses yet.</p>}
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold">Recent documents</h3>
-          <Link to="/gl/listing" className="link">View all</Link>
-        </div>
-        <div className="-mx-5 mt-3 overflow-x-auto">
-          {recent.length === 0 && <p className="muted px-5 py-6">No documents yet. Start with a Payment Voucher or Purchase Invoice.</p>}
-          {recent.length > 0 && (
-            <table>
-              <tbody>
-                {recent.map(r => (
-                  <tr key={r.id}>
-                    <td className="w-28 pl-5 text-slate-500">{dmy(r.date)}</td>
-                    <td className="hidden w-32 font-mono text-xs sm:table-cell">
-                      <Link to={`/gl/listing?doc=${r.doc_no}`} className="hover:text-brand">{r.doc_no}</Link>
-                    </td>
-                    <td className="font-medium">{r.description}</td>
-                    <td className="pr-5 text-right font-medium">{rm(r.journal_lines.reduce((s, l) => s + Number(l.debit), 0))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                {(splitLines.length > 0 || corkage !== 0) && (
+                  <div className="space-y-1.5 border-t border-slate-100 pt-3">
+                    <div className="text-xs font-semibold text-slate-500">Food, beverage &amp; liquor</div>
+                    {splitLines.map(l => {
+                      const m = (l.sales - l.cost) / l.sales * 100
+                      return (
+                        <div key={l.label} className="flex justify-between">
+                          <dt className="text-slate-500">{l.label} ({m.toFixed(0)}%)</dt>
+                          <dd className="font-medium tabular-nums">{rm(l.sales)}</dd>
+                        </div>
+                      )
+                    })}
+                    {corkage !== 0 && (
+                      <div className="flex justify-between">
+                        <dt className="text-slate-500">Corkage</dt>
+                        <dd className="font-medium tabular-nums">{rm(corkage)}</dd>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="flex justify-between"><dt className="text-slate-500">Service charge</dt><dd className="font-medium tabular-nums">{rm(service)}</dd></div>
+                {otherIncome !== 0 && <div className="flex justify-between"><dt className="text-slate-500">Other income</dt><dd className="font-medium tabular-nums">{rm(otherIncome)}</dd></div>}
+                <div className="flex justify-between"><dt className="text-slate-500">Running costs</dt><dd className="font-medium tabular-nums">{rm(expense)}</dd></div>
+                <div className="flex justify-between border-t border-slate-100 pt-3">
+                  <dt className="font-medium">Profit so far</dt>
+                  <dd className={`font-semibold tabular-nums ${income - costOfSales - expense < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{rm(income - costOfSales - expense)}</dd>
+                </div>
+              </dl>
+              <h4 className="mb-3 mt-6 text-sm font-semibold text-slate-500">Top running costs this month</h4>
+              {topExpenses.length ? <RankedBars rows={topExpenses} /> : <p className="muted">No expenses yet.</p>}
+            </>
           )}
         </div>
       </div>

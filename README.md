@@ -76,6 +76,7 @@ Turn on two-step login for each account once created — this system holds salar
 - **Before this update reaches the site**, run `supabase/019_advance.sql` then `supabase/020_timesheet.sql` in Supabase → SQL Editor, in that order — do this before merging the code, not after. If payroll is run for any month while the code is updated but these two files are not, that month's run will not show an error; it will just quietly ignore the Timesheet hours and take no salary advance recovery, and nothing on screen will say anything is wrong. If that happens, delete that draft payroll run, run the two files, and start the month again.
 - A salary advance is recorded on the Staff Advance screen; the money leaves the till straight away and comes off the next payslip by itself, and if it is more than one month's pay the rest carries to the month after.
 - Hours go on the Timesheet before the monthly payroll is created; creating the run picks them up, and anything can still be corrected on the payslip before approving.
+- The dashboard's sales figures compare against the same day of the week a week ago (Tuesday vs Tuesday, not Tuesday vs Monday), because trade swings by day of week. Its break-even figure is worked out from the last three complete months of records, so it settles down and becomes more reliable once there is a few months of history.
 
 ## Run on this computer (optional, for testing changes)
 
@@ -90,6 +91,7 @@ npm run dev
 `npm run test:sales -- <file.xlsx>` checks a Zeoniq Bill Summary export adds up before importing.
 `npm run test:rls` checks what each role can see and do.
 `npm run test:repair` checks the repair file on a half-applied and on a complete database.
+`npm run test:dash` checks the dashboard's arithmetic (date ranges, percentage changes, break-even).
 
 If you build the site on this computer (`npm run build`) without doing the `.env.local` step above, it will finish with no errors but the site it makes will be empty — it quietly leaves the whole app out. Always copy `.env.example` to `.env.local` and fill in the two values before trusting a build made here. Cloudflare's own builds already have these values set, so they are not affected.
 
@@ -101,4 +103,4 @@ If you build the site on this computer (`npm run build`) without doing the `.env
 - [x] Phase 3c – Food / beverage / liquor split from the Zeoniq Product Sales export
 - [x] Phase 4 – Claims (staff submit with photo, manager approves, owner/accountant pays)
 - [x] Phase 5 – Payroll (staff records, monthly run, EPF/SOCSO/EIS, payslips, yearly summary, salary advances, timesheets)
-- [ ] Phase 6 – Reports, SST, backups
+- [ ] Phase 6 – Dashboard showing money due, a weekday-matched sales trend, break-even and margin health; reports, SST, backups still to come
