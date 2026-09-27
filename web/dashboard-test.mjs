@@ -38,10 +38,14 @@ assert.equal(breakEven({ fixed: 30000, variableRate: 0.32, daysInMonth: 30 }), 1
 assert.equal(breakEven({ fixed: 30000, variableRate: 1, daysInMonth: 30 }), null, 'variable eats every ringgit')
 assert.equal(breakEven({ fixed: 30000, variableRate: 1.2, daysInMonth: 30 }), null, 'variable exceeds sales')
 assert.equal(breakEven({ fixed: 0, variableRate: 0.32, daysInMonth: 30 }), 0, 'no fixed costs, break even at zero')
+assert.equal(breakEven({ fixed: 30000, variableRate: null, daysInMonth: 30 }), null, 'no variable rate means no break-even')
+assert.equal(breakEven({ fixed: 30000, variableRate: 0.32, daysInMonth: 0 }), null, 'no days means no daily figure')
+assert.equal(breakEven({ fixed: 30000, variableRate: -0.1, daysInMonth: 30 }), 909.09, 'negative variable rate (credit note) gives lower break-even')
 
 // --- percentage change ---
 assert.equal(pctChange(110, 100), 10)
 assert.equal(pctChange(90, 100), -10)
+assert.equal(pctChange(133.333, 100), 33.3, 'one-decimal rounding on fractional percent')
 assert.equal(pctChange(100, 0), null, 'no baseline means no percentage')
 assert.equal(pctChange(0, 0), null)
 

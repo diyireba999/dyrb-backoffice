@@ -36,13 +36,13 @@ export function variableRate({ costOfSales, cardFees, sales }: {
 }
 
 // Sales per day needed to cover the fixed costs once the variable share is taken out.
-// Null when the variable share is 1 or more — every extra ringgit of sales loses
+// Null when the variable share is null, 1 or more — every extra ringgit of sales loses
 // money, so no amount of trade breaks even and a figure would be a lie.
 export function breakEven({ fixed, variableRate: v, daysInMonth: days }: {
-  fixed: number; variableRate: number; daysInMonth: number
+  fixed: number; variableRate: number | null; daysInMonth: number
 }): number | null {
   if (!(days > 0)) return null
-  if (v >= 1) return null
+  if (v === null || v >= 1) return null
   const monthly = n(fixed) / (1 - n(v))
   return Math.round((monthly / days) * 100) / 100
 }
