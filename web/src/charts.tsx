@@ -98,7 +98,10 @@ export function DailyBars({ days, breakEvenLine }: { days: DayAmount[]; breakEve
               const v = Number(d.amount)
               return (
                 <div key={d.date} className="relative flex-1" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
-                  <div className={`rounded-t ${hover === i ? 'opacity-70' : ''}`} style={{ height: Math.max(2, (v / max) * H), background: SERIES[0] }} />
+                  <div
+                    className={`rounded-t ${hover === i ? 'opacity-70' : ''} ${v < 0 ? 'bg-rose-600' : ''}`}
+                    style={{ height: Math.max(2, (v / max) * H), ...(v < 0 ? {} : { background: SERIES[0] }) }}
+                  />
                   {hover === i && (
                     <div className="pointer-events-none absolute bottom-full z-10 mb-1 w-32 -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-2 text-xs shadow-lg">
                       <div className="font-semibold text-slate-900">{dmy(d.date)}</div>

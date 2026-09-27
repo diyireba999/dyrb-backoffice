@@ -50,17 +50,20 @@ type SalesBand = {
   month: { amount: number; compare: number }
   strip: DayAmount[]
   avgPerDay: number
+  monthStarted: boolean
   breakEvenLine: number | null
   breakEvenNote: string | null // shown instead of the line when a figure would be a lie
 }
 
 function Trend({ label, vsLabel, now, before }: { label: string; vsLabel: string; now: number; before: number }) {
   const change = pctChange(now, before)
+  // Flat is not up: a genuine 0% change gets the neutral treatment, not green.
+  const color = change === null ? 'text-slate-400' : change === 0 ? 'text-slate-500' : change < 0 ? 'text-rose-600' : 'text-emerald-600'
   return (
     <div>
       <div className="muted">{label}</div>
       <div className="text-xl font-semibold tabular-nums">{rm(now)}</div>
-      <div className={`text-xs font-medium ${change === null ? 'text-slate-400' : change < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+      <div className={`text-xs font-medium ${color}`}>
         {change === null ? 'no figure to compare' : `${change > 0 ? '+' : ''}${change}% ${vsLabel}`}
       </div>
     </div>
@@ -115,14 +118,18 @@ export function Dashboard({ profile }: { profile: Profile }) {
         const date = addDaysISO(stripStart, i)
         return { date, amount: byDate.get(date) ?? 0 } // closed day = 0, a visible stub not a gap
       })
-      const monthAmt = sumRange(salesDays, thisMonthStart, yesterday)
-      const daysElapsed = Math.max(0, daysBetween(thisMonthStart, yesterday))
+      // On the 1st of the month, yesterday falls in the PREVIOUS month, so there is no
+      // month-to-date range yet — treat it as not started rather than compare 0 against
+      // all of last month (which would read as a fabricated -100%).
+      const monthStarted = yesterday >= thisMonthStart
+      const monthAmt = monthStarted ? sumRange(salesDays, thisMonthStart, yesterday) : 0
+      const monthCompare = monthStarted ? sumRange(salesDays, lastMonthStart, lastMonthEnd) : 0
+      const daysElapsed = monthStarted ? daysBetween(thisMonthStart, yesterday) : 0
       const avgPerDay = daysElapsed > 0 ? round2(monthAmt / daysElapsed) : 0
 
       // Break-even over the last 3 COMPLETE months only (the partial current month
       // would drag the average down and make break-even look easy).
       const threeMonthsStart = monthStartOffset(today, 3)
-      const twoMonthsStart = monthStartOffset(today, 2)
       const lastCompleteMonthEnd = addDaysISO(thisMonthStart, -1)
       const [totals3mo, earliest] = await Promise.all([
         accountTotals(threeMonthsStart, lastCompleteMonthEnd),
@@ -131,10 +138,16 @@ export function Dashboard({ profile }: { profile: Profile }) {
       const codeSum = (lo: string, hi: string) =>
         [...totals3mo].filter(([code]) => code >= lo && code < hi).reduce((s, [, v]) => s + v, 0)
       const cardFees = totals3mo.get('6200') ?? 0
-      const fixed = (codeSum('6000', '7000') - cardFees) / 3
-      const v = variableRate({ costOfSales: codeSum('5000', '5100'), cardFees, sales: -codeSum('4000', '4100') })
       const earliestDate = (earliest.data as { date: string }[] | null)?.[0]?.date ?? null
-      const enoughHistory = earliestDate !== null && earliestDate <= twoMonthsStart
+      // Whole months only: a first journal dated mid-month doesn't count that month.
+      const mIdx = (iso: string) => { const [y, m] = iso.slice(0, 7).split('-').map(Number); return y * 12 + m }
+      const firstWhole = earliestDate ? mIdx(earliestDate) + (earliestDate.slice(8) === '01' ? 0 : 1) : Infinity
+      const monthsCovered = Math.min(3, mIdx(thisMonthStart) - Math.max(firstWhole, mIdx(threeMonthsStart)))
+      const enoughHistory = monthsCovered >= 2
+      const fixed = (codeSum('6000', '7000') - cardFees) / monthsCovered
+      // Cost of sales is 5000-5999 throughout this screen (matches the gross-profit
+      // figure above), which includes 5100 Packaging & Consumables — it scales with sales.
+      const v = variableRate({ costOfSales: codeSum('5000', '6000'), cardFees, sales: -codeSum('4000', '4100') })
       const line = enoughHistory ? breakEven({ fixed, variableRate: v, daysInMonth: daysInMonth(today.slice(0, 7)) }) : null
       const breakEvenNote = !enoughHistory
         ? 'Not enough history yet — break-even needs at least 2 complete months of records.'
@@ -147,8 +160,8 @@ export function Dashboard({ profile }: { profile: Profile }) {
       setSalesBand({
         yesterday: { amount: sumRange(salesDays, yesterday, yesterday), compare: sumRange(salesDays, sameWeekdayLastWeek(yesterday), sameWeekdayLastWeek(yesterday)) },
         week: { amount: sumRange(salesDays, weekStart, yesterday), compare: sumRange(salesDays, weekStartLastWeek, sameWeekdayLastWeek(yesterday)) },
-        month: { amount: monthAmt, compare: sumRange(salesDays, lastMonthStart, lastMonthEnd) },
-        strip, avgPerDay, breakEvenLine: line, breakEvenNote,
+        month: { amount: monthAmt, compare: monthCompare },
+        strip, avgPerDay, monthStarted, breakEvenLine: line, breakEvenNote,
       })
     }).catch((e: Error) => setSalesBandError(e.message))
   }, [office])
@@ -217,9 +230,11 @@ export function Dashboard({ profile }: { profile: Profile }) {
                 <DailyBars days={salesBand.strip} breakEvenLine={salesBand.breakEvenLine} />
               </div>
               <p className="muted mt-3 text-xs">
-                {salesBand.breakEvenLine !== null
+                {salesBand.breakEvenLine === null
+                  ? salesBand.breakEvenNote
+                  : salesBand.monthStarted
                   ? `Break even at ${rm(salesBand.breakEvenLine)} a day. Averaging ${rm(salesBand.avgPerDay)} a day this month.`
-                  : salesBand.breakEvenNote}
+                  : `Break even at ${rm(salesBand.breakEvenLine)} a day. This month has not started yet.`}
               </p>
             </>
           )}
