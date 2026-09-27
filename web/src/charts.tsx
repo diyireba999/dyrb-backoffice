@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { dmy, rm } from './lib'
-import type { DayAmount } from './dashboard-math'
+import { pctChange, type DayAmount } from './dashboard-math'
 
 // Categorical slots 1 and 2 from the validated reference palette (light surface).
 const SERIES = ['#2a78d6', '#eb6834']
@@ -128,21 +128,34 @@ export function DailyBars({ days, breakEvenLine }: { days: DayAmount[]; breakEve
 }
 
 // Ranked horizontal bars, single series, value at the tip.
-export function RankedBars({ rows }: { rows: { label: string; value: number }[] }) {
+// `before` (optional) adds a same-period-last-month change line. Unlike the sales
+// figures elsewhere on the dashboard, a rise here is bad (costs went up), so the
+// colours are the opposite of Trend's — which is exactly why each also gets a word,
+// not just a colour.
+export function RankedBars({ rows }: { rows: { label: string; value: number; before?: number }[] }) {
   const max = Math.max(...rows.map(r => r.value), 1)
   return (
     <div className="space-y-3">
-      {rows.map(r => (
-        <div key={r.label} title={`${r.label}: ${rm(r.value)}`}>
-          <div className="mb-1 flex justify-between gap-2 text-sm">
-            <span className="truncate text-slate-700">{r.label}</span>
-            <span className="shrink-0 font-medium tabular-nums">{rm(r.value)}</span>
+      {rows.map(r => {
+        const change = r.before === undefined ? undefined : pctChange(r.value, r.before)
+        const color = change === undefined ? '' : change === null ? 'text-slate-400' : change === 0 ? 'text-slate-500' : change > 0 ? 'text-rose-600' : 'text-emerald-600'
+        return (
+          <div key={r.label} title={`${r.label}: ${rm(r.value)}`}>
+            <div className="mb-1 flex justify-between gap-2 text-sm">
+              <span className="truncate text-slate-700">{r.label}</span>
+              <span className="shrink-0 font-medium tabular-nums">{rm(r.value)}</span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-100">
+              <div className="h-2 rounded-full" style={{ width: `${(r.value / max) * 100}%`, background: SERIES[0] }} />
+            </div>
+            {change !== undefined && (
+              <div className={`mt-0.5 text-xs font-medium ${color}`}>
+                {change === null ? 'new' : change === 0 ? 'flat vs last month' : `${change > 0 ? 'up' : 'down'} ${Math.abs(change)}% vs last month`}
+              </div>
+            )}
           </div>
-          <div className="h-2 rounded-full bg-slate-100">
-            <div className="h-2 rounded-full" style={{ width: `${(r.value / max) * 100}%`, background: SERIES[0] }} />
-          </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

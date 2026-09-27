@@ -79,6 +79,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
   const accounts = useAccounts(true)
   const [all, setAll] = useState<Map<string, number>>(new Map())
   const [month, setMonth] = useState<Map<string, number>>(new Map())
+  const [lastMonth, setLastMonth] = useState<Map<string, number>>(new Map())
   const [claims, setClaims] = useState<{ status: string; amount: number; staff_id: string }[]>([])
   const [recent, setRecent] = useState<Recent[]>([])
   const [due, setDue] = useState<{ dueSoon: number; overdue: number } | null | undefined>(undefined)
@@ -91,6 +92,10 @@ export function Dashboard({ profile }: { profile: Profile }) {
     if (!office) return
     accountTotals(null, todayMY()).then(setAll)
     accountTotals(monthStart(), todayMY()).then(setMonth)
+    // Same-day-of-month cutoff last month, so "this month so far" is compared like for like.
+    const lastMonthStart = monthStartOffset(todayMY(), 1)
+    const lastMonthEnd = addDaysISO(lastMonthStart, Math.min(Number(todayMY().slice(8, 10)), daysInMonth(lastMonthStart.slice(0, 7))) - 1)
+    accountTotals(lastMonthStart, lastMonthEnd).then(setLastMonth)
     supabase.from('journals').select('id, doc_no, date, description, journal_lines(debit)')
       .order('date', { ascending: false }).order('id', { ascending: false }).limit(6)
       .then(({ data }) => setRecent((data as Recent[]) ?? []))
@@ -175,15 +180,36 @@ export function Dashboard({ profile }: { profile: Profile }) {
   const expense = sumCodes(accounts, month, '6000', '7000')
   const grossProfit = sales - costOfSales
   const income = sales + service + otherIncome
+  // Margin change vs last month in percentage POINTS (60% -> 63% is "+3 points", not "+5%").
+  const marginPct = sales > 0 ? (grossProfit / sales) * 100 : null
+  const lastSales = -sumCodes(accounts, lastMonth, '4000', '4100')
+  const lastCostOfSales = sumCodes(accounts, lastMonth, '5000', '6000')
+  const lastMarginPct = lastSales > 0 ? ((lastSales - lastCostOfSales) / lastSales) * 100 : null
+  const marginPointsChange = marginPct !== null && lastMarginPct !== null ? round2(marginPct - lastMarginPct) : null
+  // Food/beverage/liquor split, each sales account paired with its own cost account.
+  // A category with no sales this month is left out rather than shown as a 0% margin.
+  const splitLines = ([
+    ['Food', '4000', '5000'],
+    ['Beverage', '4010', '5010'],
+    ['Liquor', '4020', '5020'],
+  ] as const).map(([label, salesCode, costCode]) => ({
+    label, sales: -(month.get(salesCode) ?? 0), cost: month.get(costCode) ?? 0,
+  })).filter(l => l.sales !== 0)
+  // Corkage 4030 has no cost account (no stock behind it) and is excluded from the margin
+  // split on purpose, but shown as its own line when non-zero so the money isn't hidden.
+  const corkage = -(month.get('4030') ?? 0)
   const directorOwed = -accounts.filter(a => isDirector(a.code)).reduce((s, a) => s + (all.get(a.code) ?? 0), 0)
   const openClaims = office ? claims : claims.filter(c => c.staff_id === profile.id)
   const claimsTotal = openClaims.reduce((s, c) => s + Number(c.amount), 0)
   const monthName = new Date().toLocaleDateString('en-MY', { month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
   const topExpenses = (() => {
-    const rows = accounts.filter(a => a.type === 'expense' && a.code >= '6000').map(a => ({ label: a.name, value: month.get(a.code) ?? 0 }))
+    const rows = accounts.filter(a => a.type === 'expense' && a.code >= '6000')
+      .map(a => ({ label: a.name, value: month.get(a.code) ?? 0, before: lastMonth.get(a.code) ?? 0 }))
       .filter(r => r.value > 0).sort((a, b) => b.value - a.value)
-    const other = rows.slice(5).reduce((s, r) => s + r.value, 0)
-    return other > 0 ? [...rows.slice(0, 5), { label: 'Other', value: other }] : rows
+    const rest = rows.slice(5)
+    const other = rest.reduce((s, r) => s + r.value, 0)
+    const otherBefore = rest.reduce((s, r) => s + r.before, 0)
+    return other > 0 ? [...rows.slice(0, 5), { label: 'Other', value: other, before: otherBefore }] : rows
   })()
 
   if (!office) return (
@@ -245,9 +271,36 @@ export function Dashboard({ profile }: { profile: Profile }) {
             <div className="flex justify-between"><dt className="text-slate-500">Sales (food &amp; drink)</dt><dd className="font-medium tabular-nums">{rm(sales)}</dd></div>
             <div className="flex justify-between"><dt className="text-slate-500">Cost of sales</dt><dd className="font-medium tabular-nums">{rm(costOfSales)}</dd></div>
             <div className="flex justify-between border-t border-slate-100 pt-3">
-              <dt className="font-medium">Gross profit{sales ? ` (${((grossProfit / sales) * 100).toFixed(0)}%)` : ''}</dt>
+              <dt className="font-medium">Gross profit{marginPct !== null ? ` (${marginPct.toFixed(0)}%)` : ''}</dt>
               <dd className="font-semibold tabular-nums">{rm(grossProfit)}</dd>
             </div>
+            {marginPct !== null && (
+              <div className={`-mt-2 text-xs font-medium ${
+                marginPointsChange === null ? 'text-slate-400' : marginPointsChange === 0 ? 'text-slate-500' : marginPointsChange > 0 ? 'text-emerald-600' : 'text-rose-600'
+              }`}>
+                {marginPointsChange === null ? 'no figure to compare' : marginPointsChange === 0 ? 'flat vs last month' : `${marginPointsChange > 0 ? '+' : ''}${marginPointsChange} points vs last month`}
+              </div>
+            )}
+            {(splitLines.length > 0 || corkage !== 0) && (
+              <div className="space-y-1.5 border-t border-slate-100 pt-3">
+                <div className="text-xs font-semibold text-slate-500">Food, beverage &amp; liquor</div>
+                {splitLines.map(l => {
+                  const m = (l.sales - l.cost) / l.sales * 100
+                  return (
+                    <div key={l.label} className="flex justify-between">
+                      <dt className="text-slate-500">{l.label} ({m.toFixed(0)}%)</dt>
+                      <dd className="font-medium tabular-nums">{rm(l.sales)}</dd>
+                    </div>
+                  )
+                })}
+                {corkage !== 0 && (
+                  <div className="flex justify-between">
+                    <dt className="text-slate-500">Corkage</dt>
+                    <dd className="font-medium tabular-nums">{rm(corkage)}</dd>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex justify-between"><dt className="text-slate-500">Service charge</dt><dd className="font-medium tabular-nums">{rm(service)}</dd></div>
             {otherIncome !== 0 && <div className="flex justify-between"><dt className="text-slate-500">Other income</dt><dd className="font-medium tabular-nums">{rm(otherIncome)}</dd></div>}
             <div className="flex justify-between"><dt className="text-slate-500">Running costs</dt><dd className="font-medium tabular-nums">{rm(expense)}</dd></div>
