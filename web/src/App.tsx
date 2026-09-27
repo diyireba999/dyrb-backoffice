@@ -5,7 +5,7 @@ import {
   ListTree, LogOut, Menu, NotebookPen, Plus, Repeat, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, CreditCard, IdCard, Package, Tags, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
-import { loginEmail, supabase, type Profile, type Role } from './lib'
+import { isOffice, loginEmail, supabase, type Profile, type Role } from './lib'
 import { JournalListing, OfficialReceipt, PaymentVoucher, Transfer } from './pages/Books'
 import { AccountLedger, BankReconciliation, ChartOfAccounts, JournalEntry } from './pages/Ledger'
 import { ApAging, PurchaseInvoices, Suppliers, SupplierPayments } from './pages/Purchase'
@@ -22,11 +22,12 @@ import { Accruals } from './pages/Accruals'
 
 const OFFICE: Role[] = ['owner', 'manager', 'accountant']
 const EVERYONE: Role[] = [...OFFICE, 'staff']
+const REPORTS: Role[] = [...OFFICE, 'investor']
 
 // group = sidebar heading. Pages sharing a section show as one sidebar item with tabs on the page.
 type Page = { to: string; label: string; subtitle: string; icon: LucideIcon; group: string; section?: string; roles: Role[] }
 const PAGES: Page[] = [
-  { to: '/', label: 'Dashboard', subtitle: 'Overview of money and tasks', icon: LayoutDashboard, group: 'Overview', roles: EVERYONE },
+  { to: '/', label: 'Dashboard', subtitle: 'Overview of money and tasks', icon: LayoutDashboard, group: 'Overview', roles: [...EVERYONE, 'investor'] },
   { to: '/cash/payment', label: 'Payment Voucher', subtitle: 'Pay out from cash or bank (PV)', icon: ArrowUpRight, group: 'New', roles: OFFICE },
   { to: '/cash/receipt', label: 'Official Receipt', subtitle: 'Money received, other than daily sales (OR)', icon: ArrowDownLeft, group: 'New', roles: OFFICE },
   { to: '/cash/transfer', label: 'Bank Transfer', subtitle: 'Move money between cash and bank (TR)', icon: ArrowLeftRight, group: 'New', roles: OFFICE },
@@ -49,9 +50,9 @@ const PAGES: Page[] = [
   { to: '/gl/listing', label: 'Documents', subtitle: 'All documents by month', icon: BookOpen, group: 'Books', roles: OFFICE },
   { to: '/gl/ledger', label: 'All Accounts', subtitle: 'Transactions and running balance of one account', icon: BookText, group: 'Books', section: 'Ledger', roles: OFFICE },
   { to: '/cash/book', label: 'Cash & Bank', subtitle: 'Cash and bank movements with running balance', icon: Wallet, group: 'Books', section: 'Ledger', roles: OFFICE },
-  { to: '/reports/pl', label: 'Profit & Loss', subtitle: 'Sales, costs and profit for a period', icon: TrendingUp, group: 'Books', section: 'Reports', roles: OFFICE },
-  { to: '/reports/bs', label: 'Balance Sheet', subtitle: 'What the business owns and owes', icon: PieChart, group: 'Books', section: 'Reports', roles: OFFICE },
-  { to: '/reports/tb', label: 'Trial Balance', subtitle: 'All account balances; debit equals credit', icon: Scale, group: 'Books', section: 'Reports', roles: OFFICE },
+  { to: '/reports/pl', label: 'Profit & Loss', subtitle: 'Sales, costs and profit for a period', icon: TrendingUp, group: 'Books', section: 'Reports', roles: REPORTS },
+  { to: '/reports/bs', label: 'Balance Sheet', subtitle: 'What the business owns and owes', icon: PieChart, group: 'Books', section: 'Reports', roles: REPORTS },
+  { to: '/reports/tb', label: 'Trial Balance', subtitle: 'All account balances; debit equals credit', icon: Scale, group: 'Books', section: 'Reports', roles: REPORTS },
   { to: '/gl/accounts', label: 'Chart of Accounts', subtitle: 'Account list and balances', icon: ListTree, group: 'Setup', roles: OFFICE },
   { to: '/payroll/staff', label: 'Staff', subtitle: 'Staff details, salary and deductions', icon: IdCard, group: 'Setup', roles: OFFICE },
   { to: '/stock/costs', label: 'Item Costs', subtitle: 'What each drink and dish costs you', icon: Tags, group: 'Setup', roles: OFFICE },
@@ -234,7 +235,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
   const pages = PAGES.filter(p => p.roles.includes(profile.role))
   const page = pages.find(p => p.to === pathname) ?? pages[0]
   const tabs = page.section ? pages.filter(p => p.section === page.section) : []
-  const office = profile.role !== 'staff'
+  const office = isOffice(profile.role)
   const today = new Date().toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
   const hour = Number(new Date().toLocaleString('en-MY', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kuala_Lumpur' }))
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
@@ -279,6 +280,11 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
             <Route path="/" element={<Dashboard profile={profile} />} />
             <Route path="/claims" element={<Claims profile={profile} />} />
             <Route path="/payslips" element={<MyPayslips profile={profile} />} />
+            {(office || profile.role === 'investor') && <>
+              <Route path="/reports/tb" element={<TrialBalance />} />
+              <Route path="/reports/pl" element={<ProfitAndLoss />} />
+              <Route path="/reports/bs" element={<BalanceSheet />} />
+            </>}
             {office && <>
               <Route path="/gl/accounts" element={<ChartOfAccounts role={profile.role} />} />
               <Route path="/gl/journal" element={<JournalEntry />} />
@@ -294,9 +300,6 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
               <Route path="/ap/invoices" element={<PurchaseInvoices role={profile.role} />} />
               <Route path="/ap/payments" element={<SupplierPayments role={profile.role} />} />
               <Route path="/ap/aging" element={<ApAging />} />
-              <Route path="/reports/tb" element={<TrialBalance />} />
-              <Route path="/reports/pl" element={<ProfitAndLoss />} />
-              <Route path="/reports/bs" element={<BalanceSheet />} />
               <Route path="/sales/upload" element={<UploadSales role={profile.role} />} />
               <Route path="/sales/fiuu" element={<CardSettlement />} />
               <Route path="/sales/settings" element={<SalesSettings role={profile.role} />} />

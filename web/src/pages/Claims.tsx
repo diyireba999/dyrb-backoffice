@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MONEY_ACCOUNTS, MONEY_NAMES, dmy, isDirector, openReceipt, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, type Profile } from '../lib'
+import { MONEY_ACCOUNTS, MONEY_NAMES, dmy, isDirector, isOffice, openReceipt, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, type Profile } from '../lib'
 
 type Status = 'pending' | 'approved' | 'rejected' | 'paid'
 type Claim = {
@@ -86,7 +86,7 @@ export function Claims({ profile }: { profile: Profile }) {
   const [payFrom, setPayFrom] = useState('1010')
   const [rejecting, setRejecting] = useState<number | null>(null)
   const [reason, setReason] = useState('')
-  const office = profile.role !== 'staff'
+  const office = isOffice(profile.role)
   const canReview = (c: Claim) => profile.role === 'owner' || (profile.role === 'manager' && c.staff_id !== profile.id)
   const canPay = profile.role === 'owner' || profile.role === 'accountant'
 

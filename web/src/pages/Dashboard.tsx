@@ -76,7 +76,10 @@ const sumCodes = (accounts: Account[], m: Map<string, number>, from: string, to:
   accounts.filter(a => a.code >= from && a.code < to).reduce((s, a) => s + (m.get(a.code) ?? 0), 0)
 
 export function Dashboard({ profile }: { profile: Profile }) {
+  // Investors get the business view too, minus the shortcuts and the claims/supplier
+  // detail they cannot read (those would show a false RM 0).
   const office = profile.role !== 'staff'
+  const investor = profile.role === 'investor'
   // Fetched here (not via the shared useAccounts hook) so its completion can join the
   // same Promise.all as the balances below — the hook's own effect settles on its own
   // schedule, which is exactly what let `loaded` go true before this list had arrived.
@@ -158,7 +161,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
       const lastCompleteMonthEnd = addDaysISO(thisMonthStart, -1)
       const [totals3mo, earliest] = await Promise.all([
         accountTotals(threeMonthsStart, lastCompleteMonthEnd),
-        supabase.from('journals').select('date').order('date').limit(1),
+        supabase.from('account_balances').select('date').order('date').limit(1),
       ])
       const codeSum = (lo: string, hi: string) =>
         [...totals3mo].filter(([code]) => code >= lo && code < hi).reduce((s, [, v]) => s + v, 0)
@@ -251,17 +254,17 @@ export function Dashboard({ profile }: { profile: Profile }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap gap-2">
+      {!investor && <div className="flex flex-wrap gap-2">
         <QuickButton to="/cash/payment" icon={ArrowUpRight} label="Payment Voucher" />
         <QuickButton to="/cash/receipt" icon={ArrowDownLeft} label="Official Receipt" />
         <QuickButton to="/ap/invoices" icon={FileText} label="Purchase Invoice" />
-      </div>
+      </div>}
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
         <Kpi icon={Landmark} label="Bank balance" value={kpiValue(bal(['1100']))} tone="bg-blue-50 text-blue-600" />
         <Kpi icon={Banknote} label="Cash on hand" value={kpiValue(bal(['1000', '1010']))} note="Drawer + petty cash" tone="bg-emerald-50 text-emerald-600" />
-        <Kpi icon={Truck} label="Owed to suppliers" value={kpiValue(bal(['2000'], -1))} note={supplierDueNote(due)} tone="bg-rose-50 text-rose-600" />
-        <Kpi icon={Receipt} label="Claims to settle" value={kpiValue(claimsTotal)} note={loaded ? `${openClaims.length} pending or approved` : undefined} tone="bg-amber-50 text-amber-600" />
+        <Kpi icon={Truck} label="Owed to suppliers" value={kpiValue(bal(['2000'], -1))} note={investor ? undefined : supplierDueNote(due)} tone="bg-rose-50 text-rose-600" />
+        {!investor && <Kpi icon={Receipt} label="Claims to settle" value={kpiValue(claimsTotal)} note={loaded ? `${openClaims.length} pending or approved` : undefined} tone="bg-amber-50 text-amber-600" />}
         <Kpi icon={HandCoins} label="Owed to director" value={accountsError ? '—' : kpiValue(directorOwed)} note={accountsError ? 'Could not be loaded' : 'Paid from their own pocket'} tone="bg-violet-50 text-violet-600" />
       </div>
 
