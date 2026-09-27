@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { rm } from './lib'
+import { dmy, rm } from './lib'
+import type { DayAmount } from './dashboard-math'
 
 // Categorical slots 1 and 2 from the validated reference palette (light surface).
 const SERIES = ['#2a78d6', '#eb6834']
@@ -65,6 +66,57 @@ export function SalesVsExpenses({ data }: { data: MonthPoint[] }) {
           <thead><tr><th>Month</th><th className="text-right">Sales</th><th className="text-right">Expenses</th><th className="text-right">Profit</th></tr></thead>
           <tbody>{data.map(d => (
             <tr key={d.label}><td>{d.label}</td><td className="text-right">{rm(d.sales)}</td><td className="text-right">{rm(d.expenses)}</td><td className="text-right">{rm(d.sales - d.expenses)}</td></tr>
+          ))}</tbody>
+        </table>
+      </details>
+    </div>
+  )
+}
+
+// One thin bar per day, oldest left, with an optional dashed break-even rule.
+// A day with no sales still renders a visible baseline stub, not a gap.
+export function DailyBars({ days, breakEvenLine }: { days: DayAmount[]; breakEvenLine: number | null }) {
+  const [hover, setHover] = useState<number | null>(null)
+  const max = niceMax(Math.max(...days.map(d => Number(d.amount)), breakEvenLine ?? 0))
+  const H = 140
+  const linePct = breakEvenLine !== null ? Math.min(1, breakEvenLine / max) : null
+
+  return (
+    <div>
+      <div className="relative flex gap-2" style={{ height: H + 8 }}>
+        <div className="relative w-9 shrink-0 text-right text-[11px] text-slate-400" style={{ height: H }}>
+          {[0, max / 2, max].map(t => <div key={t} className="absolute right-0 -translate-y-1/2" style={{ top: H - (t / max) * H }}>{short(t)}</div>)}
+        </div>
+        <div className="relative flex-1">
+          {linePct !== null && (
+            <div className="absolute inset-x-0 border-t border-dashed border-slate-400" style={{ top: H - linePct * H }}>
+              <span className="absolute right-0 -top-2.5 bg-white pl-1 text-[10px] text-slate-500">break even</span>
+            </div>
+          )}
+          <div className="relative flex h-full items-end gap-px">
+            {days.map((d, i) => {
+              const v = Number(d.amount)
+              return (
+                <div key={d.date} className="relative flex-1" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+                  <div className={`rounded-t ${hover === i ? 'opacity-70' : ''}`} style={{ height: Math.max(2, (v / max) * H), background: SERIES[0] }} />
+                  {hover === i && (
+                    <div className="pointer-events-none absolute bottom-full z-10 mb-1 w-32 -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-2 text-xs shadow-lg">
+                      <div className="font-semibold text-slate-900">{dmy(d.date)}</div>
+                      <div className="tabular-nums text-slate-600">{rm(v)}</div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+      <details className="mt-2 text-sm">
+        <summary className="cursor-pointer text-xs text-slate-500">Show as table</summary>
+        <table className="mt-2">
+          <thead><tr><th>Date</th><th className="text-right">Sales</th></tr></thead>
+          <tbody>{days.map(d => (
+            <tr key={d.date}><td>{dmy(d.date)}</td><td className="text-right">{rm(Number(d.amount))}</td></tr>
           ))}</tbody>
         </table>
       </details>

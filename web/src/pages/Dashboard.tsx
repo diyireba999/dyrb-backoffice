@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowDownLeft, ArrowUpRight, Banknote, FileText, HandCoins, Landmark, Receipt, Truck, type LucideIcon } from 'lucide-react'
-import { accountTotals, addDays, dmy, isDirector, monthStart, rm, supabase, supplierDue, todayMY, useAccounts, type Account, type Profile } from '../lib'
-import { RankedBars, SalesVsExpenses, type MonthPoint } from '../charts'
+import { accountTotals, dailyNet, dmy, isDirector, monthStart, rm, round2, supabase, supplierDue, todayMY, useAccounts, type Account, type Profile } from '../lib'
+import { addDaysISO, breakEven, daysInMonth, pctChange, sameWeekdayLastWeek, sumRange, variableRate, type DayAmount } from '../dashboard-math'
+import { DailyBars, RankedBars } from '../charts'
 
 type Recent = { id: number; doc_no: string; date: string; description: string; journal_lines: { debit: number }[] }
 
@@ -32,19 +33,39 @@ function QuickButton({ to, icon: Icon, label }: { to: string; icon: LucideIcon; 
   return <Link to={to} className="btn-light h-9"><Icon className="size-4 text-brand" />{label}</Link>
 }
 
-// Last n calendar months, oldest first, as [firstDay, lastDay, label].
-function lastMonths(n: number) {
-  const [y, m] = todayMY().split('-').map(Number)
-  return Array.from({ length: n }, (_, i) => {
-    const d = new Date(Date.UTC(y, m - 1 - (n - 1 - i), 1))
-    const first = d.toISOString().slice(0, 10)
-    const last = addDays(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString().slice(0, 10), -1)
-    return [first, last, d.toLocaleDateString('en-MY', { month: 'short', timeZone: 'UTC' })] as const
-  })
+// Monday (UTC weekday) of the week containing this date.
+const mondayOf = (iso: string) => addDaysISO(iso, -((new Date(iso + 'T00:00:00Z').getUTCDay() + 6) % 7))
+
+// First day of the month `n` months before the month containing `iso`.
+const monthStartOffset = (iso: string, n: number) => {
+  const [y, m] = iso.slice(0, 7).split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1 - n, 1)).toISOString().slice(0, 10)
 }
 
-const sumType = (accounts: Account[], m: Map<string, number>, type: Account['type']) =>
-  accounts.filter(a => a.type === type).reduce((s, a) => s + (m.get(a.code) ?? 0), 0)
+const daysBetween = (a: string, b: string) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000) + 1
+
+type SalesBand = {
+  yesterday: { amount: number; compare: number }
+  week: { amount: number; compare: number }
+  month: { amount: number; compare: number }
+  strip: DayAmount[]
+  avgPerDay: number
+  breakEvenLine: number | null
+  breakEvenNote: string | null // shown instead of the line when a figure would be a lie
+}
+
+function Trend({ label, vsLabel, now, before }: { label: string; vsLabel: string; now: number; before: number }) {
+  const change = pctChange(now, before)
+  return (
+    <div>
+      <div className="muted">{label}</div>
+      <div className="text-xl font-semibold tabular-nums">{rm(now)}</div>
+      <div className={`text-xs font-medium ${change === null ? 'text-slate-400' : change < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+        {change === null ? 'no figure to compare' : `${change > 0 ? '+' : ''}${change}% ${vsLabel}`}
+      </div>
+    </div>
+  )
+}
 
 // Sales means food and drink only. Service charge and other income are shown apart.
 const sumCodes = (accounts: Account[], m: Map<string, number>, from: string, to: string) =>
@@ -55,10 +76,11 @@ export function Dashboard({ profile }: { profile: Profile }) {
   const accounts = useAccounts(true)
   const [all, setAll] = useState<Map<string, number>>(new Map())
   const [month, setMonth] = useState<Map<string, number>>(new Map())
-  const [months, setMonths] = useState<{ label: string; totals: Map<string, number> }[]>([])
   const [claims, setClaims] = useState<{ status: string; amount: number; staff_id: string }[]>([])
   const [recent, setRecent] = useState<Recent[]>([])
   const [due, setDue] = useState<{ dueSoon: number; overdue: number } | null | undefined>(undefined)
+  const [salesBand, setSalesBand] = useState<SalesBand | undefined>(undefined)
+  const [salesBandError, setSalesBandError] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.from('claims').select('status, amount, staff_id').in('status', ['pending', 'approved'])
@@ -66,11 +88,69 @@ export function Dashboard({ profile }: { profile: Profile }) {
     if (!office) return
     accountTotals(null, todayMY()).then(setAll)
     accountTotals(monthStart(), todayMY()).then(setMonth)
-    Promise.all(lastMonths(6).map(async ([from, to, label]) => ({ label, totals: await accountTotals(from, to) }))).then(setMonths)
     supabase.from('journals').select('id, doc_no, date, description, journal_lines(debit)')
       .order('date', { ascending: false }).order('id', { ascending: false }).limit(6)
       .then(({ data }) => setRecent((data as Recent[]) ?? []))
     supplierDue(todayMY()).then(setDue).catch(() => setDue(null))
+  }, [office])
+
+  // Sales band: three weekday-matched comparisons, the 42-day strip, and break-even.
+  // Uses yesterday throughout (today's sales are not uploaded yet) except where noted.
+  useEffect(() => {
+    if (!office) return
+    const today = todayMY()
+    const yesterday = addDaysISO(today, -1)
+    const weekStart = mondayOf(yesterday)
+    const weekStartLastWeek = addDaysISO(weekStart, -7)
+    const thisMonthStart = monthStart()
+    const lastMonthStart = monthStartOffset(today, 1)
+    const dayOfMonth = Number(yesterday.slice(8, 10))
+    const lastMonthEnd = addDaysISO(lastMonthStart, Math.min(dayOfMonth, daysInMonth(lastMonthStart.slice(0, 7))) - 1)
+    const stripStart = addDaysISO(yesterday, -41) // 42 days inclusive of yesterday
+    const dailyFrom = stripStart < lastMonthStart ? stripStart : lastMonthStart
+
+    dailyNet(dailyFrom, yesterday, '4000', '4100').then(async salesDays => {
+      const byDate = new Map(salesDays.map(d => [d.date, Number(d.amount)]))
+      const strip: DayAmount[] = Array.from({ length: 42 }, (_, i) => {
+        const date = addDaysISO(stripStart, i)
+        return { date, amount: byDate.get(date) ?? 0 } // closed day = 0, a visible stub not a gap
+      })
+      const monthAmt = sumRange(salesDays, thisMonthStart, yesterday)
+      const daysElapsed = Math.max(0, daysBetween(thisMonthStart, yesterday))
+      const avgPerDay = daysElapsed > 0 ? round2(monthAmt / daysElapsed) : 0
+
+      // Break-even over the last 3 COMPLETE months only (the partial current month
+      // would drag the average down and make break-even look easy).
+      const threeMonthsStart = monthStartOffset(today, 3)
+      const twoMonthsStart = monthStartOffset(today, 2)
+      const lastCompleteMonthEnd = addDaysISO(thisMonthStart, -1)
+      const [totals3mo, earliest] = await Promise.all([
+        accountTotals(threeMonthsStart, lastCompleteMonthEnd),
+        supabase.from('journals').select('date').order('date').limit(1),
+      ])
+      const codeSum = (lo: string, hi: string) =>
+        [...totals3mo].filter(([code]) => code >= lo && code < hi).reduce((s, [, v]) => s + v, 0)
+      const cardFees = totals3mo.get('6200') ?? 0
+      const fixed = (codeSum('6000', '7000') - cardFees) / 3
+      const v = variableRate({ costOfSales: codeSum('5000', '5100'), cardFees, sales: -codeSum('4000', '4100') })
+      const earliestDate = (earliest.data as { date: string }[] | null)?.[0]?.date ?? null
+      const enoughHistory = earliestDate !== null && earliestDate <= twoMonthsStart
+      const line = enoughHistory ? breakEven({ fixed, variableRate: v, daysInMonth: daysInMonth(today.slice(0, 7)) }) : null
+      const breakEvenNote = !enoughHistory
+        ? 'Not enough history yet — break-even needs at least 2 complete months of records.'
+        : v === null
+        ? 'No sales in the last 3 months, so a variable cost rate cannot be worked out.'
+        : line === null
+        ? 'Variable costs are at or above sales, so a break-even figure would be meaningless.'
+        : null
+
+      setSalesBand({
+        yesterday: { amount: sumRange(salesDays, yesterday, yesterday), compare: sumRange(salesDays, sameWeekdayLastWeek(yesterday), sameWeekdayLastWeek(yesterday)) },
+        week: { amount: sumRange(salesDays, weekStart, yesterday), compare: sumRange(salesDays, weekStartLastWeek, sameWeekdayLastWeek(yesterday)) },
+        month: { amount: monthAmt, compare: sumRange(salesDays, lastMonthStart, lastMonthEnd) },
+        strip, avgPerDay, breakEvenLine: line, breakEvenNote,
+      })
+    }).catch((e: Error) => setSalesBandError(e.message))
   }, [office])
 
   const bal = (codes: string[], sign = 1) => codes.reduce((s, c) => s + sign * (all.get(c) ?? 0), 0)
@@ -86,9 +166,6 @@ export function Dashboard({ profile }: { profile: Profile }) {
   const openClaims = office ? claims : claims.filter(c => c.staff_id === profile.id)
   const claimsTotal = openClaims.reduce((s, c) => s + Number(c.amount), 0)
   const monthName = new Date().toLocaleDateString('en-MY', { month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
-  const chart: MonthPoint[] = months.map(m => ({
-    label: m.label, sales: -sumCodes(accounts, m.totals, '4000', '4100'), expenses: sumType(accounts, m.totals, 'expense'),
-  }))
   const topExpenses = (() => {
     const rows = accounts.filter(a => a.type === 'expense' && a.code >= '6000').map(a => ({ label: a.name, value: month.get(a.code) ?? 0 }))
       .filter(r => r.value > 0).sort((a, b) => b.value - a.value)
@@ -123,9 +200,29 @@ export function Dashboard({ profile }: { profile: Profile }) {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="card lg:col-span-2">
-          <h3 className="font-semibold">Sales vs expenses</h3>
-          <p className="muted mb-4">Last 6 months</p>
-          {chart.length > 0 && <SalesVsExpenses data={chart} />}
+          <h3 className="font-semibold">Sales</h3>
+          <p className="muted mb-4">Using yesterday throughout — today's sales are not uploaded yet.</p>
+          {salesBandError ? (
+            <p className="text-sm text-rose-600">Could not load the sales band: {salesBandError}</p>
+          ) : !salesBand ? (
+            <p className="muted">Loading…</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-4">
+                <Trend label="Yesterday" vsLabel="vs same day last week" now={salesBand.yesterday.amount} before={salesBand.yesterday.compare} />
+                <Trend label="Week to date" vsLabel="vs last week" now={salesBand.week.amount} before={salesBand.week.compare} />
+                <Trend label="Month to date" vsLabel="vs last month" now={salesBand.month.amount} before={salesBand.month.compare} />
+              </div>
+              <div className="mt-6">
+                <DailyBars days={salesBand.strip} breakEvenLine={salesBand.breakEvenLine} />
+              </div>
+              <p className="muted mt-3 text-xs">
+                {salesBand.breakEvenLine !== null
+                  ? `Break even at ${rm(salesBand.breakEvenLine)} a day. Averaging ${rm(salesBand.avgPerDay)} a day this month.`
+                  : salesBand.breakEvenNote}
+              </p>
+            </>
+          )}
         </div>
         <div className="card">
           <h3 className="font-semibold">{monthName}</h3>
