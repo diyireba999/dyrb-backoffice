@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase, type Profile, type Role } from '../lib'
 
-const ROLES: Role[] = ['owner', 'manager', 'accountant', 'staff']
+const ROLES: Role[] = ['owner', 'manager', 'accountant', 'staff', 'investor']
 
 // Owner adds people here with a username and first password (022_usernames.sql).
 export function Users({ me }: { me: string }) {

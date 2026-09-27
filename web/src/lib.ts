@@ -15,7 +15,9 @@ export function rowsOf<T>(r: { data: T[] | null; error: { message: string } | nu
   return r.data ?? []
 }
 
-export type Role = 'owner' | 'manager' | 'accountant' | 'staff'
+export type Role = 'owner' | 'manager' | 'accountant' | 'staff' | 'investor'
+// Runs the books. Investors only read the dashboard and summary reports.
+export const isOffice = (role: Role) => role === 'owner' || role === 'manager' || role === 'accountant'
 export type Profile = { id: string; full_name: string; username: string; role: Role; active: boolean }
 
 // Supabase signs in by email; a username is kept as <username>@dyrb.local (022_usernames.sql).

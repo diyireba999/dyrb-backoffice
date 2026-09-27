@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Pencil, Plus, Printer, Trash2, XCircle } from 'lucide-react'
-import { dmy, downloadCsv, MONEY_ACCOUNTS, MONEY_NAMES, rm, round2, supabase, todayMY, type Profile, type Role } from '../lib'
+import { dmy, downloadCsv, isOffice, MONEY_ACCOUNTS, MONEY_NAMES, rm, round2, supabase, todayMY, type Profile, type Role } from '../lib'
 import { Done, Empty, ReportBar } from '../ui'
 
 type Employee = {
@@ -301,7 +301,7 @@ export function Timesheet({ role }: { role: Role }) {
   const [saved, setSavedState] = useState<Record<string, TsSaved>>({})
   const [failed, setFailed] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
-  const canEdit = role !== 'staff'
+  const canEdit = isOffice(role)
 
   // Mirror `data` / `saved` in refs purely so a cell's queued write can be
   // captured synchronously (see `save` below) without waiting on a render.
