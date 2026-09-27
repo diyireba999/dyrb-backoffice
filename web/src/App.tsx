@@ -5,7 +5,7 @@ import {
   ListTree, LogOut, Menu, NotebookPen, Plus, Repeat, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, CreditCard, IdCard, Package, Tags, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
-import { arrivedFromEmail, supabase, type Profile, type Role } from './lib'
+import { loginEmail, supabase, type Profile, type Role } from './lib'
 import { JournalListing, OfficialReceipt, PaymentVoucher, Transfer } from './pages/Books'
 import { AccountLedger, BankReconciliation, ChartOfAccounts, JournalEntry } from './pages/Ledger'
 import { ApAging, PurchaseInvoices, Suppliers, SupplierPayments } from './pages/Purchase'
@@ -88,7 +88,7 @@ function Logo() {
 }
 
 function Login() {
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -96,9 +96,9 @@ function Login() {
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail(username), password })
     setBusy(false)
-    if (error) setError('Wrong email or password')
+    if (error) setError('Wrong username or password')
   }
 
   return (
@@ -108,9 +108,9 @@ function Login() {
         <form onSubmit={submit} className="card space-y-5 p-8">
           <div>
             <h1 className="text-xl font-semibold">Sign in</h1>
-            <p className="muted mt-1">Use the email and password given to you.</p>
+            <p className="muted mt-1">Use the username and password given to you.</p>
           </div>
-          <div><label>Email</label><input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required /></div>
+          <div><label>Username</label><input autoComplete="username" autoCapitalize="none" spellCheck={false} value={username} onChange={e => setUsername(e.target.value)} required /></div>
           <div><label>Password</label><input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required /></div>
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
           <button className="btn w-full" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
@@ -120,7 +120,7 @@ function Login() {
   )
 }
 
-// Invite and "forgot password" emails land here with a login link; person sets their own password.
+// Change your own password (from the side menu).
 function SetPassword({ done }: { done: () => void }) {
   const [password, setPassword] = useState('')
   const [msg, setMsg] = useState('')
@@ -321,7 +321,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
 export default function App() {
   const [session, setSession] = useState<boolean | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [needPassword, setNeedPassword] = useState(arrivedFromEmail)
+  const [needPassword, setNeedPassword] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(!!data.session))
