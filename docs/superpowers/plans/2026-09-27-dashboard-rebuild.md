@@ -26,7 +26,7 @@
 | `4000`–`4099` | Sales — food `4000`, beverage `4010`, liquor `4020`, corkage `4030` |
 | `4100`–`4899` | Service charge |
 | `4900`–`4999` | Other income |
-| `5000`–`5099` | Cost of sales — food `5000`, beverage `5010`, liquor `5020`, packaging `5100` |
+| `5000`–`5999` | Cost of sales — food `5000`, beverage `5010`, liquor `5020`, packaging `5100`. Always use the full range: `5000`–`5099` orphans packaging, counting it as neither cost of sales nor a running cost. |
 | `6000`–`6999` | Running costs; `6200` is card and e-wallet fees |
 | `1000`,`1010`,`1100` | Cash in drawer, petty cash, bank |
 | `2000` | Owed to suppliers |
@@ -412,7 +412,7 @@ git commit -m "feat: weekday-matched sales trend with a derived break-even line"
 
 - [ ] **Step 1: Margin, and the three-way split**
 
-Gross margin this month — `(sales − cost of sales) ÷ sales` over `4000`–`4099` against `5000`–`5099` — with the change in **percentage points** against last month. Percentage points, not a percentage of a percentage: going from 60% to 63% is "up 3 points", not "up 5%". Label it so.
+Gross margin this month — `(sales − cost of sales) ÷ sales` over `4000`–`4099` against `5000`–`5999` — with the change in **percentage points** against last month. Percentage points, not a percentage of a percentage: going from 60% to 63% is "up 3 points", not "up 5%". Label it so.
 
 Then the split three ways, pairing each sales account with its cost account:
 
