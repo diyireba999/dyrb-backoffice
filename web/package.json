@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test:db": "node db-test.mjs",
+    "test:dash": "node --experimental-strip-types dashboard-test.mjs",
     "test:sales": "node sales-test.mjs",
     "test:repair": "node repair-test.mjs",
     "test:rls": "node rls-test.mjs"
