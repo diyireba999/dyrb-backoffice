@@ -284,11 +284,28 @@ export function Dashboard({ profile }: { profile: Profile }) {
                 <DailyBars days={salesBand.strip} breakEvenLine={salesBand.breakEvenLine} />
               </div>
               <p className="muted mt-3 text-xs">
-                {salesBand.breakEvenLine === null
-                  ? salesBand.breakEvenNote
-                  : salesBand.monthStarted
-                  ? `Break even averages ${rm(salesBand.breakEvenLine)} a day (from the last ${salesBand.monthsCovered} complete months' costs). Averaging ${rm(salesBand.avgPerDay)} a day this month.`
-                  : `Break even averages ${rm(salesBand.breakEvenLine)} a day (from the last ${salesBand.monthsCovered} complete months' costs). This month has not started yet.`}
+                {salesBand.breakEvenLine === null ? (
+                  salesBand.breakEvenNote
+                ) : salesBand.monthStarted ? (
+                  <>
+                    {`Break even averages ${rm(salesBand.breakEvenLine)} a day (from the last ${salesBand.monthsCovered} complete months' costs). Averaging ${rm(salesBand.avgPerDay)} a day this month.`}
+                    {(() => {
+                      // The two figures above are both calendar-day averages and read as
+                      // nearly equal in small grey text — this spells out which is bigger,
+                      // since the chart above (bars visibly clearing the line) otherwise
+                      // supplies the only verdict a daily reader takes away.
+                      const gap = round2(salesBand.avgPerDay - salesBand.breakEvenLine)
+                      if (gap === 0) return ' Exactly at break even.'
+                      return (
+                        <span className={gap > 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                          {` — ${rm(Math.abs(gap))} a day ${gap > 0 ? 'clear of' : 'short of'} break even.`}
+                        </span>
+                      )
+                    })()}
+                  </>
+                ) : (
+                  `Break even averages ${rm(salesBand.breakEvenLine)} a day (from the last ${salesBand.monthsCovered} complete months' costs). This month has not started yet.`
+                )}
               </p>
             </>
           )}
