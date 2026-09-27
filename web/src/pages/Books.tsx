@@ -199,7 +199,7 @@ export function OfficialReceipt() {
       <button type="button" className="link" onClick={() => { setMode('list'); setError('') }}>← Back to list</button>
       {editing
         ? <p className="muted">Changing <b className="font-mono">{editing.doc_no}</b>. It keeps the same number.</p>
-        : <p className="muted">Daily sales come from Upload Sales. Use this for other money received: event deposits, owner capital, refunds.</p>}
+        : <p className="muted">Daily sales come from Sales › Upload. Use this for other money received: event deposits, owner capital, refunds.</p>}
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
         <div><label>Ref no.</label><input value={f.reference} onChange={e => set('reference', e.target.value)} placeholder="Optional" /></div>

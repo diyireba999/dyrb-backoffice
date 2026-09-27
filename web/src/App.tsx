@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import {
-  ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BookOpen, BookText, CalendarClock, FileText, HandCoins, KeyRound, LayoutDashboard,
-  ListTree, LogOut, Menu, NotebookPen, Repeat, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, CreditCard, IdCard, Package, Tags, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
+  ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BookOpen, BookText, CalendarClock, ChevronDown, ChevronRight, FileText, HandCoins, KeyRound, LayoutDashboard,
+  ListTree, LogOut, Menu, NotebookPen, Plus, Repeat, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, CreditCard, IdCard, Package, Tags, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
 import { arrivedFromEmail, supabase, type Profile, type Role } from './lib'
@@ -23,40 +23,52 @@ import { Accruals } from './pages/Accruals'
 const OFFICE: Role[] = ['owner', 'manager', 'accountant']
 const EVERYONE: Role[] = [...OFFICE, 'staff']
 
-type Page = { to: string; label: string; subtitle: string; icon: LucideIcon; group: string; roles: Role[] }
+// group = sidebar heading. Pages sharing a section show as one sidebar item with tabs on the page.
+type Page = { to: string; label: string; subtitle: string; icon: LucideIcon; group: string; section?: string; roles: Role[] }
 const PAGES: Page[] = [
   { to: '/', label: 'Dashboard', subtitle: 'Overview of money and tasks', icon: LayoutDashboard, group: 'Overview', roles: EVERYONE },
-  { to: '/gl/accounts', label: 'Chart of Accounts', subtitle: 'Account list and balances', icon: ListTree, group: 'General Ledger', roles: OFFICE },
-  { to: '/gl/journal', label: 'Journal Entry', subtitle: 'Manual debit / credit entry (JV)', icon: NotebookPen, group: 'General Ledger', roles: OFFICE },
-  { to: '/gl/listing', label: 'Journal Listing', subtitle: 'All documents by month', icon: BookOpen, group: 'General Ledger', roles: OFFICE },
-  { to: '/gl/accruals', label: 'Monthly Accruals', subtitle: 'Rent and bills charged to the right month', icon: Repeat, group: 'General Ledger', roles: OFFICE },
-  { to: '/gl/ledger', label: 'General Ledger', subtitle: 'Transactions and running balance of one account', icon: BookText, group: 'General Ledger', roles: OFFICE },
-  { to: '/sales/upload', label: 'Upload Sales', subtitle: 'Daily takings from the Zeoniq Bill Summary', icon: CloudUpload, group: 'Sales', roles: OFFICE },
-  { to: '/sales/fiuu', label: 'Card Settlement', subtitle: 'Fiuu payouts into the bank, and the fee', icon: CreditCard, group: 'Sales', roles: OFFICE },
-  { to: '/stock/costs', label: 'Item Costs', subtitle: 'What each drink and dish costs you', icon: Tags, group: 'Sales', roles: OFFICE },
-  { to: '/stock/count', label: 'Stock Count', subtitle: 'Count the shelf and correct the cost', icon: Package, group: 'Sales', roles: OFFICE },
-  { to: '/sales/settings', label: 'Sales Settings', subtitle: 'Where each payment type and sales figure goes', icon: Settings2, group: 'Sales', roles: OFFICE },
-  { to: '/cash/payment', label: 'Payment Voucher', subtitle: 'Pay out from cash or bank (PV)', icon: ArrowUpRight, group: 'Cash Book', roles: OFFICE },
-  { to: '/cash/receipt', label: 'Official Receipt', subtitle: 'Money received, other than daily sales (OR)', icon: ArrowDownLeft, group: 'Cash Book', roles: OFFICE },
-  { to: '/cash/transfer', label: 'Bank Transfer', subtitle: 'Move money between cash and bank (TR)', icon: ArrowLeftRight, group: 'Cash Book', roles: OFFICE },
-  { to: '/cash/book', label: 'Cash Book', subtitle: 'Cash and bank movements with running balance', icon: Wallet, group: 'Cash Book', roles: OFFICE },
-  { to: '/cash/bank-rec', label: 'Bank Reconciliation', subtitle: 'Match the books to the bank statement', icon: SquareCheckBig, group: 'Cash Book', roles: OFFICE },
-  { to: '/ap/suppliers', label: 'Suppliers', subtitle: 'Supplier list and balance owed', icon: Truck, group: 'Purchase', roles: OFFICE },
-  { to: '/ap/invoices', label: 'Purchase Invoice', subtitle: 'Supplier bills bought on credit (PI)', icon: FileText, group: 'Purchase', roles: OFFICE },
-  { to: '/ap/payments', label: 'Supplier Payment', subtitle: 'Pay supplier invoices (SP)', icon: HandCoins, group: 'Purchase', roles: OFFICE },
-  { to: '/ap/aging', label: 'Supplier Aging', subtitle: 'Amount owed, by how overdue', icon: CalendarClock, group: 'Purchase', roles: OFFICE },
-  { to: '/claims', label: 'Claims', subtitle: 'Staff expense claims', icon: Receipt, group: 'Team', roles: EVERYONE },
-  { to: '/payslips', label: 'My Payslips', subtitle: 'Your own payslips', icon: Wallet2, group: 'Team', roles: EVERYONE },
-  { to: '/payroll/staff', label: 'Staff', subtitle: 'Staff details, salary and deductions', icon: IdCard, group: 'Payroll', roles: OFFICE },
-  { to: '/payroll/advances', label: 'Staff Advance', subtitle: 'Money lent before payday, taken back on the payslip', icon: HandCoins, group: 'Payroll', roles: OFFICE },
-  { to: '/payroll/timesheet', label: 'Timesheet', subtitle: 'Hours worked each day, feeding the monthly payroll', icon: CalendarClock, group: 'Payroll', roles: OFFICE },
-  { to: '/payroll/run', label: 'Monthly Payroll', subtitle: 'Work out pay, approve and print payslips', icon: CalendarDays, group: 'Payroll', roles: OFFICE },
-  { to: '/payroll/year', label: 'Yearly Summary', subtitle: 'Totals per staff for EA forms', icon: BookText, group: 'Payroll', roles: OFFICE },
-  { to: '/payroll/rates', label: 'Payroll Settings', subtitle: 'EPF, SOCSO, EIS rates', icon: Settings2, group: 'Payroll', roles: OFFICE },
-  { to: '/reports/tb', label: 'Trial Balance', subtitle: 'All account balances; debit equals credit', icon: Scale, group: 'Reports', roles: OFFICE },
-  { to: '/reports/pl', label: 'Profit & Loss', subtitle: 'Sales, costs and profit for a period', icon: TrendingUp, group: 'Reports', roles: OFFICE },
-  { to: '/reports/bs', label: 'Balance Sheet', subtitle: 'What the business owns and owes', icon: PieChart, group: 'Reports', roles: OFFICE },
-  { to: '/users', label: 'Users', subtitle: 'Who can sign in and what they can do', icon: UsersIcon, group: 'Settings', roles: ['owner'] },
+  { to: '/cash/payment', label: 'Payment Voucher', subtitle: 'Pay out from cash or bank (PV)', icon: ArrowUpRight, group: 'New', roles: OFFICE },
+  { to: '/cash/receipt', label: 'Official Receipt', subtitle: 'Money received, other than daily sales (OR)', icon: ArrowDownLeft, group: 'New', roles: OFFICE },
+  { to: '/cash/transfer', label: 'Bank Transfer', subtitle: 'Move money between cash and bank (TR)', icon: ArrowLeftRight, group: 'New', roles: OFFICE },
+  { to: '/gl/journal', label: 'Journal Entry', subtitle: 'Manual debit / credit entry (JV)', icon: NotebookPen, group: 'New', roles: OFFICE },
+  { to: '/sales/upload', label: 'Upload', subtitle: 'Daily takings from the Zeoniq Bill Summary', icon: CloudUpload, group: 'Daily', section: 'Sales', roles: OFFICE },
+  { to: '/sales/fiuu', label: 'Card Settlement', subtitle: 'Fiuu payouts into the bank, and the fee', icon: CreditCard, group: 'Daily', section: 'Sales', roles: OFFICE },
+  { to: '/ap/invoices', label: 'Invoices', subtitle: 'Supplier bills bought on credit (PI)', icon: FileText, group: 'Daily', section: 'Purchases', roles: OFFICE },
+  { to: '/ap/payments', label: 'Payments', subtitle: 'Pay supplier invoices (SP)', icon: HandCoins, group: 'Daily', section: 'Purchases', roles: OFFICE },
+  { to: '/ap/suppliers', label: 'Suppliers', subtitle: 'Supplier list and balance owed', icon: Truck, group: 'Daily', section: 'Purchases', roles: OFFICE },
+  { to: '/ap/aging', label: 'Aging', subtitle: 'Amount owed, by how overdue', icon: CalendarClock, group: 'Daily', section: 'Purchases', roles: OFFICE },
+  { to: '/claims', label: 'Claims', subtitle: 'Staff expense claims', icon: Receipt, group: 'Daily', roles: EVERYONE },
+  { to: '/payroll/timesheet', label: 'Timesheet', subtitle: 'Hours worked each day, feeding the monthly payroll', icon: CalendarClock, group: 'Month-end', section: 'Payroll', roles: OFFICE },
+  { to: '/payroll/advances', label: 'Advances', subtitle: 'Money lent before payday, taken back on the payslip', icon: HandCoins, group: 'Month-end', section: 'Payroll', roles: OFFICE },
+  { to: '/payroll/run', label: 'Monthly Run', subtitle: 'Work out pay, approve and print payslips', icon: CalendarDays, group: 'Month-end', section: 'Payroll', roles: OFFICE },
+  { to: '/payroll/year', label: 'Yearly Summary', subtitle: 'Totals per staff for EA forms', icon: BookText, group: 'Month-end', section: 'Payroll', roles: OFFICE },
+  { to: '/payslips', label: 'My Payslips', subtitle: 'Your own payslips', icon: Wallet2, group: 'Month-end', section: 'Payroll', roles: EVERYONE },
+  { to: '/cash/bank-rec', label: 'Bank Reconciliation', subtitle: 'Match the books to the bank statement', icon: SquareCheckBig, group: 'Month-end', roles: OFFICE },
+  { to: '/gl/accruals', label: 'Accruals', subtitle: 'Rent and bills charged to the right month', icon: Repeat, group: 'Month-end', roles: OFFICE },
+  { to: '/stock/count', label: 'Stock Count', subtitle: 'Count the shelf and correct the cost', icon: Package, group: 'Month-end', roles: OFFICE },
+  { to: '/gl/listing', label: 'Documents', subtitle: 'All documents by month', icon: BookOpen, group: 'Books', roles: OFFICE },
+  { to: '/gl/ledger', label: 'All Accounts', subtitle: 'Transactions and running balance of one account', icon: BookText, group: 'Books', section: 'Ledger', roles: OFFICE },
+  { to: '/cash/book', label: 'Cash & Bank', subtitle: 'Cash and bank movements with running balance', icon: Wallet, group: 'Books', section: 'Ledger', roles: OFFICE },
+  { to: '/reports/pl', label: 'Profit & Loss', subtitle: 'Sales, costs and profit for a period', icon: TrendingUp, group: 'Books', section: 'Reports', roles: OFFICE },
+  { to: '/reports/bs', label: 'Balance Sheet', subtitle: 'What the business owns and owes', icon: PieChart, group: 'Books', section: 'Reports', roles: OFFICE },
+  { to: '/reports/tb', label: 'Trial Balance', subtitle: 'All account balances; debit equals credit', icon: Scale, group: 'Books', section: 'Reports', roles: OFFICE },
+  { to: '/gl/accounts', label: 'Chart of Accounts', subtitle: 'Account list and balances', icon: ListTree, group: 'Setup', roles: OFFICE },
+  { to: '/payroll/staff', label: 'Staff', subtitle: 'Staff details, salary and deductions', icon: IdCard, group: 'Setup', roles: OFFICE },
+  { to: '/stock/costs', label: 'Item Costs', subtitle: 'What each drink and dish costs you', icon: Tags, group: 'Setup', roles: OFFICE },
+  { to: '/sales/settings', label: 'Sales Settings', subtitle: 'Where each payment type and sales figure goes', icon: Settings2, group: 'Setup', roles: OFFICE },
+  { to: '/payroll/rates', label: 'Payroll Settings', subtitle: 'EPF, SOCSO, EIS rates', icon: Settings2, group: 'Setup', roles: OFFICE },
+  { to: '/users', label: 'Users', subtitle: 'Who can sign in and what they can do', icon: UsersIcon, group: 'Setup', roles: ['owner'] },
+]
+const SECTION_ICONS: Record<string, LucideIcon> = { Sales: CloudUpload, Purchases: Truck, Payroll: CalendarDays, Ledger: BookText, Reports: TrendingUp }
+
+// The "+ New" menu: forms for entering a document.
+const NEW: { to: string; label: string; icon: LucideIcon; roles: Role[] }[] = [
+  { to: '/cash/payment', label: 'Payment', icon: ArrowUpRight, roles: OFFICE },
+  { to: '/cash/receipt', label: 'Receipt', icon: ArrowDownLeft, roles: OFFICE },
+  { to: '/cash/transfer', label: 'Transfer', icon: ArrowLeftRight, roles: OFFICE },
+  { to: '/ap/invoices', label: 'Purchase Invoice', icon: FileText, roles: OFFICE },
+  { to: '/gl/journal', label: 'Journal Entry', icon: NotebookPen, roles: OFFICE },
+  { to: '/claims', label: 'Claim', icon: Receipt, roles: EVERYONE },
 ]
 
 // Put your logo at web/public/logo.png and it replaces the "DY" mark automatically.
@@ -139,32 +151,66 @@ function SetPassword({ done }: { done: () => void }) {
 function Sidebar({ profile, pages, onNavigate, onPassword, onSearch }: {
   profile: Profile; pages: Page[]; onNavigate: () => void; onPassword: () => void; onSearch: () => void
 }) {
-  const groups = [...new Set(pages.map(p => p.group))]
+  const { pathname } = useLocation()
+  const current = pages.find(p => p.to === pathname)
+  const [newOpen, setNewOpen] = useState(false)
+  const [setupOpen, setSetupOpen] = useState(() => { try { return localStorage.getItem('setupOpen') === '1' } catch { return false } })
+  const toggleSetup = () => { setSetupOpen(!setupOpen); try { localStorage.setItem('setupOpen', setupOpen ? '0' : '1') } catch { /* private window */ } }
+  const newItems = NEW.filter(n => n.roles.includes(profile.role))
+  const groups = [...new Set(pages.map(p => p.group))].filter(g => g !== 'New')
+  const go = () => { setNewOpen(false); onNavigate() }
   const initials = profile.full_name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
+  const heading = 'px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400'
   return (
     <div className="flex h-full flex-col border-r border-slate-200 bg-white">
       <div className="px-5 pb-3 pt-5"><Logo /></div>
-      <div className="px-3 pb-2">
+      <div className="space-y-2 px-3 pb-2">
         <button onClick={onSearch} className="flex h-9 w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-500 hover:border-slate-300">
           <SearchIcon className="size-4" />Search
           <kbd className="ml-auto rounded border border-slate-200 bg-white px-1.5 text-[10px]">Ctrl K</kbd>
         </button>
+        {newItems.length > 0 && <div>
+          <button onClick={() => setNewOpen(!newOpen)} aria-expanded={newOpen} className="btn flex w-full items-center justify-center gap-2">
+            <Plus className="size-4" />New<ChevronDown className={`size-4 transition ${newOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {newOpen && <div className="mt-1 space-y-px rounded-lg border border-slate-200 p-1">
+            {newItems.map(n => (
+              <Link key={n.to} to={n.to} onClick={go} className="flex items-center gap-3 rounded-md px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900">
+                <n.icon className="size-4 text-slate-400" />{n.label}
+              </Link>
+            ))}
+          </div>}
+        </div>}
       </div>
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-2">
-        {groups.map(g => (
-          <div key={g}>
-            <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{g}</div>
-            <div className="space-y-px">
-              {pages.filter(p => p.group === g).map(p => (
-                <NavLink key={p.to} to={p.to} end onClick={onNavigate}
-                  className={({ isActive }) => `group flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition ${
-                    isActive ? 'bg-brand-soft font-medium text-brand-dark' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
-                  {({ isActive }) => <><p.icon className={`size-4 ${isActive ? 'text-brand' : 'text-slate-400 group-hover:text-slate-600'}`} />{p.label}</>}
-                </NavLink>
-              ))}
+        {groups.map(g => {
+          // One entry per section (its first tab), plus the pages that stand alone.
+          const entries = pages.filter((p, i) => p.group === g && (!p.section || pages.findIndex(q => q.section === p.section) === i))
+          const setup = g === 'Setup'
+          const shown = !setup || setupOpen || current?.group === 'Setup'
+          return (
+            <div key={g}>
+              {setup
+                ? <button onClick={toggleSetup} aria-expanded={shown} className={`${heading} flex w-full items-center hover:text-slate-600`}>
+                    {g}<ChevronRight className={`ml-auto size-3.5 transition ${shown ? 'rotate-90' : ''}`} />
+                  </button>
+                : g !== 'Overview' && <div className={heading}>{g}</div>}
+              {shown && <div className="space-y-px">
+                {entries.map(p => {
+                  const active = !!current && (p.section ? current.section === p.section : current.to === p.to)
+                  const Icon = p.section ? SECTION_ICONS[p.section] : p.icon
+                  return (
+                    <Link key={p.to} to={p.to} onClick={go} aria-current={active ? 'page' : undefined}
+                      className={`group flex items-center gap-3 rounded-lg px-3 py-1.5 text-sm transition ${
+                        active ? 'bg-brand-soft font-medium text-brand-dark' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
+                      <Icon className={`size-4 ${active ? 'text-brand' : 'text-slate-400 group-hover:text-slate-600'}`} />{p.section ?? p.label}
+                    </Link>
+                  )
+                })}
+              </div>}
             </div>
-          </div>
-        ))}
+          )
+        })}
       </nav>
       <div className="border-t border-slate-100 p-3">
         <div className="flex items-center gap-3 rounded-lg px-2 py-2">
@@ -187,6 +233,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
   const { pathname } = useLocation()
   const pages = PAGES.filter(p => p.roles.includes(profile.role))
   const page = pages.find(p => p.to === pathname) ?? pages[0]
+  const tabs = page.section ? pages.filter(p => p.section === page.section) : []
   const office = profile.role !== 'staff'
   const today = new Date().toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
   const hour = Number(new Date().toLocaleString('en-MY', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kuala_Lumpur' }))
@@ -211,13 +258,22 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
         <header className="no-print sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200/70 bg-slate-50/80 px-4 backdrop-blur-md sm:px-8">
           <button className="-ml-1 rounded-md p-2 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu"><Menu className="size-5" /></button>
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold tracking-tight">{pathname === '/' ? `${greeting}, ${profile.full_name.split(' ')[0]}` : page.label}</h1>
+            <h1 className="truncate text-lg font-semibold tracking-tight">{pathname === '/' ? `${greeting}, ${profile.full_name.split(' ')[0]}` : page.section ?? page.label}</h1>
             <p className="hidden truncate text-xs text-slate-500 sm:block">{pathname === '/' ? today : page.subtitle}</p>
           </div>
           <button onClick={() => setSearch(true)} className="ml-auto rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden" aria-label="Search"><SearchIcon className="size-5" /></button>
         </header>
-        <SearchDialog pages={pages} canSeeDocs={office} open={search} setOpen={setSearch} />
+        <SearchDialog pages={pages.map(p => p.section ? { ...p, label: `${p.section} · ${p.label}` } : p)} canSeeDocs={office} open={search} setOpen={setSearch} />
         <main className="mx-auto max-w-7xl p-4 sm:p-8">
+          {tabs.length > 1 && (
+            <nav className="no-print -mt-2 mb-6 flex gap-1 overflow-x-auto border-b border-slate-200">
+              {tabs.map(t => (
+                <Link key={t.to} to={t.to} aria-current={t.to === pathname ? 'page' : undefined}
+                  className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm transition ${
+                    t.to === pathname ? 'border-brand font-medium text-brand-dark' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>{t.label}</Link>
+              ))}
+            </nav>
+          )}
           <SetupWarning />
           <Routes>
             <Route path="/" element={<Dashboard profile={profile} />} />
