@@ -498,3 +498,187 @@ try { await db.query(`select update_journal(${e1}, '2026-10-11','x',null,null,
   console.log('FAIL: 2000 line without a supplier accepted on edit') }
 catch (e) { console.log(e.message === 'Choose which supplier (add them in Suppliers first)'
   ? '2000 line without a supplier on edit rejected correctly' : 'FAIL wrong message: ' + e.message) }
+
+// ---- 019: staff salary advances ----
+await db.exec(fs.readFileSync(new URL('../supabase/019_advance.sql', import.meta.url), 'utf8'))
+await db.exec(`update profiles set role='owner'`)
+
+const emp = (await db.query(`insert into employees (name, pay_type, rate) values ('Ahmad', 'monthly', 2000) returning id`)).rows[0].id
+const adv = (await db.query(`select record_advance(${emp}, '2026-10-05', 600, '1000', 'Advance for rent') id`)).rows[0].id
+const advRow = (await db.query(`select a.amount::float amount, j.source, j.doc_no,
+  (select sum(l.debit)::float from journal_lines l where l.journal_id=a.journal_id and l.account='1310') dr,
+  (select sum(l.credit)::float from journal_lines l where l.journal_id=a.journal_id and l.account='1000') cr
+  from staff_advances a join journals j on j.id=a.journal_id where a.id=${adv}`)).rows[0]
+console.log(advRow.amount === 600 && advRow.dr === 600 && advRow.cr === 600 && advRow.source === 'advance'
+  ? 'advance recorded ok' : 'FAIL advance ' + JSON.stringify(advRow))
+
+const advBal = (await db.query(`select outstanding::float o from advance_balances where id=${adv}`)).rows[0].o
+console.log(advBal === 600 ? 'advance outstanding ok' : 'FAIL advance outstanding ' + advBal)
+
+const advDoc = (await db.query(`select j.doc_no from staff_advances a join journals j on j.id=a.journal_id where a.id=${adv}`)).rows[0].doc_no
+console.log(advDoc.startsWith('SA-') ? 'advance doc number ok' : 'FAIL advance doc no ' + advDoc)
+
+// Money must come from cash, petty cash or bank.
+try { await db.query(`select record_advance(${emp}, '2026-10-05', 100, '6000', null)`)
+  console.log('FAIL: advance paid from an expense account') }
+catch (e) { console.log('advance from a non-money account rejected:', e.message) }
+
+// A zero or negative advance is meaningless.
+try { await db.query(`select record_advance(${emp}, '2026-10-05', 0, '1000', null)`)
+  console.log('FAIL: zero advance accepted') }
+catch (e) { console.log('zero advance rejected:', e.message) }
+
+// Only owner or accountant may hand out an advance.
+await db.exec(`update profiles set role='manager'`)
+try { await db.query(`select record_advance(${emp}, '2026-10-05', 100, '1000', null)`)
+  console.log('FAIL: manager recorded an advance') }
+catch (e) { console.log('manager blocked from advances:', e.message) }
+await db.exec(`update profiles set role='owner'`)
+
+// Deleting an untouched advance takes its journal with it.
+const adv2 = (await db.query(`select record_advance(${emp}, '2026-10-06', 50, '1010', null) id`)).rows[0].id
+const adv2j = (await db.query(`select journal_id from staff_advances where id=${adv2}`)).rows[0].journal_id
+await db.query(`select delete_advance(${adv2})`)
+const gone = (await db.query(`select
+  (select count(*)::int from staff_advances where id=${adv2}) a,
+  (select count(*)::int from journals where id=${adv2j}) j`)).rows[0]
+console.log(gone.a === 0 && gone.j === 0 ? 'advance deleted ok' : 'FAIL advance delete ' + JSON.stringify(gone))
+
+// Advance recovery: the whole outstanding amount comes off the next payroll.
+const run1 = (await db.query(`select create_payroll_run('2026-12-01', '2026-12-31') id`)).rows[0].id
+const slip1 = (await db.query(`select id from payslips where run_id=${run1} and employee_id=${emp}`)).rows[0].id
+await db.query(`select save_payslip(${slip1}, '{}'::jsonb, true)`)
+const rec1 = (await db.query(`select advance_recovery::float ar, net_pay::float net, gross::float gross
+  from payslip_view where id=${slip1}`)).rows[0]
+console.log(rec1.ar === 600 ? 'advance recovery on payslip ok' : 'FAIL recovery ' + JSON.stringify(rec1))
+
+// Approving posts the credit to 1310 and marks the advance recovered.
+const pj = (await db.query(`select approve_payroll_run(${run1}) j`)).rows[0].j
+const posted = (await db.query(`select
+  (select coalesce(sum(l.credit),0)::float from journal_lines l where l.journal_id=${pj} and l.account='1310') cr,
+  (select outstanding::float from advance_balances where id=${adv}) o`)).rows[0]
+console.log(posted.cr === 600 && posted.o === 0
+  ? 'advance recovery posted ok' : 'FAIL recovery posted ' + JSON.stringify(posted))
+
+// The payroll journal still balances with the extra line.
+const bal1 = (await db.query(`select coalesce(sum(debit-credit),0)::float d from journal_lines where journal_id=${pj}`)).rows[0].d
+console.log(bal1 === 0 ? 'payroll journal balances with advance ok' : 'FAIL payroll balance ' + bal1)
+
+// Cancelling the run puts the advance back.
+await db.query(`select cancel_payroll_run(${run1})`)
+const back = (await db.query(`select outstanding::float o from advance_balances where id=${adv}`)).rows[0].o
+console.log(back === 600 ? 'advance restored on cancel ok' : 'FAIL advance restore ' + back)
+await db.query(`select delete_payroll_run(${run1})`)
+
+// A big advance is capped at net pay and the rest carries forward.
+const emp2 = (await db.query(`insert into employees (name, pay_type, rate, epf_on, socso_on, eis_on)
+  values ('Siti', 'monthly', 1500, false, false, false) returning id`)).rows[0].id
+const bigAdv = (await db.query(`select record_advance(${emp2}, '2026-11-02', 2000, '1100', null) id`)).rows[0].id
+const run3 = (await db.query(`select create_payroll_run('2026-11-01', '2026-11-30') id`)).rows[0].id
+const slip2 = (await db.query(`select id from payslips where run_id=${run3} and employee_id=${emp2}`)).rows[0].id
+await db.query(`select save_payslip(${slip2}, '{}'::jsonb, true)`)
+const capped = (await db.query(`select advance_recovery::float ar, net_pay::float net from payslip_view where id=${slip2}`)).rows[0]
+console.log(capped.ar === 1500 && capped.net === 0
+  ? 'advance capped at net pay ok' : 'FAIL cap ' + JSON.stringify(capped))
+await db.query(`select approve_payroll_run(${run3})`)
+const carried = (await db.query(`select outstanding::float o from advance_balances where id=${bigAdv}`)).rows[0].o
+console.log(carried === 500 ? 'advance remainder carried forward ok' : 'FAIL carry ' + carried)
+
+// ---- 020: timesheet feeds the payroll run ----
+await db.exec(fs.readFileSync(new URL('../supabase/020_timesheet.sql', import.meta.url), 'utf8'))
+await db.exec(`update profiles set role='owner'`)
+
+const hourlyTs = (await db.query(`insert into employees (name, pay_type, rate, epf_on, socso_on, eis_on)
+  values ('Part timer', 'hourly', 10, false, false, false) returning id`)).rows[0].id
+await db.exec(`insert into timesheets (employee_id, work_date, hours, ot_hours) values
+  (${hourlyTs}, '2027-01-01', 8, 0), (${hourlyTs}, '2027-01-02', 7.5, 2), (${hourlyTs}, '2027-01-03', 6, 0)`)
+
+const run4 = (await db.query(`select create_payroll_run('2027-01-01', '2027-01-31') id`)).rows[0].id
+const slip3 = (await db.query(`select id from payslips where run_id=${run4} and employee_id=${hourlyTs}`)).rows[0].id
+const ts = (await db.query(`select hours::float h, ot_hours::float ot, basic::float basic, ot_amount::float ota
+  from payslip_view where id=${slip3}`)).rows[0]
+// 21.5 hours x RM10 = 215; 2 OT hours x RM10 x 1.5 = 30
+console.log(ts.h === 21.5 && ts.ot === 2 && ts.basic === 215 && ts.ota === 30
+  ? 'timesheet feeds payroll ok' : 'FAIL timesheet ' + JSON.stringify(ts))
+
+// A hand override survives a later save.
+await db.query(`select save_payslip(${slip3}, '{"hours":20}'::jsonb, true)`)
+const overridden = (await db.query(`select hours::float h, basic::float basic from payslip_view where id=${slip3}`)).rows[0]
+console.log(overridden.h === 20 && overridden.basic === 200
+  ? 'timesheet override ok' : 'FAIL override ' + JSON.stringify(overridden))
+
+// One row per person per day.
+try { await db.exec(`insert into timesheets (employee_id, work_date, hours) values (${hourlyTs}, '2027-01-01', 5)`)
+  console.log('FAIL: duplicate timesheet day accepted') }
+catch (e) { console.log('duplicate timesheet day rejected:', e.message) }
+
+// Negative hours are a typo, not a correction.
+try { await db.exec(`insert into timesheets (employee_id, work_date, hours) values (${hourlyTs}, '2027-01-04', -3)`)
+  console.log('FAIL: negative hours accepted') }
+catch (e) { console.log('negative hours rejected:', e.message) }
+await db.query(`select delete_payroll_run(${run4})`)
+
+// A LOCAL hourly employee with statutory contributions switched on must get
+// real EPF/SOCSO from their timesheet-derived basic, not 0. (The fixture
+// employee above has epf_on/socso_on/eis_on all false, which hid this bug —
+// use a fresh one with the (true) defaults instead.)
+const hourlyLocal = (await db.query(`insert into employees (name, pay_type, rate)
+  values ('Timesheet EPF Check', 'hourly', 10) returning id`)).rows[0].id
+await db.exec(`insert into timesheets (employee_id, work_date, hours, ot_hours) values (${hourlyLocal}, '2027-02-01', 160, 0)`)
+const run5 = (await db.query(`select create_payroll_run('2027-02-01', '2027-02-28') id`)).rows[0].id
+const slip5 = (await db.query(`select basic::float basic, epf_employee::float epf, epf_employer::float epf_er,
+  socso_employee::float socso, socso_employer::float socso_er
+  from payslip_view where run_id=${run5} and employee_id=${hourlyLocal}`)).rows[0]
+// 160 hours x RM10 = RM1,600 basic. EPF 11%/13% of 1600 rounded up; SOCSO 0.5%/1.75% of 1600.
+console.log(slip5.basic === 1600 && slip5.epf === 176 && slip5.epf_er === 208 && slip5.socso === 8 && slip5.socso_er === 28
+  ? 'hourly staff get real EPF/SOCSO from timesheet basic ok' : 'FAIL hourly statutory ' + JSON.stringify(slip5))
+await db.query(`select delete_payroll_run(${run5})`)
+
+// ---- 019/020 fix wave: stale advance recovery must not double-deduct ----
+
+// (a) Two draft runs against the same advance: approving the first recovers
+// it; the second must recover nothing, not a phantom second RM800.
+const kumar = (await db.query(`insert into employees (name, pay_type, rate, epf_on, socso_on, eis_on)
+  values ('Kumar', 'monthly', 2000, false, false, false) returning id`)).rows[0].id
+const kumarAdv = (await db.query(`select record_advance(${kumar}, '2027-03-01', 800, '1000', null) id`)).rows[0].id
+const run6 = (await db.query(`select create_payroll_run('2027-03-01', '2027-03-31') id`)).rows[0].id
+const run7 = (await db.query(`select create_payroll_run('2027-04-01', '2027-04-30') id`)).rows[0].id
+await db.query(`select approve_payroll_run(${run6})`)
+const afterFirst = (await db.query(`select outstanding::float o from advance_balances where id=${kumarAdv}`)).rows[0].o
+console.log(afterFirst === 0 ? 'first draft run recovered the advance ok' : 'FAIL first recovery ' + afterFirst)
+await db.query(`select approve_payroll_run(${run7})`)
+const slip7 = (await db.query(`select advance_recovery::float ar, net_pay::float net, gross::float gross
+  from payslip_view where run_id=${run7} and employee_id=${kumar}`)).rows[0]
+// Other active employees also get payroll runs here, some with their own
+// outstanding advances — check the recovery row for THIS advance and run
+// specifically, not the run's whole 1310 credit.
+const run7Recovered = (await db.query(`select count(*)::int c from advance_recoveries where advance_id=${kumarAdv} and run_id=${run7}`)).rows[0].c
+console.log(slip7.ar === 0 && slip7.net === slip7.gross && run7Recovered === 0
+  ? 'second draft run on the same advance recovers nothing ok' : 'FAIL second recovery ' + JSON.stringify(slip7) + ' recovered rows ' + run7Recovered)
+
+// (b) An advance deleted out from under a draft run must not still take money
+// off that payslip when the run is approved.
+const lim = (await db.query(`insert into employees (name, pay_type, rate, epf_on, socso_on, eis_on)
+  values ('Lim', 'monthly', 2000, false, false, false) returning id`)).rows[0].id
+const limAdv = (await db.query(`select record_advance(${lim}, '2027-05-01', 500, '1000', null) id`)).rows[0].id
+const run8 = (await db.query(`select create_payroll_run('2027-05-01', '2027-05-31') id`)).rows[0].id
+await db.query(`select delete_advance(${limAdv})`)
+await db.query(`select approve_payroll_run(${run8})`)
+const slip8 = (await db.query(`select advance_recovery::float ar, net_pay::float net, gross::float gross
+  from payslip_view where run_id=${run8} and employee_id=${lim}`)).rows[0]
+console.log(slip8.ar === 0 && slip8.net === slip8.gross
+  ? 'advance deleted under a draft run recovers nothing on approval ok' : 'FAIL deleted-advance recovery ' + JSON.stringify(slip8))
+
+// ---- 019 fix wave: delete_advance must respect a closed bank reconciliation ----
+// Lands on the NEW reconciliation guard, not the earlier "already recovered"
+// guard — this advance has no payroll recovery against it at all.
+const farah = (await db.query(`insert into employees (name, pay_type, rate)
+  values ('Farah', 'monthly', 2000) returning id`)).rows[0].id
+const farahAdv = (await db.query(`select record_advance(${farah}, '2027-06-01', 300, '1100', null) id`)).rows[0].id
+const farahJ = (await db.query(`select journal_id from staff_advances where id=${farahAdv}`)).rows[0].journal_id
+const farahLine = (await db.query(`select id from journal_lines where journal_id=${farahJ} and account='1100'`)).rows[0].id
+await db.query(`select set_cleared(array[${farahLine}]::bigint[], '2027-06-30')`)
+try { await db.query(`select delete_advance(${farahAdv})`)
+  console.log('FAIL: advance ticked on bank reconciliation was deleted') }
+catch (e) { console.log(e.message === 'This entry is ticked on the bank reconciliation. Untick it there first.'
+  ? 'advance on a closed reconciliation blocked from deletion ok' : 'FAIL wrong message: ' + e.message) }

@@ -5,7 +5,8 @@ import fs from 'fs'
 
 const FILES = ['001_core.sql', '002_claims.sql', '003_accounting.sql', '004_payroll.sql', '005_sales.sql',
   '006_categories.sql', '007_fiuu.sql', '008_director.sql', '009_fiuu_brands.sql', '010_item_groups.sql',
-  '011_resplit.sql', '012_stock.sql', '013_accruals.sql', '014_recurring.sql', '015_fixes.sql']
+  '011_resplit.sql', '012_stock.sql', '013_accruals.sql', '014_recurring.sql', '015_fixes.sql', '016_fixes2.sql',
+  '017_corkage.sql', '018_docedit.sql', '019_advance.sql', '020_timesheet.sql']
 
 const db = new PGlite()
 await db.exec(`
@@ -38,7 +39,7 @@ await db.exec(`
 `)
 // A day of sales, an employee linked to the staff login, and an approved payroll.
 await db.query(`select post_sales_day('2026-09-20', 1000, 100, 0, 0, '[{"code":"CASH","amount":1100}]'::jsonb)`)
-await db.exec(`insert into employees (name, profile_id, pay_type, rate) values ('Waiter', '${STAFF}', 'monthly', 2000)`)
+const waiterId = (await db.query(`insert into employees (name, profile_id, pay_type, rate) values ('Waiter', '${STAFF}', 'monthly', 2000) returning id`)).rows[0].id
 const run = (await db.query(`select create_payroll_run('2026-09-01','2026-09-30') id`)).rows[0].id
 await db.query(`select approve_payroll_run(${run})`)
 
@@ -63,6 +64,16 @@ r = await as(STAFF, 'staff', `select count(*)::int c from employees`)
 check('staff sees only their own staff record', count(r) === 1, String(count(r)))
 r = await as(STAFF, 'staff', `select count(*)::int c from payslip_view`)
 check('staff CAN see their own payslip', count(r) === 1, String(count(r)))
+
+// A salary advance recovered in full: staff must see it as repaid, not still owing.
+// (`as()` above leaves app.uid set to the staff member's, even after its own
+// `reset role` — put it back to the owner before running these as ourselves.)
+await db.exec(`set app.uid = '${OWNER}'`)
+const waiterAdv = (await db.query(`select record_advance(${waiterId}, '2026-10-01', 300, '1000', null) id`)).rows[0].id
+const run2ForAdv = (await db.query(`select create_payroll_run('2026-10-01','2026-10-31') id`)).rows[0].id
+await db.query(`select approve_payroll_run(${run2ForAdv})`)
+const officeOutstanding = (await db.query(`select outstanding::float o from advance_balances where id=${waiterAdv}`)).rows[0].o
+
 r = await as(STAFF, 'staff', `insert into claims (date, account, description, amount) values ('2026-09-21','6800','Grab',12)`)
 check('staff can submit a claim', !r.error, r.error ?? '')
 r = await as(STAFF, 'staff', `select post_journal('2026-09-21','x','manual',null,null,'[{"account":"6900","debit":5},{"account":"1000","credit":5}]'::jsonb)`)
@@ -74,6 +85,9 @@ const role = (await db.query(`select role from profiles where id='${STAFF}'`)).r
 check('staff cannot make themselves owner', role === 'staff', role)
 r = await as(STAFF, 'staff', `select count(*)::int c from item_costs`)
 check('staff cannot see item costs', count(r) === 0, String(count(r)))
+r = await as(STAFF, 'staff', `select outstanding::float o from advance_balances where id=${waiterAdv}`)
+check('staff sees an advance already repaid, not still owing', Array.isArray(r) && r[0]?.o === officeOutstanding && r[0]?.o === 0,
+  JSON.stringify(r) + ' vs office ' + officeOutstanding)
 
 // ---- anonymous (someone with only the public key) ----
 r = await as(null, 'anon', `select count(*)::int c from journals`)

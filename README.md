@@ -32,7 +32,7 @@ Turn on two-step login for each account once created — this system holds salar
    - Plan: Free → **Create new project**. Wait about 2 minutes.
 3. Left menu **SQL Editor** → **New query**. Open `supabase/001_core.sql` in Notepad, copy everything, paste, click **Run**. It should say "Success. No rows returned".
 4. **New query** again → paste `supabase/002_claims.sql` → **Run**.
-   Then the same for `supabase/003_accounting.sql`, `supabase/004_payroll.sql`, `supabase/005_sales.sql`, `supabase/006_categories.sql`, `supabase/007_fiuu.sql`, `supabase/008_director.sql`, `supabase/009_fiuu_brands.sql`, `supabase/010_item_groups.sql`, `supabase/011_resplit.sql`, `supabase/012_stock.sql`, `supabase/013_accruals.sql`, `supabase/014_recurring.sql`, `supabase/015_fixes.sql`, `supabase/016_fixes2.sql`, `supabase/017_corkage.sql` and `supabase/018_docedit.sql`.
+   Then the same for `supabase/003_accounting.sql`, `supabase/004_payroll.sql`, `supabase/005_sales.sql`, `supabase/006_categories.sql`, `supabase/007_fiuu.sql`, `supabase/008_director.sql`, `supabase/009_fiuu_brands.sql`, `supabase/010_item_groups.sql`, `supabase/011_resplit.sql`, `supabase/012_stock.sql`, `supabase/013_accruals.sql`, `supabase/014_recurring.sql`, `supabase/015_fixes.sql`, `supabase/016_fixes2.sql`, `supabase/017_corkage.sql`, `supabase/018_docedit.sql`, `supabase/019_advance.sql` and `supabase/020_timesheet.sql`.
 5. Left menu **Authentication** → **Sign In / Providers**: turn **off** "Allow new users to sign up", **Save**. Only you can add people.
 6. Still in Authentication → **Users** → **Add user** → **Create new user**: your email + a strong password, tick **Auto Confirm User** → **Create user**.
 7. Back to **SQL Editor** → New query → paste (with your name and email) → **Run**:
@@ -73,6 +73,9 @@ Turn on two-step login for each account once created — this system holds salar
 - Supabase free has no automatic backups (coming in Phase 6). Until then, once a month: Supabase → Table Editor → each table → export to CSV.
 - A wrong Payment Voucher, Official Receipt, Transfer or Journal Entry can be re-opened from its own screen and corrected — it keeps the same document number. An entry already ticked on the Bank Reconciliation must be unticked there first.
 - After pulling in a code update, also check whether a new file has appeared in the `supabase` folder (for example `supabase/018_docedit.sql`) and run it in Supabase → SQL Editor, same as Step 2.3–2.4. Pushing to GitHub updates the website by itself, but it does not touch the database — until the new file is run, the affected screens will look empty even though nothing was lost.
+- **Before this update reaches the site**, run `supabase/019_advance.sql` then `supabase/020_timesheet.sql` in Supabase → SQL Editor, in that order — do this before merging the code, not after. If payroll is run for any month while the code is updated but these two files are not, that month's run will not show an error; it will just quietly ignore the Timesheet hours and take no salary advance recovery, and nothing on screen will say anything is wrong. If that happens, delete that draft payroll run, run the two files, and start the month again.
+- A salary advance is recorded on the Staff Advance screen; the money leaves the till straight away and comes off the next payslip by itself, and if it is more than one month's pay the rest carries to the month after.
+- Hours go on the Timesheet before the monthly payroll is created; creating the run picks them up, and anything can still be corrected on the payslip before approving.
 
 ## Run on this computer (optional, for testing changes)
 
@@ -97,5 +100,5 @@ If you build the site on this computer (`npm run build`) without doing the `.env
 - [x] Phase 3b – Fiuu card settlements into the bank, with the fee
 - [x] Phase 3c – Food / beverage / liquor split from the Zeoniq Product Sales export
 - [x] Phase 4 – Claims (staff submit with photo, manager approves, owner/accountant pays)
-- [x] Phase 5 – Payroll (staff records, monthly run, EPF/SOCSO/EIS, payslips, yearly summary)
+- [x] Phase 5 – Payroll (staff records, monthly run, EPF/SOCSO/EIS, payslips, yearly summary, salary advances, timesheets)
 - [ ] Phase 6 – Reports, SST, backups
