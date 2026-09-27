@@ -339,7 +339,7 @@ export default function App() {
       if (!data.user) return setLoadFailed(disabled)
       supabase.from('profiles').select('*').eq('id', data.user.id).single()
         .then(({ data, error }) => {
-          if (data && !data.active) return setLoadFailed(disabled)
+          if (data?.active === false) return setLoadFailed(disabled)
           setProfile(data); if (error) setLoadFailed(error.message)
         })
     })
