@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { useEffect, useState } from 'react'
+import type { DayAmount } from './dashboard-math'
+import { supplierInvoiceCategory } from './dashboard-math'
 
 // Read before the client clears the login link from the address bar.
 export const arrivedFromEmail = /type=(invite|recovery)/.test(location.hash)
@@ -160,16 +162,17 @@ export const docTotal = (d: DocRow) => d.journal_lines.reduce((s, l) => s + Numb
 
 export const isReconciled = (d: DocRow) => d.journal_lines.some(l => l.cleared_on !== null)
 
-import type { DayAmount } from './dashboard-math'
-
 // Income accounts are credit-balance, so credit minus debit reads positive.
-// account_balances already groups by account and date, so a whole series is one query.
+// For a daily series over a narrow account range (e.g. 4 sales accounts, 42 days ≈ 168 rows).
+// For wider ranges or period aggregates, use accountTotals(from, to) instead.
 export async function dailyNet(from: string, to: string, codeFrom: string, codeTo: string): Promise<DayAmount[]> {
   const { data, error } = await supabase.from('account_balances')
     .select('date, debit, credit')
     .gte('date', from).lte('date', to)
     .gte('code', codeFrom).lt('code', codeTo)
-  if (error) { console.error('Could not load the daily figures:', error.message); return [] }
+    .limit(5000)
+  if (error) throw new Error('Could not load the daily figures: ' + error.message)
+  if (data?.length === 5000) throw new Error('Daily series truncated (≥5000 rows); use accountTotals for wider ranges')
   const byDay = new Map<string, number>()
   for (const r of (data ?? []) as { date: string; debit: number | string; credit: number | string }[]) {
     byDay.set(r.date, (byDay.get(r.date) ?? 0) + (Number(r.credit) - Number(r.debit)))
@@ -181,13 +184,14 @@ export async function dailyNet(from: string, to: string, codeFrom: string, codeT
 export async function supplierDue(today: string) {
   const { data, error } = await supabase.from('purchase_invoice_status')
     .select('due_date, outstanding').gt('outstanding', 0)
-  if (error) { console.error('Could not load supplier due dates:', error.message); return { dueSoon: 0, overdue: 0 } }
+  if (error) throw new Error('Could not load supplier due dates: ' + error.message)
   const soon = addDays(today, 7)
   let dueSoon = 0, overdue = 0
   for (const r of (data ?? []) as { due_date: string; outstanding: number | string }[]) {
     const amt = Number(r.outstanding)
-    if (r.due_date < today) overdue += amt
-    else if (r.due_date <= soon) dueSoon += amt
+    const cat = supplierInvoiceCategory(r.due_date, today, soon)
+    if (cat === 'overdue') overdue += amt
+    else if (cat === 'dueSoon') dueSoon += amt
   }
   return { dueSoon: round2(dueSoon), overdue: round2(overdue) }
 }

@@ -52,3 +52,11 @@ export function pctChange(now: number, before: number): number | null {
   if (!(n(before) > 0)) return null
   return Math.round(((n(now) - n(before)) / n(before)) * 1000) / 10
 }
+
+// Categorize a supplier invoice by due date: overdue if past, dueSoon if within cutoff, neither otherwise.
+// Due exactly today is dueSoon, not overdue.
+export function supplierInvoiceCategory(dueDate: string, today: string, dueSoonCutoff: string): 'overdue' | 'dueSoon' | 'neither' {
+  if (dueDate < today) return 'overdue'
+  if (dueDate <= dueSoonCutoff) return 'dueSoon'
+  return 'neither'
+}

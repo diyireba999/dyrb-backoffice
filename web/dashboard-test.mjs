@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {
   addDaysISO, breakEven, daysInMonth, pctChange, sameWeekdayLastWeek, sumRange, variableRate,
+  supplierInvoiceCategory,
 } from './src/dashboard-math.ts'
 
 // --- date helpers ---
@@ -48,5 +49,13 @@ assert.equal(pctChange(90, 100), -10)
 assert.equal(pctChange(133.333, 100), 33.3, 'one-decimal rounding on fractional percent')
 assert.equal(pctChange(100, 0), null, 'no baseline means no percentage')
 assert.equal(pctChange(0, 0), null)
+
+// --- supplier invoice categorization ---
+const today = '2026-09-27'
+const cutoff = addDaysISO(today, 7) // '2026-10-04'
+assert.equal(supplierInvoiceCategory('2026-09-26', today, cutoff), 'overdue', 'due yesterday')
+assert.equal(supplierInvoiceCategory('2026-09-27', today, cutoff), 'dueSoon', 'due exactly today is dueSoon, not overdue')
+assert.equal(supplierInvoiceCategory('2026-10-04', today, cutoff), 'dueSoon', 'due exactly at cutoff')
+assert.equal(supplierInvoiceCategory('2026-10-05', today, cutoff), 'neither', 'due after cutoff')
 
 console.log('dashboard math ok')
