@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowDownLeft, ArrowUpRight, Banknote, FileText, HandCoins, Landmark, Receipt, Truck, type LucideIcon } from 'lucide-react'
-import { accountTotals, dailyNet, isDirector, monthStart, rm, round2, supabase, supplierDue, todayMY, useAccounts, type Account, type Profile } from '../lib'
+import { accountTotals, dailyNet, isDirector, monthStart, rm, round2, rowsOf, supabase, supplierDue, todayMY, type Account, type Profile } from '../lib'
 import { addDaysISO, breakEven, daysInMonth, pctChange, sameWeekdayLastWeek, sumRange, variableRate, type DayAmount } from '../dashboard-math'
 import { DailyBars, RankedBars } from '../charts'
 
@@ -76,7 +76,10 @@ const sumCodes = (accounts: Account[], m: Map<string, number>, from: string, to:
 
 export function Dashboard({ profile }: { profile: Profile }) {
   const office = profile.role !== 'staff'
-  const accounts = useAccounts(true)
+  // Fetched here (not via the shared useAccounts hook) so its completion can join the
+  // same Promise.all as the balances below — the hook's own effect settles on its own
+  // schedule, which is exactly what let `loaded` go true before this list had arrived.
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [all, setAll] = useState<Map<string, number>>(new Map())
   const [month, setMonth] = useState<Map<string, number>>(new Map())
   const [lastMonth, setLastMonth] = useState<Map<string, number>>(new Map())
@@ -89,14 +92,19 @@ export function Dashboard({ profile }: { profile: Profile }) {
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
+    // Swallowed here (not just at supplierDue's own call site) so a genuine network
+    // failure resolves the promise instead of leaving Promise.all — and `loaded` —
+    // stuck forever on a rejection nothing below is listening for.
     const claimsP = supabase.from('claims').select('status, amount, staff_id').in('status', ['pending', 'approved'])
-      .then(({ data }) => setClaims(data ?? []))
+      .then(({ data }) => setClaims(data ?? []), () => {})
     if (!office) { claimsP.then(() => setLoaded(true)); return }
     // Same-day-of-month cutoff last month, so "this month so far" is compared like for like.
     const lastMonthStart = monthStartOffset(todayMY(), 1)
     const lastMonthEnd = addDaysISO(lastMonthStart, Math.min(Number(todayMY().slice(8, 10)), daysInMonth(lastMonthStart.slice(0, 7))) - 1)
     Promise.all([
       claimsP,
+      supabase.from('accounts').select('*').order('code')
+        .then(r => setAccounts(rowsOf(r, 'the account list')), () => {}),
       accountTotals(null, todayMY()).then(setAll),
       accountTotals(monthStart(), todayMY()).then(setMonth),
       accountTotals(lastMonthStart, lastMonthEnd).then(setLastMonth),
