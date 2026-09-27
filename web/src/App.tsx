@@ -81,7 +81,7 @@ function Logo() {
         : <div className="grid size-9 place-items-center rounded-lg bg-gradient-to-br from-brand to-brand-dark text-sm font-bold text-white shadow-sm">DY</div>}
       <div className="leading-tight">
         <div className="font-semibold text-slate-900">DYRB</div>
-        <div className="text-xs text-slate-500">Back Office</div>
+        <div className="text-xs text-slate-500">Accounting System</div>
       </div>
     </div>
   )
