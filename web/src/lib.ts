@@ -3,9 +3,6 @@ import { useEffect, useState } from 'react'
 import type { DayAmount } from './dashboard-math'
 import { supplierInvoiceCategory } from './dashboard-math'
 
-// Read before the client clears the login link from the address bar.
-export const arrivedFromEmail = /type=(invite|recovery)/.test(location.hash)
-
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY,
@@ -19,7 +16,10 @@ export function rowsOf<T>(r: { data: T[] | null; error: { message: string } | nu
 }
 
 export type Role = 'owner' | 'manager' | 'accountant' | 'staff'
-export type Profile = { id: string; full_name: string; role: Role }
+export type Profile = { id: string; full_name: string; username: string; role: Role }
+
+// Supabase signs in by email; a username is kept as <username>@dyrb.local (022_usernames.sql).
+export const loginEmail = (username: string) => `${username.trim().toLowerCase()}@dyrb.local`
 export type Account = { code: string; name: string; type: 'asset' | 'liability' | 'equity' | 'income' | 'expense'; active: boolean }
 export type Line = { account: string; debit?: number; credit?: number; memo?: string }
 
