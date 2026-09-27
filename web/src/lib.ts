@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { useEffect, useState } from 'react'
+import type { DayAmount } from './dashboard-math'
+import { supplierInvoiceCategory } from './dashboard-math'
 
 // Read before the client clears the login link from the address bar.
 export const arrivedFromEmail = /type=(invite|recovery)/.test(location.hash)
@@ -159,3 +161,37 @@ export async function loadDocuments(source: string, months = 3): Promise<DocRow[
 export const docTotal = (d: DocRow) => d.journal_lines.reduce((s, l) => s + Number(l.debit), 0)
 
 export const isReconciled = (d: DocRow) => d.journal_lines.some(l => l.cleared_on !== null)
+
+// Income accounts are credit-balance, so credit minus debit reads positive.
+// For a daily series over a narrow account range (e.g. 4 sales accounts, 42 days ≈ 168 rows).
+// For wider ranges or period aggregates, use accountTotals(from, to) instead.
+export async function dailyNet(from: string, to: string, codeFrom: string, codeTo: string): Promise<DayAmount[]> {
+  const { data, error } = await supabase.from('account_balances')
+    .select('date, debit, credit')
+    .gte('date', from).lte('date', to)
+    .gte('code', codeFrom).lt('code', codeTo)
+    .limit(5000)
+  if (error) throw new Error('Could not load the daily figures: ' + error.message)
+  if (data?.length === 5000) throw new Error('Daily series truncated (≥5000 rows); use accountTotals for wider ranges')
+  const byDay = new Map<string, number>()
+  for (const r of (data ?? []) as { date: string; debit: number | string; credit: number | string }[]) {
+    byDay.set(r.date, (byDay.get(r.date) ?? 0) + (Number(r.credit) - Number(r.debit)))
+  }
+  return [...byDay].map(([date, amount]) => ({ date, amount })).sort((a, b) => a.date.localeCompare(b.date))
+}
+
+// What is owed to suppliers, split by whether it is already late.
+export async function supplierDue(today: string) {
+  const { data, error } = await supabase.from('purchase_invoice_status')
+    .select('due_date, outstanding').gt('outstanding', 0)
+  if (error) throw new Error('Could not load supplier due dates: ' + error.message)
+  const soon = addDays(today, 7)
+  let dueSoon = 0, overdue = 0
+  for (const r of (data ?? []) as { due_date: string; outstanding: number | string }[]) {
+    const amt = Number(r.outstanding)
+    const cat = supplierInvoiceCategory(r.due_date, today, soon)
+    if (cat === 'overdue') overdue += amt
+    else if (cat === 'dueSoon') dueSoon += amt
+  }
+  return { dueSoon: round2(dueSoon), overdue: round2(overdue) }
+}

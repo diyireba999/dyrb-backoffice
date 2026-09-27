@@ -26,7 +26,7 @@
 | `4000`–`4099` | Sales — food `4000`, beverage `4010`, liquor `4020`, corkage `4030` |
 | `4100`–`4899` | Service charge |
 | `4900`–`4999` | Other income |
-| `5000`–`5099` | Cost of sales — food `5000`, beverage `5010`, liquor `5020`, packaging `5100` |
+| `5000`–`5999` | Cost of sales — food `5000`, beverage `5010`, liquor `5020`, packaging `5100`. Always use the full range: `5000`–`5099` orphans packaging, counting it as neither cost of sales nor a running cost. |
 | `6000`–`6999` | Running costs; `6200` is card and e-wallet fees |
 | `1000`,`1010`,`1100` | Cash in drawer, petty cash, bank |
 | `2000` | Owed to suppliers |
@@ -362,12 +362,20 @@ On hover show the date and the amount, reusing the tooltip pattern already in `S
 - [ ] **Step 3: Break-even, and when to hide it**
 
 ```
-F = average monthly total of accounts 6000–6999 EXCLUDING 6200, over the last 3 complete months
-v = variableRate({ costOfSales: 5000–5099, cardFees: 6200, sales: 4000–4099 }) over the same 3 months
+F = total of accounts 6000–6999 EXCLUDING 6200 over the last 3 complete months,
+    divided by the number of complete months actually covered by data (2 or 3)
+v = variableRate({ costOfSales: 5000–5999, cardFees: 6200, sales: 4000–4099 }) over the same window
 line = breakEven({ fixed: F, variableRate: v, daysInMonth: daysInMonth(thisMonth) })
 ```
 
-Use **complete** months only — the current partial month would drag the average down and make break-even look easy. Expense figures come from `dailyNet` negated, as noted in Task 2.
+Use **complete** months only — the current partial month would drag the average down and make break-even look easy.
+
+Two things this formula gets wrong if written carelessly, both of which understate break-even and flatter the month:
+
+- **Divide by the months actually covered, not a hard-coded 3.** The history gate admits two complete months, so a business two months old would otherwise have its fixed costs divided by three and be told break-even is a third lower than it is. Derive the count from the earliest journal date, and exclude a partial first month from it.
+- **Cost of sales is 5000–5999, not 5000–5099.** The narrower range orphans `5100 Packaging & Consumables` — counted as neither variable nor fixed, so it vanishes from the formula. It also contradicts the gross-margin figure on the same screen, which treats 5000–5999 as cost of sales.
+
+Period aggregates come from the `accountTotals` RPC, **not** from `dailyNet` — see Task 2. `dailyNet` is narrow-range only and will throw rather than return a truncated series.
 
 Caption it plainly: `Break even at RM 4,180 a day. Averaging RM 4,720 a day this month.` The second figure is this month's sales to date divided by days elapsed.
 
@@ -404,7 +412,7 @@ git commit -m "feat: weekday-matched sales trend with a derived break-even line"
 
 - [ ] **Step 1: Margin, and the three-way split**
 
-Gross margin this month — `(sales − cost of sales) ÷ sales` over `4000`–`4099` against `5000`–`5099` — with the change in **percentage points** against last month. Percentage points, not a percentage of a percentage: going from 60% to 63% is "up 3 points", not "up 5%". Label it so.
+Gross margin this month — `(sales − cost of sales) ÷ sales` over `4000`–`4099` against `5000`–`5999` — with the change in **percentage points** against last month. Percentage points, not a percentage of a percentage: going from 60% to 63% is "up 3 points", not "up 5%". Label it so.
 
 Then the split three ways, pairing each sales account with its cost account:
 
@@ -465,7 +473,7 @@ While the figures are loading, the bands should not flash misleading zeros. Foll
 
 In the **Status** section, extend or add the Phase 6 line to record that the dashboard now shows money due, a weekday-matched sales trend, break-even and margin health. Match the existing phase-line style.
 
-Under **Everyday notes**, add one short bullet in the README's plain voice: the dashboard compares against the same weekday a week ago because trade swings by day of week, and the break-even figure is worked out from the last three complete months, so it settles down once there is a few months of history.
+Under **Everyday notes**, add one short bullet in the README's plain voice: the dashboard compares against the same weekday a week ago because trade swings by day of week, and the break-even figure is worked out from the last two or three complete months — whichever the records cover — so it settles down once there are a few months of history. Do **not** write "three complete months": the code averages over however many complete months exist, and needs only two, so that wording would be false for a young business.
 
 Add `npm run test:dash` to the list of test commands in the "Run on this computer" section, alongside the existing ones.
 
