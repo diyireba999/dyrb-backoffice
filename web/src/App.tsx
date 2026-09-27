@@ -333,9 +333,16 @@ export default function App() {
 
   useEffect(() => {
     if (!session) { setProfile(null); return }
-    supabase.auth.getUser().then(({ data }) =>
-      supabase.from('profiles').select('*').eq('id', data.user!.id).single()
-        .then(({ data, error }) => { setProfile(data); if (error) setLoadFailed(error.message) }))
+    // A disabled login is refused by Supabase (getUser fails) or, mid-session, by its profile.
+    const disabled = 'This login has been disabled. Ask the owner.'
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) return setLoadFailed(disabled)
+      supabase.from('profiles').select('*').eq('id', data.user.id).single()
+        .then(({ data, error }) => {
+          if (data && !data.active) return setLoadFailed(disabled)
+          setProfile(data); if (error) setLoadFailed(error.message)
+        })
+    })
   }, [session])
 
   if (session === null) return null

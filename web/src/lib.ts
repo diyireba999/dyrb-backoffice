@@ -16,7 +16,7 @@ export function rowsOf<T>(r: { data: T[] | null; error: { message: string } | nu
 }
 
 export type Role = 'owner' | 'manager' | 'accountant' | 'staff'
-export type Profile = { id: string; full_name: string; username: string; role: Role }
+export type Profile = { id: string; full_name: string; username: string; role: Role; active: boolean }
 
 // Supabase signs in by email; a username is kept as <username>@dyrb.local (022_usernames.sql).
 export const loginEmail = (username: string) => `${username.trim().toLowerCase()}@dyrb.local`

@@ -34,6 +34,13 @@ export function Users({ me }: { me: string }) {
     alert(error ? error.message : `Password changed. Tell ${p.full_name} the new one.`)
   }
 
+  async function setActive(p: Profile, active: boolean) {
+    if (!active && !confirm(`Disable ${p.full_name}? They are signed out and cannot sign in until enabled again. Their records stay.`)) return
+    const { error } = await supabase.rpc('set_login_active', { p_user: p.id, p_active: active })
+    if (error) alert(error.message)
+    load()
+  }
+
   return (
     <div className="space-y-4">
       <form onSubmit={addPerson} className="card grid gap-3 sm:grid-cols-5 sm:items-end">
@@ -52,7 +59,7 @@ export function Users({ me }: { me: string }) {
           <thead><tr><th>Name</th><th>Username</th><th>Role</th><th></th></tr></thead>
           <tbody>
             {list.map(p => (
-              <tr key={p.id}>
+              <tr key={p.id} className={p.active ? '' : 'opacity-50'}>
                 <td><input defaultValue={p.full_name} onBlur={e => e.target.value !== p.full_name && update(p.id, { full_name: e.target.value })} /></td>
                 <td className="font-mono text-sm">{p.username}</td>
                 <td className="w-44">
@@ -60,7 +67,10 @@ export function Users({ me }: { me: string }) {
                     {ROLES.map(r => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}
                   </select>
                 </td>
-                <td className="w-40 text-right"><button type="button" className="btn-light" onClick={() => resetPassword(p)}>Reset password</button></td>
+                <td className="w-72 whitespace-nowrap text-right">
+                  {p.active && <button type="button" className="btn-light" onClick={() => resetPassword(p)}>Reset password</button>}
+                  {p.id !== me && <button type="button" className="btn-light ml-2" onClick={() => setActive(p, !p.active)}>{p.active ? 'Disable' : 'Enable'}</button>}
+                </td>
               </tr>
             ))}
           </tbody>
