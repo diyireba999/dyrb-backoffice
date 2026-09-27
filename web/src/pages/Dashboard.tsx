@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowDownLeft, ArrowUpRight, Banknote, FileText, HandCoins, Landmark, Receipt, Truck, type LucideIcon } from 'lucide-react'
-import { accountTotals, addDays, dmy, isDirector, monthStart, rm, supabase, todayMY, useAccounts, type Account, type Profile } from '../lib'
+import { accountTotals, addDays, dmy, isDirector, monthStart, rm, supabase, supplierDue, todayMY, useAccounts, type Account, type Profile } from '../lib'
 import { RankedBars, SalesVsExpenses, type MonthPoint } from '../charts'
 
 type Recent = { id: number; doc_no: string; date: string; description: string; journal_lines: { debit: number }[] }
 
-function Kpi({ icon: Icon, label, value, note, tone }: { icon: LucideIcon; label: string; value: string; note?: string; tone: string }) {
+function Kpi({ icon: Icon, label, value, note, tone }: { icon: LucideIcon; label: string; value: string; note?: ReactNode; tone: string }) {
   return (
     <div className="card p-4 sm:p-5">
       <div className="flex items-center justify-between">
@@ -17,6 +17,15 @@ function Kpi({ icon: Icon, label, value, note, tone }: { icon: LucideIcon; label
       {note && <div className="mt-1 text-xs text-slate-500">{note}</div>}
     </div>
   )
+}
+
+// undefined = still loading (no note yet), null = supplierDue() threw.
+function supplierDueNote(due: { dueSoon: number; overdue: number } | null | undefined): ReactNode {
+  if (due === null) return 'Due dates could not be loaded'
+  if (!due || (!due.dueSoon && !due.overdue)) return undefined
+  const soon = due.dueSoon ? <span key="soon">{rm(due.dueSoon)} due in 7 days</span> : null
+  const overdue = due.overdue ? <span key="overdue" className="text-rose-600">{rm(due.overdue)} overdue</span> : null
+  return soon && overdue ? <>{soon} &middot; {overdue}</> : soon ?? overdue
 }
 
 function QuickButton({ to, icon: Icon, label }: { to: string; icon: LucideIcon; label: string }) {
@@ -49,6 +58,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
   const [months, setMonths] = useState<{ label: string; totals: Map<string, number> }[]>([])
   const [claims, setClaims] = useState<{ status: string; amount: number; staff_id: string }[]>([])
   const [recent, setRecent] = useState<Recent[]>([])
+  const [due, setDue] = useState<{ dueSoon: number; overdue: number } | null | undefined>(undefined)
 
   useEffect(() => {
     supabase.from('claims').select('status, amount, staff_id').in('status', ['pending', 'approved'])
@@ -60,6 +70,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
     supabase.from('journals').select('id, doc_no, date, description, journal_lines(debit)')
       .order('date', { ascending: false }).order('id', { ascending: false }).limit(6)
       .then(({ data }) => setRecent((data as Recent[]) ?? []))
+    supplierDue(todayMY()).then(setDue).catch(() => setDue(null))
   }, [office])
 
   const bal = (codes: string[], sign = 1) => codes.reduce((s, c) => s + sign * (all.get(c) ?? 0), 0)
@@ -105,7 +116,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
         <Kpi icon={Landmark} label="Bank balance" value={rm(bal(['1100']))} tone="bg-blue-50 text-blue-600" />
         <Kpi icon={Banknote} label="Cash on hand" value={rm(bal(['1000', '1010']))} note="Drawer + petty cash" tone="bg-emerald-50 text-emerald-600" />
-        <Kpi icon={Truck} label="Owed to suppliers" value={rm(bal(['2000'], -1))} tone="bg-rose-50 text-rose-600" />
+        <Kpi icon={Truck} label="Owed to suppliers" value={rm(bal(['2000'], -1))} note={supplierDueNote(due)} tone="bg-rose-50 text-rose-600" />
         <Kpi icon={Receipt} label="Claims to settle" value={rm(claimsTotal)} note={`${openClaims.length} pending or approved`} tone="bg-amber-50 text-amber-600" />
         <Kpi icon={HandCoins} label="Owed to director" value={rm(directorOwed)} note="Paid from their own pocket" tone="bg-violet-50 text-violet-600" />
       </div>
