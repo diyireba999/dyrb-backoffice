@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react'
 import { accountTotals, dmy, rm, round2, supabase, todayMY, useAccounts, type Role } from '../lib'
-import { AccountSelect, Empty } from '../ui'
+import { AccountSelect, Empty, MonthInput } from '../ui'
 
 type Item = { id: number; name: string; account: string; amount: number; active: boolean; sort: number }
 
@@ -77,7 +77,7 @@ export function Accruals({ role }: { role: Role }) {
   return (
     <div className="space-y-4">
       <div className="card flex flex-wrap items-end gap-4">
-        <div className="w-48"><label>Month</label><input type="month" value={month} onChange={e => setMonth(e.target.value)} /></div>
+        <div className="w-48"><label>Month</label><MonthInput value={month} onChange={setMonth} /></div>
         <div>
           <div className="muted">Still owed on accruals</div>
           <div className="text-lg font-semibold tabular-nums">{rm(owing)}</div>

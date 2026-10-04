@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Pencil, Plus, Printer, Trash2, XCircle } from 'lucide-react'
 import { dmy, downloadCsv, isOffice, MONEY_ACCOUNTS, MONEY_NAMES, rm, round2, supabase, todayMY, type Profile, type Role } from '../lib'
-import { Done, Empty, ReportBar } from '../ui'
+import { Done, Empty, ReportBar, MonthInput } from '../ui'
 
 type Employee = {
   id: number; profile_id: string | null; employee_no: string | null; name: string; id_no: string | null
@@ -329,9 +329,11 @@ export function Timesheet({ role }: { role: Role }) {
   useEffect(() => {
     const first = `${month}-01`
     const last = `${month}-${String(daysInMonth(month)).padStart(2, '0')}`
+    let stale = false  // a reply for a month already switched away from must not overwrite this one
     supabase.from('timesheets').select('employee_id, work_date, hours, ot_hours')
       .gte('work_date', first).lte('work_date', last)
       .then(({ data: rows, error }) => {
+        if (stale) return
         if (error) return setError(error.message)
         const nextData: Record<string, TsCell> = {}
         const nextSaved: Record<string, TsSaved> = {}
@@ -342,6 +344,7 @@ export function Timesheet({ role }: { role: Role }) {
         }
         setData(() => nextData); setSaved(() => nextSaved); setFailed(new Set()); setError('')
       })
+    return () => { stale = true }
   }, [month])
 
   const shown = employees
@@ -447,7 +450,7 @@ export function Timesheet({ role }: { role: Role }) {
             {shown.map(e => { const t = summary(e.id); return <option key={e.id} value={e.id}>{e.name}{t.present ? ` — ${t.present} days` : ''}</option> })}
           </select>
         </div>
-        <div className="w-44"><label>Month</label><input type="month" value={month} onChange={e => setMonth(e.target.value)} /></div>
+        <div className="w-44"><label>Month</label><MonthInput value={month} onChange={setMonth} /></div>
         {canEdit && staff && <div className="flex gap-2">
           <button className="btn-light" onClick={() => fillMonth(staff)}><Plus className="size-4" />Fill empty days with 8h</button>
           <button className="btn-light" onClick={() => clearMonth(staff)}><Trash2 className="size-4" />Clear month</button>
@@ -648,7 +651,7 @@ export function PayrollRun({ role }: { role: Role }) {
           </select>
         </div>
         {canEdit && <>
-          <div className="w-44"><label>Start a new month</label><input type="month" value={newMonth} onChange={e => setNewMonth(e.target.value)} /></div>
+          <div className="w-44"><label>Start a new month</label><MonthInput value={newMonth} onChange={setNewMonth} /></div>
           <button className="btn-light" onClick={create} disabled={busyRun}><Plus className="size-4" />Create</button>
         </>}
         <div className="ml-auto flex gap-2">

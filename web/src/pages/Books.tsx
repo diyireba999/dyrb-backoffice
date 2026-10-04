@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Paperclip, Trash2 } from 'lucide-react'
 import { EDITABLE_SOURCES, MONEY_ACCOUNTS, accountTotals, dmy, downloadCsv, isDirector, loadDocuments, openReceipt, postJournal, rm, round2, supabase, todayMY, updateJournal, uploadReceipt, useAccounts, type Account, type DocRow } from '../lib'
-import { AccountSelect, Done, Empty, ReportBar } from '../ui'
+import { AccountSelect, Done, Empty, ReportBar, MonthInput } from '../ui'
 import { DocumentList } from '../DocumentList'
 
 const money = (a: Account) => MONEY_ACCOUNTS.includes(a.code)
@@ -372,7 +372,7 @@ export function JournalListing({ isOwner }: { isOwner: boolean }) {
           Showing <b className="font-mono">{doc}</b>
           <button className="link" onClick={() => setParams({})}>Show all</button>
         </div>}
-        {!doc && <><div className="w-44"><label>Month</label><input type="month" value={month} onChange={e => setMonth(e.target.value)} /></div>
+        {!doc && <><div className="w-44"><label>Month</label><MonthInput value={month} onChange={setMonth} /></div>
         <div className="w-52"><label>Type</label>
           <select value={type} onChange={e => setType(e.target.value)}>
             {Object.entries(TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}

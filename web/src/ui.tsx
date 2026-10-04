@@ -67,3 +67,11 @@ export function SetupWarning() {
     </div>
   )
 }
+
+// Month picker that only reports a complete month. While a year is being typed
+// the browser reports 0002, 0020, 0202... (or blank) on every keystroke; passing
+// those on reloaded the page for each one and could crash it on a blank.
+export function MonthInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return <input type="month" defaultValue={value}
+    onChange={e => { if (/^20\d\d-(0[1-9]|1[0-2])$/.test(e.target.value)) onChange(e.target.value) }} />
+}
