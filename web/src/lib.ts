@@ -116,8 +116,11 @@ export function downloadCsv(filename: string, rows: (string | number)[][]) {
 
 export const monthStart = () => todayMY().slice(0, 8) + '01'
 
+// A date box reports '' while a date is half typed; answer '' instead of
+// throwing, which used to blank the whole page (Purchase Invoice due date).
 export const addDays = (iso: string, days: number) => {
-  const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10)
+  const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + days)
+  return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
 }
 
 // Net debit (debit minus credit) per account code, summed in the database.
