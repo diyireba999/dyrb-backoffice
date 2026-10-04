@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {
   addDaysISO, breakEven, daysInMonth, pctChange, sameWeekdayLastWeek, sumRange, variableRate,
-  supplierInvoiceCategory,
+  supplierInvoiceCategory, shiftMonths, comparePeriod,
 } from './src/dashboard-math.ts'
 
 // --- date helpers ---
@@ -59,3 +59,16 @@ assert.equal(supplierInvoiceCategory('2026-10-04', today, cutoff), 'dueSoon', 'd
 assert.equal(supplierInvoiceCategory('2026-10-05', today, cutoff), 'neither', 'due after cutoff')
 
 console.log('dashboard math ok')
+
+// --- report comparison periods ---
+assert.equal(shiftMonths('2026-03-31', -1), '2026-02-28', 'month-end stays month-end')
+assert.equal(shiftMonths('2026-02-28', -1), '2026-01-31', 'Feb end goes to Jan end')
+assert.equal(shiftMonths('2026-01-15', -1), '2025-12-15', 'crosses the year')
+assert.deepEqual(comparePeriod('2026-09-01', '2026-09-30', 'prev'), ['2026-08-01', '2026-08-31'], 'whole month')
+assert.deepEqual(comparePeriod('2026-10-01', '2026-10-04', 'prev'), ['2026-09-01', '2026-09-04'], 'month to date')
+assert.deepEqual(comparePeriod('2026-01-01', '2026-03-31', 'prev'), ['2025-10-01', '2025-12-31'], 'quarter')
+assert.deepEqual(comparePeriod('2026-09-10', '2026-09-19', 'prev'), ['2026-08-31', '2026-09-09'], 'ten odd days')
+assert.deepEqual(comparePeriod('2028-02-01', '2028-02-29', 'year'), ['2027-02-01', '2027-02-28'], 'leap year end')
+assert.equal(comparePeriod('', '2026-09-30', 'prev'), null, 'half-typed date')
+assert.equal(comparePeriod('2026-09-01', '2026-09-30', 'none'), null)
+console.log('report periods ok')

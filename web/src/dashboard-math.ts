@@ -60,3 +60,34 @@ export function supplierInvoiceCategory(dueDate: string, today: string, dueSoonC
   if (dueDate <= dueSoonCutoff) return 'dueSoon'
   return 'neither'
 }
+
+// ---- report periods (Profit & Loss comparison) ----
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+const lastDayOf = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate()  // m is 1-12
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+// Move a date by whole months. A month-end stays a month-end (31 Mar -> 28 Feb -> 31 Jan).
+export function shiftMonths(iso: string, n: number) {
+  const [y, m, d] = iso.split('-').map(Number)
+  const t = y * 12 + (m - 1) + n, ny = Math.floor(t / 12), nm = (t % 12) + 1
+  const day = d >= lastDayOf(y, m) ? lastDayOf(ny, nm) : Math.min(d, lastDayOf(ny, nm))
+  return `${ny}-${pad2(nm)}-${pad2(day)}`
+}
+
+export type CompareMode = 'prev' | 'year' | 'none'
+
+// The period to compare with. "Previous" is the same number of whole months
+// just before when the period starts on the 1st (1-15 Sep -> 1-15 Aug), else
+// the same number of days just before.
+export function comparePeriod(from: string, to: string, mode: CompareMode): [string, string] | null {
+  if (mode === 'none' || !ISO_DATE.test(from) || !ISO_DATE.test(to) || from > to) return null
+  if (mode === 'year') return [shiftMonths(from, -12), shiftMonths(to, -12)]
+  if (from.endsWith('-01')) {
+    const [fy, fm] = from.split('-').map(Number), [ty, tm] = to.split('-').map(Number)
+    const n = (ty * 12 + tm) - (fy * 12 + fm) + 1
+    return [shiftMonths(from, -n), shiftMonths(to, -n)]
+  }
+  const days = Math.round((Date.parse(to) - Date.parse(from)) / 86400000) + 1
+  return [addDaysISO(from, -days), addDaysISO(from, -1)]
+}
+
