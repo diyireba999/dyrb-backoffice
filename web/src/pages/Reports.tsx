@@ -149,10 +149,14 @@ function Tiles({ tiles, compare }: { tiles: [string, Figures][]; compare: boolea
   )
 }
 
+// Month-end entries (accruals, payroll) are dated the last day, so a month
+// shown only up to today would leave them out.
+const monthEnd = () => addDays(shiftMonths(todayMY().slice(0, 8) + '01', 1), -1)
+
 export function ProfitAndLoss() {
   const accounts = useAccounts(true)
   const [from, setFrom] = useState(todayMY().slice(0, 8) + '01')
-  const [to, setTo] = useState(todayMY())
+  const [to, setTo] = useState(monthEnd())
   const [mode, setMode] = useState<CompareMode>('prev')
   const cmp = comparePeriod(from, to, mode)
   const cur = useNet(from, to)
@@ -195,7 +199,7 @@ export function ProfitAndLoss() {
           </select>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="btn-light" onClick={() => setRange(monthStart, todayMY())}>This month</button>
+          <button className="btn-light" onClick={() => setRange(monthStart, monthEnd())}>This month</button>
           <button className="btn-light" onClick={() => setRange(shiftMonths(monthStart, -1), addDays(monthStart, -1))}>Last month</button>
           <button className="btn-light" onClick={() => setRange(yearStart(), todayMY())}>Year to date</button>
         </div>
