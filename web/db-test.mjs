@@ -703,3 +703,9 @@ console.log(sFull.b === 2800 && sFull.u === 0 && sFull.note === null ? 'full mon
 console.log(sJoin.b === 1400 && sJoin.u === 0 ? 'mid-month join pro-rated ok' : 'FAIL prorate join ' + JSON.stringify(sJoin))
 // 3 absent days x 2800/28 = 300
 console.log(sAbs.b === 2800 && sAbs.u === 300 && sAbs.g === 2500 ? 'absent days deducted at rate/28 ok' : 'FAIL prorate absent ' + JSON.stringify(sAbs))
+
+// ---- 026: company details ----
+for (let i = 0; i < 2; i++)  // safe to run again
+  await db.exec(fs.readFileSync(new URL('../supabase/026_company.sql', import.meta.url), 'utf8'))
+const co = (await db.query(`select name, count(*) over ()::int n from company`)).rows[0]
+console.log(co.name === 'DYRB' && co.n === 1 ? 'company row ok' : 'FAIL company ' + JSON.stringify(co))

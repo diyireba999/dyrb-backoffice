@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BookOpen, BookText, CalendarClock, ChevronDown, ChevronRight, FileText, HandCoins, KeyRound, LayoutDashboard,
-  ListTree, LogOut, Menu, NotebookPen, Plus, Repeat, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, CreditCard, IdCard, Package, Tags, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
+  Building2, ListTree, LogOut, Menu, NotebookPen, Plus, Repeat, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, CreditCard, IdCard, Package, Tags, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
 import { isOffice, loginEmail, supabase, type Profile, type Role } from './lib'
@@ -10,7 +10,7 @@ import { JournalListing, OfficialReceipt, PaymentVoucher, Transfer } from './pag
 import { AccountLedger, BankReconciliation, ChartOfAccounts, JournalEntry } from './pages/Ledger'
 import { ApAging, PurchaseInvoices, Suppliers, SupplierPayments } from './pages/Purchase'
 import { BalanceSheet, ProfitAndLoss, TrialBalance } from './pages/Reports'
-import { Users } from './pages/Admin'
+import { Users, CompanyDetails } from './pages/Admin'
 import { Claims } from './pages/Claims'
 import { Dashboard } from './pages/Dashboard'
 import { SearchDialog } from './Search'
@@ -58,6 +58,7 @@ const PAGES: Page[] = [
   { to: '/stock/costs', label: 'Item Costs', subtitle: 'What each drink and dish costs you', icon: Tags, group: 'Setup', roles: OFFICE },
   { to: '/sales/settings', label: 'Sales Settings', subtitle: 'Where each payment type and sales figure goes', icon: Settings2, group: 'Setup', roles: OFFICE },
   { to: '/payroll/rates', label: 'Payroll Settings', subtitle: 'EPF, SOCSO, EIS rates', icon: Settings2, group: 'Setup', roles: OFFICE },
+  { to: '/company', label: 'Company Details', subtitle: 'Name, SSM no. and address on printed reports', icon: Building2, group: 'Setup', roles: ['owner'] },
   { to: '/users', label: 'Users', subtitle: 'Who can sign in and what they can do', icon: UsersIcon, group: 'Setup', roles: ['owner'] },
 ]
 const SECTION_ICONS: Record<string, LucideIcon> = { Sales: CloudUpload, Purchases: Truck, Payroll: CalendarDays, Ledger: BookText, Reports: TrendingUp }
@@ -313,6 +314,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
               <Route path="/payroll/rates" element={<PayrollSettings role={profile.role} />} />
             </>}
             {profile.role === 'owner' && <Route path="/users" element={<Users me={profile.id} />} />}
+            {profile.role === 'owner' && <Route path="/company" element={<CompanyDetails />} />}
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </main>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase, type Profile, type Role } from '../lib'
+import { forgetCompany, type Company } from '../ui'
 
 const ROLES: Role[] = ['owner', 'manager', 'accountant', 'staff', 'investor']
 
@@ -77,5 +78,39 @@ export function Users({ me }: { me: string }) {
         </table>
       </div>
     </div>
+  )
+}
+
+// Name, registration number and address printed at the top of every report (026_company.sql).
+export function CompanyDetails() {
+  const [f, setF] = useState<Company | null>(null)
+  const [msg, setMsg] = useState('')
+  useEffect(() => {
+    supabase.from('company').select('name, reg_no, address, phone').maybeSingle()
+      .then(({ data, error }) => {
+        if (error) setMsg('Run supabase/026_company.sql in the Supabase SQL Editor first. ' + error.message)
+        setF(data ?? { name: 'DYRB', reg_no: '', address: '', phone: '' })
+      })
+  }, [])
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    if (!f) return
+    const { error } = await supabase.from('company').update({ ...f, updated_at: new Date().toISOString() }).eq('id', 1)
+    forgetCompany()
+    setMsg(error ? error.message : 'Saved')
+  }
+
+  if (!f) return null
+  return (
+    <form onSubmit={save} className="card max-w-xl space-y-5 p-6">
+      <p className="muted">Printed at the top of every report and PDF.</p>
+      <div><label>Company name</label><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} required /></div>
+      <div><label>Registration no. (SSM)</label><input value={f.reg_no} onChange={e => setF({ ...f, reg_no: e.target.value })} placeholder="e.g. 202301012345 (1500000-X)" /></div>
+      <div><label>Address</label><textarea rows={3} value={f.address} onChange={e => setF({ ...f, address: e.target.value })} /></div>
+      <div><label>Phone</label><input value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} /></div>
+      {msg && <p className={msg === 'Saved' ? 'text-sm text-emerald-700' : 'alert-error'}>{msg}</p>}
+      <div className="flex justify-end"><button className="btn">Save</button></div>
+    </form>
   )
 }
