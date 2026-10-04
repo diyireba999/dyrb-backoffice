@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, Pencil, Plus, Printer, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle2, Pencil, Plus, Printer, RefreshCw, Trash2, XCircle } from 'lucide-react'
 import { dmy, downloadCsv, isOffice, MONEY_ACCOUNTS, MONEY_NAMES, rm, round2, supabase, todayMY, type Profile, type Role } from '../lib'
 import { Done, Empty, ReportBar, MonthInput } from '../ui'
 
@@ -301,6 +301,7 @@ export function Timesheet({ role }: { role: Role }) {
   const [saved, setSavedState] = useState<Record<string, TsSaved>>({})
   const [failed, setFailed] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
+  const [dayHours, setDayHours] = useState(10)
   const canEdit = isOffice(role)
 
   // Mirror `data` / `saved` in refs purely so a cell's queued write can be
@@ -324,6 +325,7 @@ export function Timesheet({ role }: { role: Role }) {
 
   useEffect(() => {
     supabase.from('employees').select('*').eq('active', true).order('name').then(({ data }) => setEmployees((data as Employee[]) ?? []))
+    supabase.from('payroll_rates').select('hours_per_day').single().then(({ data }) => data && setDayHours(Number(data.hours_per_day)))
   }, [])
 
   useEffect(() => {
@@ -411,20 +413,20 @@ export function Timesheet({ role }: { role: Role }) {
     setData(d => drop(d) as Record<string, TsCell>); setSaved(s => drop(s) as Record<string, TsSaved>)
   }
 
-  // Fill every empty day the person was employed with a normal 8-hour day,
+  // Fill every empty day the person was employed with a normal day (Rates),
   // in one write. Days already filled are left alone; days off are then
   // cleared by hand.
   async function fillMonth(e: Employee) {
     const rows = days.map(dateFor)
       .filter(date => (!e.join_date || date >= e.join_date) && (!e.leave_date || date <= e.leave_date))
       .filter(date => !(`${e.id}:${date}` in savedRef.current))
-      .map(work_date => ({ employee_id: e.id, work_date, hours: 8, ot_hours: 0 }))
+      .map(work_date => ({ employee_id: e.id, work_date, hours: dayHours, ot_hours: 0 }))
     if (rows.length === 0) return
     const { error } = await supabase.from('timesheets').upsert(rows, { onConflict: 'employee_id,work_date' })
     if (error) return setError(error.message)
     setError('')
-    const cells = Object.fromEntries(rows.map(r => [`${e.id}:${r.work_date}`, { hours: '8', ot_hours: '0' }]))
-    const sums = Object.fromEntries(rows.map(r => [`${e.id}:${r.work_date}`, { hours: 8, ot_hours: 0 }]))
+    const cells = Object.fromEntries(rows.map(r => [`${e.id}:${r.work_date}`, { hours: String(dayHours), ot_hours: '0' }]))
+    const sums = Object.fromEntries(rows.map(r => [`${e.id}:${r.work_date}`, { hours: dayHours, ot_hours: 0 }]))
     setData(d => ({ ...d, ...cells })); setSaved(s => ({ ...s, ...sums }))
   }
 
@@ -452,12 +454,12 @@ export function Timesheet({ role }: { role: Role }) {
         </div>
         <div className="w-44"><label>Month</label><MonthInput value={month} onChange={setMonth} /></div>
         {canEdit && staff && <div className="flex gap-2">
-          <button className="btn-light" onClick={() => fillMonth(staff)}><Plus className="size-4" />Fill empty days with 8h</button>
+          <button className="btn-light" onClick={() => fillMonth(staff)}><Plus className="size-4" />Fill empty days with {dayHours}h</button>
           <button className="btn-light" onClick={() => clearMonth(staff)}><Trash2 className="size-4" />Clear month</button>
         </div>}
       </div>
       <p className="muted">Hourly staff are paid hours × rate. Monthly staff: a day with hours counts as present; once a staff member has any day filled in for the month, each missing working day is deducted as unpaid leave. Leave someone blank all month to pay them in full. Clear both boxes to delete a day.</p>
-      <p className="muted">These hours feed the payroll run at the moment it is created. Editing a timesheet afterwards does not change a run already started — figures can still be corrected on the payslip itself.</p>
+      <p className="muted">These hours feed the payroll run when it is created. After editing a timesheet, press Re-run on a draft payroll to pick up the new hours.</p>
       {error && <p className="alert-error">{error}</p>}
       {!staff && <Empty text="No staff to show." />}
       {staff && total && (
@@ -577,9 +579,11 @@ export function PayrollRun({ role }: { role: Role }) {
     if (!runId) return
     if (fn === 'cancel_payroll_run' && !confirm('Cancel this approved payroll? The salary entry will be removed.')) return
     if (fn === 'delete_payroll_run' && !confirm('Delete this draft payroll?')) return
-    const { error } = await supabase.rpc(fn, { p_id: runId })
+    if (fn === 'rerun_payroll_run' && !confirm('Build this draft payroll again from the latest timesheet, staff and rates? Changes typed on the payslips will be lost.')) return
+    const { data, error } = await supabase.rpc(fn, { p_id: runId })
     if (error) return setError(error.message)
     if (fn === 'delete_payroll_run') setRunId(null)
+    if (fn === 'rerun_payroll_run') setRunId(data)
     setError(''); loadRuns(); loadSlips(); loadAdvances()
   }
 
@@ -657,6 +661,7 @@ export function PayrollRun({ role }: { role: Role }) {
         <div className="ml-auto flex gap-2">
           {run && <button className="btn-light" onClick={() => window.print()}><Printer className="size-4" />Print</button>}
           {run && <button className="btn-light" onClick={csv}>Excel</button>}
+          {run?.status === 'draft' && canEdit && <button className="btn-light" onClick={() => act('rerun_payroll_run')}><RefreshCw className="size-4" />Re-run</button>}
           {run?.status === 'draft' && role === 'owner' && <button className="btn" onClick={() => act('approve_payroll_run')}><CheckCircle2 className="size-4" />Approve &amp; post</button>}
           {run?.status === 'approved' && role === 'owner' && <button className="btn-light" onClick={() => act('cancel_payroll_run')}><XCircle className="size-4" />Cancel approval</button>}
           {run?.status === 'draft' && role === 'owner' && slips.length === 0 && <button className="btn-light" onClick={() => act('delete_payroll_run')}><Trash2 className="size-4" /></button>}
@@ -900,6 +905,7 @@ const RATE_FIELDS: [string, string][] = [
   ['eis_wage_ceiling', 'EIS wage ceiling (RM)'],
   ['minimum_wage', 'Minimum wage (RM)'],
   ['working_days', 'Working days per month (unpaid leave per day = salary ÷ this)'],
+  ['hours_per_day', 'Normal hours per day (monthly staff OT rate = salary ÷ days ÷ this)'],
 ]
 
 export function PayrollSettings({ role }: { role: Role }) {
