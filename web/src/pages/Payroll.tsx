@@ -293,6 +293,7 @@ const closeEnough = (a: number, b: number) => Math.abs(a - b) < 0.005
 
 export function Timesheet({ role }: { role: Role }) {
   const [month, setMonth] = useState(todayMY().slice(0, 7))
+  const [staffId, setStaffId] = useState<number | null>(null)
   const [employees, setEmployees] = useState<Employee[]>([])
   const [data, setDataState] = useState<Record<string, TsCell>>({})
   // What the server actually has, per cell — totals are built from this, never
@@ -407,96 +408,96 @@ export function Timesheet({ role }: { role: Role }) {
     setData(d => drop(d) as Record<string, TsCell>); setSaved(s => drop(s) as Record<string, TsSaved>)
   }
 
-  // "Saved" totals are what create_payroll_run will actually read. "Typed"
-  // totals are what's currently on screen, which may be ahead of that (still
-  // in flight, or failed) — the gap between them is what gets called out.
-  const staffSaved = (id: number) => days.reduce((s, d) => { const c = savedOf(id, dateFor(d)); return { hours: s.hours + c.hours, ot: s.ot + c.ot_hours } }, { hours: 0, ot: 0 })
-  const staffTyped = (id: number) => days.reduce((s, d) => { const c = cellOf(id, dateFor(d)); return { hours: s.hours + (Number(c.hours) || 0), ot: s.ot + (Number(c.ot_hours) || 0) } }, { hours: 0, ot: 0 })
-  const daySaved = (date: string) => shown.reduce((s, e) => { const c = savedOf(e.id, date); return { hours: s.hours + c.hours, ot: s.ot + c.ot_hours } }, { hours: 0, ot: 0 })
-  const dayTyped = (date: string) => shown.reduce((s, e) => { const c = cellOf(e.id, date); return { hours: s.hours + (Number(c.hours) || 0), ot: s.ot + (Number(c.ot_hours) || 0) } }, { hours: 0, ot: 0 })
+  // Fill every empty day the person was employed with a normal 8-hour day,
+  // in one write. Days already filled are left alone; days off are then
+  // cleared by hand.
+  async function fillMonth(e: Employee) {
+    const rows = days.map(dateFor)
+      .filter(date => (!e.join_date || date >= e.join_date) && (!e.leave_date || date <= e.leave_date))
+      .filter(date => !(`${e.id}:${date}` in savedRef.current))
+      .map(work_date => ({ employee_id: e.id, work_date, hours: 8, ot_hours: 0 }))
+    if (rows.length === 0) return
+    const { error } = await supabase.from('timesheets').upsert(rows, { onConflict: 'employee_id,work_date' })
+    if (error) return setError(error.message)
+    setError('')
+    const cells = Object.fromEntries(rows.map(r => [`${e.id}:${r.work_date}`, { hours: '8', ot_hours: '0' }]))
+    const sums = Object.fromEntries(rows.map(r => [`${e.id}:${r.work_date}`, { hours: 8, ot_hours: 0 }]))
+    setData(d => ({ ...d, ...cells })); setSaved(s => ({ ...s, ...sums }))
+  }
+
+  // Totals are built from what has saved, i.e. what create_payroll_run will read.
+  const summary = (id: number) => days.reduce((s, d) => {
+    const c = savedOf(id, dateFor(d))
+    return { hours: s.hours + c.hours, ot: s.ot + c.ot_hours, present: s.present + (c.hours > 0 ? 1 : 0) }
+  }, { hours: 0, ot: 0, present: 0 })
+  const staff = shown.find(e => e.id === staffId) ?? shown[0]
+  const weekday = (date: string) => new Date(date + 'T00:00:00Z').toLocaleDateString('en-MY', { weekday: 'short', timeZone: 'UTC' })
+  const total = staff ? summary(staff.id) : null
+  const unsaved = staff ? days.some(d => {
+    const date = dateFor(d), c = cellOf(staff.id, date), sv = savedOf(staff.id, date)
+    return !closeEnough(Number(c.hours) || 0, sv.hours) || !closeEnough(Number(c.ot_hours) || 0, sv.ot_hours)
+  }) : false
 
   return (
     <div className="space-y-4">
       <div className="card flex flex-wrap items-end gap-4">
+        <div className="w-64"><label>Staff</label>
+          <select value={staff?.id ?? ''} onChange={e => setStaffId(Number(e.target.value))}>
+            {shown.length === 0 && <option value="">— no staff —</option>}
+            {shown.map(e => { const t = summary(e.id); return <option key={e.id} value={e.id}>{e.name}{t.present ? ` — ${t.present} days` : ''}</option> })}
+          </select>
+        </div>
         <div className="w-44"><label>Month</label><input type="month" value={month} onChange={e => setMonth(e.target.value)} /></div>
+        {canEdit && staff && <div className="flex gap-2">
+          <button className="btn-light" onClick={() => fillMonth(staff)}><Plus className="size-4" />Fill empty days with 8h</button>
+          <button className="btn-light" onClick={() => clearMonth(staff)}><Trash2 className="size-4" />Clear month</button>
+        </div>}
       </div>
       <p className="muted">Hourly staff are paid hours × rate. Monthly staff: a day with hours counts as present; once a staff member has any day filled in for the month, each missing working day is deducted as unpaid leave. Leave someone blank all month to pay them in full. Clear both boxes to delete a day.</p>
       <p className="muted">These hours feed the payroll run at the moment it is created. Editing a timesheet afterwards does not change a run already started — figures can still be corrected on the payslip itself.</p>
       {error && <p className="alert-error">{error}</p>}
-      <div className="card overflow-x-auto p-0">
-        {shown.length === 0 && <Empty text="No staff to show." />}
-        {shown.length > 0 && (
+      {!staff && <Empty text="No staff to show." />}
+      {staff && total && (
+        <div className="card max-w-xl p-0">
           <table>
-            <thead>
-              <tr>
-                <th className="sticky left-0 z-10 bg-slate-50">Staff</th>
-                {days.map(d => <th key={d} className="px-1 py-2 text-center">{d}</th>)}
-                <th className="px-2 text-right">Total</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Day</th><th>Hours</th><th>OT hours</th><th></th></tr></thead>
             <tbody>
-              {shown.map(e => {
-                const st = staffSaved(e.id)
-                const tt = staffTyped(e.id)
-                const differs = !closeEnough(st.hours, tt.hours) || !closeEnough(st.ot, tt.ot)
+              {days.map(d => {
+                const date = dateFor(d)
+                const key = `${staff.id}:${date}`
+                const c = cellOf(staff.id, date)
+                const employed = (!staff.join_date || date >= staff.join_date) && (!staff.leave_date || date <= staff.leave_date)
+                const wd = weekday(date)
                 return (
-                  <tr key={e.id}>
-                    <td className="sticky left-0 z-10 bg-white font-medium">
-                      <div className="flex items-center gap-1">
-                        <span>{e.name}</span>
-                        {canEdit && <button title="Delete this month's attendance" className="rounded p-1 text-slate-300 hover:bg-slate-100 hover:text-red-600" onClick={() => clearMonth(e)}><Trash2 className="size-3.5" /></button>}
-                      </div>
-                    </td>
-                    {days.map(d => {
-                      const date = dateFor(d)
-                      const key = `${e.id}:${date}`
-                      const c = cellOf(e.id, date)
-                      return (
-                        <td key={d} className={`p-0.5 align-top ${failed.has(key) ? 'bg-red-50' : ''}`}>
-                          <div className="flex flex-col items-center gap-0.5">
-                            <input type="number" step="0.5" min="0" inputMode="decimal" title="Hours" disabled={!canEdit}
-                              className="h-7 w-12 rounded border-slate-200 px-1 text-center text-xs"
-                              value={c.hours} placeholder="H"
-                              onChange={ev => setCell(e.id, date, { hours: ev.target.value })}
-                              onBlur={() => canEdit && save(e.id, date)} />
-                            <input type="number" step="0.5" min="0" inputMode="decimal" title="OT hours" disabled={!canEdit}
-                              className="h-7 w-12 rounded border-slate-200 px-1 text-center text-xs text-slate-500"
-                              value={c.ot_hours} placeholder="OT"
-                              onChange={ev => setCell(e.id, date, { ot_hours: ev.target.value })}
-                              onBlur={() => canEdit && save(e.id, date)} />
-                          </div>
-                          {failed.has(key) && <div className="text-center text-[10px] font-medium text-red-600">not saved</div>}
-                        </td>
-                      )
-                    })}
-                    <td className="px-2 text-right text-xs font-medium tabular-nums">
-                      {st.hours.toFixed(2)}<span className="text-slate-400"> / {st.ot.toFixed(2)}</span>
-                      {differs && <div className="text-[10px] font-normal normal-case text-amber-600">not all typed hours saved yet</div>}
+                  <tr key={d} className={failed.has(key) ? 'bg-red-50' : wd === 'Sun' ? 'bg-slate-50' : ''}>
+                    <td className="whitespace-nowrap tabular-nums"><span className="inline-block w-10 text-slate-500">{wd}</span>{String(d).padStart(2, '0')}</td>
+                    <td><input type="number" step="0.5" min="0" inputMode="decimal" disabled={!canEdit || !employed}
+                      className="w-24" value={c.hours} placeholder="—"
+                      onChange={ev => setCell(staff.id, date, { hours: ev.target.value })}
+                      onBlur={() => canEdit && save(staff.id, date)} /></td>
+                    <td><input type="number" step="0.5" min="0" inputMode="decimal" disabled={!canEdit || !employed}
+                      className="w-24" value={c.ot_hours} placeholder="—"
+                      onChange={ev => setCell(staff.id, date, { ot_hours: ev.target.value })}
+                      onBlur={() => canEdit && save(staff.id, date)} /></td>
+                    <td className="text-xs">
+                      {!employed ? <span className="text-slate-400">not employed</span>
+                        : failed.has(key) ? <span className="font-medium text-red-600">not saved</span>
+                        : !(Number(c.hours) > 0) && <span className="text-amber-600">absent</span>}
                     </td>
                   </tr>
                 )
               })}
               <tr className="bg-slate-50 font-semibold">
-                <td className="sticky left-0 z-10 bg-slate-50">Total</td>
-                {days.map(d => {
-                  const date = dateFor(d)
-                  const ds = daySaved(date)
-                  const dt = dayTyped(date)
-                  const differs = !closeEnough(ds.hours, dt.hours) || !closeEnough(ds.ot, dt.ot)
-                  return (
-                    <td key={d} className="px-1 text-center text-xs tabular-nums">
-                      {ds.hours || ds.ot ? `${ds.hours.toFixed(2)}/${ds.ot.toFixed(2)}` : ''}
-                      {differs && <div className="text-[9px] font-normal normal-case text-amber-600">unsaved</div>}
-                    </td>
-                  )
-                })}
-                <td></td>
+                <td>Total</td>
+                <td className="tabular-nums">{total.hours.toFixed(2)} h</td>
+                <td className="tabular-nums">{total.ot.toFixed(2)} h</td>
+                <td className="text-xs font-normal">{total.present} days present</td>
               </tr>
             </tbody>
           </table>
-        )}
-      </div>
-      {shown.length > 0 && <p className="muted">Totals count only what has actually saved. "Not all typed hours saved yet" means a change is still on its way, or failed — check for a red cell above.</p>}
+          {unsaved && <p className="px-4 py-2 text-xs text-amber-600">Some typed hours are not saved yet — a change is on its way, or failed (red row).</p>}
+        </div>
+      )}
     </div>
   )
 }
