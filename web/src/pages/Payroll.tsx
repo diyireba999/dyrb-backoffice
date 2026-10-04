@@ -294,7 +294,6 @@ const closeEnough = (a: number, b: number) => Math.abs(a - b) < 0.005
 export function Timesheet({ role }: { role: Role }) {
   const [month, setMonth] = useState(todayMY().slice(0, 7))
   const [employees, setEmployees] = useState<Employee[]>([])
-  const [showMonthly, setShowMonthly] = useState(false)
   const [data, setDataState] = useState<Record<string, TsCell>>({})
   // What the server actually has, per cell — totals are built from this, never
   // from what's merely typed, so a total never claims a figure payroll won't get.
@@ -344,7 +343,7 @@ export function Timesheet({ role }: { role: Role }) {
       })
   }, [month])
 
-  const shown = employees.filter(e => showMonthly || e.pay_type === 'hourly')
+  const shown = employees
   const days = Array.from({ length: daysInMonth(month) }, (_, i) => i + 1)
   const dateFor = (d: number) => `${month}-${String(d).padStart(2, '0')}`
   const cellOf = (id: number, date: string): TsCell => data[`${id}:${date}`] ?? { hours: '', ot_hours: '' }
@@ -379,16 +378,33 @@ export function Timesheet({ role }: { role: Role }) {
     const chained = (inFlight.current[key] ?? Promise.resolve())
       .catch(() => {}) // a previous failure on this cell must not block later saves to it
       .then(async () => {
-        const { error } = await supabase.from('timesheets')
-          .upsert({ employee_id: id, work_date: date, hours, ot_hours }, { onConflict: 'employee_id,work_date' })
+        // Both cleared: remove the day outright, so it counts as absent.
+        const empty = hours === 0 && ot_hours === 0
+        const { error } = empty
+          ? await supabase.from('timesheets').delete().eq('employee_id', id).eq('work_date', date)
+          : await supabase.from('timesheets')
+            .upsert({ employee_id: id, work_date: date, hours, ot_hours }, { onConflict: 'employee_id,work_date' })
         setFailed(prev => { const next = new Set(prev); if (error) next.add(key); else next.delete(key); return next })
         if (error) setError(`Could not save that cell — ${error.message}. Check your connection; the last change you typed there was not saved.`)
+        else if (empty) {
+          setSaved(s => { const next = { ...s }; delete next[key]; return next })
+          setData(d => { const next = { ...d }; delete next[key]; return next })
+        }
         else setSaved(s => ({ ...s, [key]: { hours, ot_hours } }))
       })
     inFlight.current[key] = chained
     // Once this link settles with nothing newer queued behind it, drop the
     // entry rather than let the map grow forever.
     chained.finally(() => { if (inFlight.current[key] === chained) delete inFlight.current[key] })
+  }
+
+  async function clearMonth(e: Employee) {
+    if (!confirm(`Delete all attendance for ${e.name} in ${month}?`)) return
+    const { error } = await supabase.from('timesheets').delete().eq('employee_id', e.id)
+      .gte('work_date', `${month}-01`).lte('work_date', dateFor(days.length))
+    if (error) return setError(error.message)
+    const drop = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([k]) => !k.startsWith(`${e.id}:${month}-`)))
+    setData(d => drop(d) as Record<string, TsCell>); setSaved(s => drop(s) as Record<string, TsSaved>)
   }
 
   // "Saved" totals are what create_payroll_run will actually read. "Typed"
@@ -403,11 +419,8 @@ export function Timesheet({ role }: { role: Role }) {
     <div className="space-y-4">
       <div className="card flex flex-wrap items-end gap-4">
         <div className="w-44"><label>Month</label><input type="month" value={month} onChange={e => setMonth(e.target.value)} /></div>
-        <label className="flex items-center gap-2 pb-2.5 text-sm font-normal text-slate-700">
-          <input type="checkbox" checked={showMonthly} onChange={e => setShowMonthly(e.target.checked)} />
-          Include monthly staff (to log their overtime)
-        </label>
       </div>
+      <p className="muted">Hourly staff are paid hours × rate. Monthly staff: a day with hours counts as present; once a staff member has any day filled in for the month, each missing working day is deducted as unpaid leave. Leave someone blank all month to pay them in full. Clear both boxes to delete a day.</p>
       <p className="muted">These hours feed the payroll run at the moment it is created. Editing a timesheet afterwards does not change a run already started — figures can still be corrected on the payslip itself.</p>
       {error && <p className="alert-error">{error}</p>}
       <div className="card overflow-x-auto p-0">
@@ -428,7 +441,12 @@ export function Timesheet({ role }: { role: Role }) {
                 const differs = !closeEnough(st.hours, tt.hours) || !closeEnough(st.ot, tt.ot)
                 return (
                   <tr key={e.id}>
-                    <td className="sticky left-0 z-10 bg-white font-medium">{e.name}</td>
+                    <td className="sticky left-0 z-10 bg-white font-medium">
+                      <div className="flex items-center gap-1">
+                        <span>{e.name}</span>
+                        {canEdit && <button title="Delete this month's attendance" className="rounded p-1 text-slate-300 hover:bg-slate-100 hover:text-red-600" onClick={() => clearMonth(e)}><Trash2 className="size-3.5" /></button>}
+                      </div>
+                    </td>
                     {days.map(d => {
                       const date = dateFor(d)
                       const key = `${e.id}:${date}`
@@ -767,6 +785,7 @@ function Payslips({ slips, advanceMap }: { slips: Payslip[]; advanceMap?: Record
                 <span className="font-semibold text-brand-dark">Net pay</span>
                 <span className="text-lg font-bold text-brand-dark tabular-nums">{rm(p.net_pay)}</span>
               </div>
+              {p.note && <p className="mt-3 text-xs text-slate-500">{p.note}</p>}
               {stillOwed(p) > 0 &&
                 <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   Still owes {rm(stillOwed(p))} on a salary advance — it will come off next month's pay.
@@ -876,6 +895,7 @@ const RATE_FIELDS: [string, string][] = [
   ['eis_employer', 'EIS employer (%)'],
   ['eis_wage_ceiling', 'EIS wage ceiling (RM)'],
   ['minimum_wage', 'Minimum wage (RM)'],
+  ['working_days', 'Working days per month (unpaid leave per day = salary ÷ this)'],
 ]
 
 export function PayrollSettings({ role }: { role: Role }) {
