@@ -682,3 +682,24 @@ try { await db.query(`select delete_advance(${farahAdv})`)
   console.log('FAIL: advance ticked on bank reconciliation was deleted') }
 catch (e) { console.log(e.message === 'This entry is ticked on the bank reconciliation. Untick it there first.'
   ? 'advance on a closed reconciliation blocked from deletion ok' : 'FAIL wrong message: ' + e.message) }
+
+// ---- 025: pro-rated monthly salary ----
+await db.exec(fs.readFileSync(new URL('../supabase/025_prorate.sql', import.meta.url), 'utf8'))
+await db.exec(`update profiles set role='owner'`)
+// Statutory off so basic/unpaid can be checked exactly. Sep 2027 has 30 days.
+const pr = async (name, join, leave) => (await db.query(`insert into employees (name, pay_type, rate, join_date, leave_date, epf_on, socso_on, eis_on)
+  values ('${name}', 'monthly', 2800, ${join ? `'${join}'` : 'null'}, ${leave ? `'${leave}'` : 'null'}, false, false, false) returning id`)).rows[0].id
+const prFull = await pr('PR full', null, null)          // no timesheet: paid in full
+const prJoin = await pr('PR join', '2027-09-16', null)  // 15 of 30 days
+const prAbs = await pr('PR absent', null, null)         // 25 of 28 days present
+for (let d = 1; d <= 25; d++)
+  await db.query(`insert into timesheets (employee_id, work_date, hours) values (${prAbs}, '2027-09-${String(d).padStart(2, '0')}', 8)`)
+await db.query(`insert into timesheets (employee_id, work_date, hours, ot_hours) values (${prAbs}, '2027-09-26', 0, 2)`) // OT only: not present
+const prRun = (await db.query(`select create_payroll_run('2027-09-01', '2027-09-30') id`)).rows[0].id
+const prSlip = async id => (await db.query(`select basic::float b, unpaid_leave::float u, gross::float g, note
+  from payslip_view where run_id=${prRun} and employee_id=${id}`)).rows[0]
+const sFull = await prSlip(prFull), sJoin = await prSlip(prJoin), sAbs = await prSlip(prAbs)
+console.log(sFull.b === 2800 && sFull.u === 0 && sFull.note === null ? 'full month untracked paid in full ok' : 'FAIL prorate full ' + JSON.stringify(sFull))
+console.log(sJoin.b === 1400 && sJoin.u === 0 ? 'mid-month join pro-rated ok' : 'FAIL prorate join ' + JSON.stringify(sJoin))
+// 3 absent days x 2800/28 = 300
+console.log(sAbs.b === 2800 && sAbs.u === 300 && sAbs.g === 2500 ? 'absent days deducted at rate/28 ok' : 'FAIL prorate absent ' + JSON.stringify(sAbs))
