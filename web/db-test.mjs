@@ -730,3 +730,23 @@ await db.exec(`update profiles set role='owner'`)
 await db.query(`select mark_payroll_paid(${paidRun}, null)`)
 await db.query(`select cancel_payroll_run(${paidRun})`)
 console.log((await db.query(`select status from payroll_runs where id=${paidRun}`)).rows[0].status === 'draft' ? 'unpaid then cancel ok' : 'FAIL cancel after unpaid')
+
+// ---- 029: marking paid posts the payment ----
+for (let i = 0; i < 2; i++)  // safe to run again
+  await db.exec(fs.readFileSync(new URL('../supabase/029_payroll_payment.sql', import.meta.url), 'utf8'))
+await db.exec(`update profiles set role='owner'`)
+const r2 = v => Math.round(v * 100) / 100
+await db.query(`select approve_payroll_run(${paidRun})`)
+const p2300 = await acctBal('2300'), p1100 = await acctBal('1100')
+const runNet = Number((await db.query(`select sum(net_pay) n from payslip_view where run_id=${paidRun}`)).rows[0].n)
+await db.query(`select mark_payroll_paid(${paidRun}, '2027-12-02', '1100')`)
+console.log(r2(await acctBal('2300') - p2300) === r2(runNet) && r2(p1100 - await acctBal('1100')) === r2(runNet)
+  ? 'paid from bank clears salaries payable ok' : 'FAIL payroll payment entry')
+try { await db.query(`select mark_payroll_paid(${paidRun}, '2027-12-03', '1100')`); console.log('FAIL: paid twice') }
+catch (e) { console.log('cannot pay twice ok') }
+await db.query(`select mark_payroll_paid(${paidRun}, null)`)
+console.log(r2(await acctBal('2300')) === r2(p2300) ? 'undo paid removes payment entry ok' : 'FAIL undo payment')
+await db.query(`select mark_payroll_paid(${paidRun}, '2027-12-02')`)  // already paid by PV: no entry
+console.log(r2(await acctBal('2300')) === r2(p2300) ? 'mark paid without account posts nothing ok' : 'FAIL mark-only posted')
+try { await db.query(`select mark_payroll_paid(${paidRun}, null)`); await db.query(`select mark_payroll_paid(${paidRun}, '2027-12-02', '6000')`); console.log('FAIL: paid from expense account') }
+catch (e) { console.log('pay from wrong account rejected ok') }
