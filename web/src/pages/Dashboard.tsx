@@ -61,10 +61,10 @@ function Trend({ label, vsLabel, now, before }: { label: string; vsLabel: string
   // Flat is not up: a genuine 0% change gets the neutral treatment, not green.
   const color = change === null ? 'text-slate-400' : change === 0 ? 'text-slate-500' : change < 0 ? 'text-rose-600' : 'text-emerald-600'
   return (
-    <div>
+    <div className="grid grid-cols-[1fr_auto] items-baseline gap-x-3 sm:block">
       <div className="muted">{label}</div>
-      <div className="text-xl font-semibold tabular-nums">{rm(now)}</div>
-      <div className={`text-xs font-medium ${color}`}>
+      <div className="whitespace-nowrap text-lg font-semibold tabular-nums sm:text-xl">{rm(now)}</div>
+      <div className={`col-span-2 text-xs font-medium ${color}`}>
         {change === null ? 'no figure to compare' : `${change > 0 ? '+' : ''}${change}% ${vsLabel}`}
       </div>
     </div>
@@ -278,7 +278,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
             <p className="muted">Loading…</p>
           ) : (
             <>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid gap-3 sm:grid-cols-3 sm:gap-4">
                 <Trend label="Yesterday" vsLabel="vs same day last week" now={salesBand.yesterday.amount} before={salesBand.yesterday.compare} />
                 <Trend label="Week to date" vsLabel="vs last week" now={salesBand.week.amount} before={salesBand.week.compare} />
                 <Trend label="Month to date" vsLabel="vs last month" now={salesBand.month.amount} before={salesBand.month.compare} />

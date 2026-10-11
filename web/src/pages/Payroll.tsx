@@ -681,8 +681,6 @@ export function PayrollRun({ role }: { role: Role }) {
           <button className="btn-light" onClick={create} disabled={busyRun}><Plus className="size-4" />Create</button>
         </>}
         <div className="ml-auto flex gap-2">
-          {run && <button className="btn-light" onClick={() => window.print()}><Printer className="size-4" />Print summary</button>}
-          {run && <button className="btn-light" onClick={csv}><Download className="size-4" />Excel</button>}
           {run?.status === 'draft' && canEdit && <button className="btn-light" onClick={() => act('rerun_payroll_run')}><RefreshCw className="size-4" />Re-run</button>}
           {run?.status === 'draft' && role === 'owner' && <button className="btn" onClick={() => act('approve_payroll_run')}><CheckCircle2 className="size-4" />Approve &amp; post</button>}
           {run?.status === 'approved' && !run.paid_on && role === 'owner' && <button className="btn-light" onClick={() => act('cancel_payroll_run')}><XCircle className="size-4" />Cancel approval</button>}
@@ -694,11 +692,11 @@ export function PayrollRun({ role }: { role: Role }) {
 
       {run && (
         <>
-          <ReportBar title={`Payroll ${monthName(run.month)}`} period={run.paid_on ? `Paid on ${dmy(run.paid_on)}` : `Pay date ${dmy(run.pay_date)} · ${runLabel(run)}`} />
+          <ReportBar title={`Payroll ${monthName(run.month)}`} period={run.paid_on ? `Paid on ${dmy(run.paid_on)}` : `Pay date ${dmy(run.pay_date)} · ${runLabel(run)}`} onCsv={csv} />
           {run.status === 'draft' && <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">Draft — not approved and not paid. Check the figures, then the owner approves.</p>}
           {run.status === 'approved' && !run.paid_on && (
             <div className="flex flex-wrap items-end gap-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              <p className="flex-1">Approved — <b>salaries not paid yet</b>. The net pay of {rm(total('net_pay'))} is held in 2300 Salaries Payable (accrued) until you pay it.</p>
+              <p className="min-w-64 flex-1">Approved — <b>salaries not paid yet</b>. The net pay of {rm(total('net_pay'))} is held in 2300 Salaries Payable (accrued) until you pay it.</p>
               {canEdit && <div className="no-print flex flex-wrap items-end gap-2">
                 <div className="w-40"><label>Paid on</label><input type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} /></div>
                 <div className="w-56"><label>Paid from</label>
@@ -721,14 +719,14 @@ export function PayrollRun({ role }: { role: Role }) {
           <div className="card overflow-x-auto p-0">
             <table>
               <thead><tr>
-                <th>Staff</th><th className="text-right">Basic</th><th className="text-right">OT</th><th className="text-right">Allowance</th>
+                <th className="sticky left-0 z-10">Staff</th><th className="text-right">Basic</th><th className="text-right">OT</th><th className="text-right">Allowance</th>
                 <th className="text-right">Gross</th><th className="text-right">EPF</th><th className="text-right">SOCSO</th><th className="text-right">EIS</th>
                 <th className="text-right">PCB</th><th className="text-right">Other</th><th className="text-right">Recovery</th><th className="text-right">Net pay</th><th className="no-print"></th>
               </tr></thead>
               <tbody>
                 {slips.map(p => (
                   <tr key={p.id}>
-                    <td><button className="font-medium hover:text-brand hover:underline" title="View payslip" onClick={() => setFocus({ id: p.employee_id })}>{p.name}</button><div className="text-xs text-slate-500">{p.is_local ? '' : 'Foreign · '}{p.bank_name} {p.bank_account}</div></td>
+                    <td className="sticky left-0 z-10 bg-white"><button className="whitespace-nowrap text-left font-medium hover:text-brand hover:underline" title="View payslip" onClick={() => setFocus({ id: p.employee_id })}>{p.name}</button><div className="text-xs text-slate-500">{p.is_local ? '' : 'Foreign · '}{p.bank_name} {p.bank_account}</div></td>
                     <td className="text-right">{rm(p.basic)}</td>
                     <td className="text-right">{rm(p.ot_amount)}</td>
                     <td className="text-right">{rm(n(p.allowance) + n(p.service_charge))}</td>
@@ -748,7 +746,7 @@ export function PayrollRun({ role }: { role: Role }) {
                   </tr>
                 ))}
                 <tr className="bg-slate-50 font-semibold">
-                  <td>Total ({slips.length})</td>
+                  <td className="sticky left-0 z-10 bg-slate-50">Total ({slips.length})</td>
                   <td className="text-right">{rm(total('basic'))}</td>
                   <td className="text-right">{rm(total('ot_amount'))}</td>
                   <td className="text-right">{rm(total('allowance') + total('service_charge'))}</td>
