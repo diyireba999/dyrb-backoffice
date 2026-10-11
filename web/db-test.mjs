@@ -709,3 +709,24 @@ for (let i = 0; i < 2; i++)  // safe to run again
   await db.exec(fs.readFileSync(new URL('../supabase/026_company.sql', import.meta.url), 'utf8'))
 const co = (await db.query(`select name, count(*) over ()::int n from company`)).rows[0]
 console.log(co.name === 'DYRB' && co.n === 1 ? 'company row ok' : 'FAIL company ' + JSON.stringify(co))
+
+// ---- 028: approved is not paid ----
+for (const f of ['027_payroll_hours.sql', '028_payroll_paid.sql', '028_payroll_paid.sql'])  // 028 safe to run again
+  await db.exec(fs.readFileSync(new URL('../supabase/' + f, import.meta.url), 'utf8'))
+await db.exec(`update profiles set role='owner'`)
+const paidRun = (await db.query(`select create_payroll_run('2027-11-01', '2027-11-30') id`)).rows[0].id
+try { await db.query(`select mark_payroll_paid(${paidRun}, '2027-11-30')`); console.log('FAIL: draft payroll marked paid') }
+catch (e) { console.log('draft payroll cannot be marked paid ok') }
+await db.query(`select approve_payroll_run(${paidRun})`)
+const unpaid = (await db.query(`select count(*)::int n from payslip_view where run_id=${paidRun} and paid_on is null`)).rows[0].n
+console.log(unpaid > 0 ? 'approved payroll shows as not paid ok' : 'FAIL approved payroll already paid')
+await db.query(`select mark_payroll_paid(${paidRun}, '2027-12-02')`)
+try { await db.query(`select cancel_payroll_run(${paidRun})`); console.log('FAIL: paid payroll cancelled') }
+catch (e) { console.log('paid payroll cannot be cancelled ok') }
+await db.exec(`update profiles set role='manager'`)
+try { await db.query(`select mark_payroll_paid(${paidRun}, null)`); console.log('FAIL: manager unmarked paid') }
+catch (e) { console.log('manager cannot change paid mark ok') }
+await db.exec(`update profiles set role='owner'`)
+await db.query(`select mark_payroll_paid(${paidRun}, null)`)
+await db.query(`select cancel_payroll_run(${paidRun})`)
+console.log((await db.query(`select status from payroll_runs where id=${paidRun}`)).rows[0].status === 'draft' ? 'unpaid then cancel ok' : 'FAIL cancel after unpaid')
