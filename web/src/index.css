@@ -43,6 +43,9 @@ tr:last-child td { @apply border-b-0; }
   .no-print { display: none !important; }
   body { background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   tr { break-inside: avoid; }
+  /* Payroll: the summary and the payslips print separately. */
+  body:not(.printing-slips) .slips-only { display: none !important; }
+  body.printing-slips .summary-only { display: none !important; }
 }
 @page {
   size: A4;

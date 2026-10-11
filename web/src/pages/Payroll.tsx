@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, Pencil, Plus, Printer, RefreshCw, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle2, Download, Pencil, Plus, Printer, RefreshCw, Trash2, XCircle } from 'lucide-react'
 import { dmy, downloadCsv, isOffice, MONEY_ACCOUNTS, MONEY_NAMES, rm, round2, supabase, todayMY, type Profile, type Role } from '../lib'
-import { Done, Empty, ReportBar, MonthInput } from '../ui'
+import { Done, Empty, ReportBar, MonthInput, useCompany } from '../ui'
 
 type Employee = {
   id: number; profile_id: string | null; employee_no: string | null; name: string; id_no: string | null
@@ -19,10 +19,12 @@ type Payslip = {
   allowance: number; service_charge: number; unpaid_leave: number; other_deduction: number
   epf_employee: number; epf_employer: number; socso_employee: number; socso_employer: number
   eis_employee: number; eis_employer: number; pcb: number; note: string | null; advance_recovery: number
-  gross: number; net_pay: number; employer_cost: number; month: string; pay_date: string; status: 'draft' | 'approved'
+  gross: number; net_pay: number; employer_cost: number; month: string; pay_date: string; status: 'draft' | 'approved'; paid_on: string | null
 }
 
-type Run = { id: number; month: string; pay_date: string; status: 'draft' | 'approved'; journal_id: number | null }
+type Run = { id: number; month: string; pay_date: string; status: 'draft' | 'approved'; journal_id: number | null; paid_on: string | null }
+
+const runLabel = (r: Run) => r.status === 'draft' ? 'draft' : r.paid_on ? 'paid' : 'approved, not paid'
 
 const n = (v: number | string | null) => Number(v ?? 0)
 const monthName = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-MY', { month: 'long', year: 'numeric', timeZone: 'UTC' })
@@ -529,6 +531,7 @@ export function PayrollRun({ role }: { role: Role }) {
   const [editing, setEditing] = useState<Payslip | null>(null)
   const [busyRun, setBusyRun] = useState(false)
   const [error, setError] = useState('')
+  const [paidDate, setPaidDate] = useState(todayMY())
   // Employee -> total currently outstanding across all their advances (not
   // this run's recovery alone). Used to note when a recovery was capped.
   const [advanceMap, setAdvanceMap] = useState<Record<number, number>>({})
@@ -585,6 +588,14 @@ export function PayrollRun({ role }: { role: Role }) {
     if (fn === 'delete_payroll_run') setRunId(null)
     if (fn === 'rerun_payroll_run') setRunId(data)
     setError(''); loadRuns(); loadSlips(); loadAdvances()
+  }
+
+  async function markPaid(date: string | null) {
+    if (!runId) return
+    if (!date && !confirm('Take off the paid mark? The payslips will show as not paid.')) return
+    const { error } = await supabase.rpc('mark_payroll_paid', { p_id: runId, p_date: date })
+    if (error) return setError(error.message)
+    setError(''); loadRuns(); loadSlips()
   }
 
   const total = (k: keyof Payslip) => slips.reduce((s, p) => s + n(p[k] as number), 0)
@@ -647,11 +658,12 @@ export function PayrollRun({ role }: { role: Role }) {
 
   return (
     <div className="space-y-4">
+      <div className="summary-only space-y-4">
       <div className="no-print card flex flex-wrap items-end gap-3">
         <div className="w-56"><label>Payroll month</label>
           <select value={runId ?? ''} onChange={e => setRunId(Number(e.target.value))}>
             {runs.length === 0 && <option value="">— none yet —</option>}
-            {runs.map(r => <option key={r.id} value={r.id}>{monthName(r.month)} {r.status === 'approved' ? '(approved)' : '(draft)'}</option>)}
+            {runs.map(r => <option key={r.id} value={r.id}>{monthName(r.month)} ({runLabel(r)})</option>)}
           </select>
         </div>
         {canEdit && <>
@@ -659,11 +671,11 @@ export function PayrollRun({ role }: { role: Role }) {
           <button className="btn-light" onClick={create} disabled={busyRun}><Plus className="size-4" />Create</button>
         </>}
         <div className="ml-auto flex gap-2">
-          {run && <button className="btn-light" onClick={() => window.print()}><Printer className="size-4" />Print</button>}
-          {run && <button className="btn-light" onClick={csv}>Excel</button>}
+          {run && <button className="btn-light" onClick={() => window.print()}><Printer className="size-4" />Print summary</button>}
+          {run && <button className="btn-light" onClick={csv}><Download className="size-4" />Excel</button>}
           {run?.status === 'draft' && canEdit && <button className="btn-light" onClick={() => act('rerun_payroll_run')}><RefreshCw className="size-4" />Re-run</button>}
           {run?.status === 'draft' && role === 'owner' && <button className="btn" onClick={() => act('approve_payroll_run')}><CheckCircle2 className="size-4" />Approve &amp; post</button>}
-          {run?.status === 'approved' && role === 'owner' && <button className="btn-light" onClick={() => act('cancel_payroll_run')}><XCircle className="size-4" />Cancel approval</button>}
+          {run?.status === 'approved' && !run.paid_on && role === 'owner' && <button className="btn-light" onClick={() => act('cancel_payroll_run')}><XCircle className="size-4" />Cancel approval</button>}
           {run?.status === 'draft' && role === 'owner' && slips.length === 0 && <button className="btn-light" onClick={() => act('delete_payroll_run')}><Trash2 className="size-4" /></button>}
         </div>
       </div>
@@ -672,8 +684,23 @@ export function PayrollRun({ role }: { role: Role }) {
 
       {run && (
         <>
-          <ReportBar title={`Payroll ${monthName(run.month)}`} period={`Pay date ${dmy(run.pay_date)}`} />
-          {run.status === 'approved' && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Approved and posted to the books. Pay the staff with a Payment Voucher from account 2300 Salaries Payable.</p>}
+          <ReportBar title={`Payroll ${monthName(run.month)}`} period={run.paid_on ? `Paid on ${dmy(run.paid_on)}` : `Pay date ${dmy(run.pay_date)} · ${runLabel(run)}`} />
+          {run.status === 'draft' && <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">Draft — not approved and not paid. Check the figures, then the owner approves.</p>}
+          {run.status === 'approved' && !run.paid_on && (
+            <div className="flex flex-wrap items-end gap-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <p className="flex-1">Approved and posted to the books — <b>salaries not paid yet</b>. Pay the staff with a Payment Voucher from account 2300 Salaries Payable, then mark this month as paid.</p>
+              {canEdit && <div className="no-print flex items-end gap-2">
+                <div className="w-40"><label>Paid on</label><input type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} /></div>
+                <button className="btn" disabled={!paidDate} onClick={() => markPaid(paidDate)}><CheckCircle2 className="size-4" />Mark as paid</button>
+              </div>}
+            </div>
+          )}
+          {run.paid_on && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              <p className="flex-1">Approved, posted and paid on {dmy(run.paid_on)}.</p>
+              {canEdit && <button className="no-print btn-light" onClick={() => markPaid(null)}>Undo paid</button>}
+            </div>
+          )}
           <div className="card overflow-x-auto p-0">
             <table>
               <thead><tr>
@@ -727,9 +754,10 @@ export function PayrollRun({ role }: { role: Role }) {
               <div key={label as string} className="card p-4"><div className="muted">{label}</div><div className="mt-1 text-lg font-semibold tabular-nums">{rm(v as number)}</div></div>
             ))}
           </div>
-          <Payslips slips={slips} advanceMap={advanceMap} />
         </>
       )}
+      </div>
+      {run && <Payslips key={run.id} slips={slips} advanceMap={advanceMap} />}
     </div>
   )
 }
@@ -737,8 +765,29 @@ export function PayrollRun({ role }: { role: Role }) {
 // Printable payslips, one per staff member. `advanceMap` (office view only) is
 // each employee's current total outstanding advance, used to note when this
 // run's recovery was capped and the rest carries to next month.
-function Payslips({ slips, advanceMap }: { slips: Payslip[]; advanceMap?: Record<number, number> }) {
+function Payslips({ slips: all, advanceMap }: { slips: Payslip[]; advanceMap?: Record<number, number> }) {
   const [show, setShow] = useState(false)
+  const [who, setWho] = useState('')  // employee id, '' = everyone
+  const company = useCompany()
+  const staff = [...new Map(all.map(p => [p.employee_id, p.name])).entries()]
+  const slips = who ? all.filter(p => String(p.employee_id) === who) : all
+  const paidText = (p: Payslip) => p.status === 'draft' ? 'Draft — not approved, not paid'
+    : p.paid_on ? `Paid on ${dmy(p.paid_on)}` : `Not paid yet (pay date ${dmy(p.pay_date)})`
+  // Print only the payslips, not the summary above them.
+  function print() {
+    setShow(true)
+    document.body.classList.add('printing-slips')
+    window.addEventListener('afterprint', () => document.body.classList.remove('printing-slips'), { once: true })
+    setTimeout(() => window.print())  // let the payslips render first
+  }
+  const csv = () => downloadCsv(`payslips${slips.length === 1 ? '-' + slips[0].name : ''}-${slips[0]?.month.slice(0, 7)}.csv`, [
+    ['Month', 'Staff', 'Staff no.', 'IC / passport', 'Position', 'Bank', 'Account', 'Basic', 'OT hours', 'OT', 'Allowance', 'Service charge', 'Unpaid leave',
+      'Gross', 'EPF (staff)', 'SOCSO (staff)', 'EIS (staff)', 'PCB', 'Advance recovery', 'Other', 'Net pay', 'EPF (employer)', 'SOCSO (employer)', 'EIS (employer)', 'Status'],
+    ...slips.map(p => [p.month.slice(0, 7), p.name, p.employee_no ?? '', p.id_no ?? '', p.position ?? '', p.bank_name ?? '', p.bank_account ?? '',
+      n(p.basic), n(p.ot_hours), n(p.ot_amount), n(p.allowance), n(p.service_charge), n(p.unpaid_leave), n(p.gross),
+      n(p.epf_employee), n(p.socso_employee), n(p.eis_employee), n(p.pcb), n(p.advance_recovery), n(p.other_deduction), n(p.net_pay),
+      n(p.epf_employer), n(p.socso_employer), n(p.eis_employer), paidText(p)]),
+  ])
   // Still owed after this run: for an approved run, advance_recoveries were
   // already recorded, so `outstanding` already reflects it. For a draft run,
   // recovery hasn't been recorded yet, so subtract this payslip's own share.
@@ -747,10 +796,20 @@ function Payslips({ slips, advanceMap }: { slips: Payslip[]; advanceMap?: Record
     const total = advanceMap[p.employee_id] ?? 0
     return p.status === 'approved' ? total : Math.max(round2(total - n(p.advance_recovery)), 0)
   }
-  if (slips.length === 0) return null
+  if (all.length === 0) return null
   return (
-    <div>
-      <button className="no-print btn-light" onClick={() => setShow(s => !s)}><Printer className="size-4" />{show ? 'Hide payslips' : 'Show payslips for printing'}</button>
+    <div className="slips-only">
+      <div className="no-print card flex flex-wrap items-end gap-3">
+        {staff.length > 1 && <div className="w-56"><label>Payslip for</label>
+          <select value={who} onChange={e => setWho(e.target.value)}>
+            <option value="">All staff ({staff.length})</option>
+            {staff.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </div>}
+        <button className="btn-light" onClick={() => setShow(s => !s)}>{show ? 'Hide payslips' : 'Show payslips'}</button>
+        <button className="btn-light" onClick={print}><Printer className="size-4" />Print / PDF {slips.length === 1 ? 'payslip' : `${slips.length} payslips`}</button>
+        <button className="btn-light" onClick={csv}><Download className="size-4" />Excel</button>
+      </div>
       {show && (
         <div className="mt-4 space-y-4">
           {slips.map(p => (
@@ -759,7 +818,7 @@ function Payslips({ slips, advanceMap }: { slips: Payslip[]; advanceMap?: Record
                 <div className="flex items-center gap-3">
                   <img src="/logo.png" alt="" className="size-10 rounded-lg object-contain" />
                   <div>
-                    <div className="font-bold">DYRB</div>
+                    <div className="font-bold">{company.name}</div>
                     <div className="muted">Payslip · {monthName(p.month)}</div>
                   </div>
                 </div>
@@ -800,7 +859,7 @@ function Payslips({ slips, advanceMap }: { slips: Payslip[]; advanceMap?: Record
                   Still owes {rm(stillOwed(p))} on a salary advance — it will come off next month's pay.
                 </p>}
               <div className="mt-3 flex flex-wrap justify-between gap-2 text-xs text-slate-500">
-                <span>Paid on {dmy(p.pay_date)} {p.bank_name ? `to ${p.bank_name} ${p.bank_account}` : 'in cash'}</span>
+                <span className={p.paid_on ? '' : 'font-semibold text-amber-700'}>{paidText(p)}{p.bank_name ? ` · to ${p.bank_name} ${p.bank_account}` : ' · cash'}</span>
                 <span>Employer paid: EPF {rm(p.epf_employer)} · SOCSO {rm(p.socso_employer)} · EIS {rm(p.eis_employer)}</span>
               </div>
             </div>
