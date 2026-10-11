@@ -114,7 +114,7 @@ export function Accruals({ role }: { role: Role }) {
       {error && <p className="alert-error">{error}</p>}
       {msg && <p className="text-sm text-emerald-700">{msg}</p>}
       <div className="flex flex-wrap items-center gap-3">
-        <p className="muted">Posted on the last day of the month: each cost is charged to its account, with the total owed sitting in 2600 Accrued Expenses.</p>
+        <p className="muted">Posted on the 1st of the month: each cost is charged to its account, with the total owed sitting in 2600 Accrued Expenses.</p>
         {canEdit && <button className="btn ml-auto" disabled={busy || total <= 0} onClick={post}>
           {busy ? 'Posting…' : posted ? `Replace ${monthLabel(month)}` : `Post ${monthLabel(month)}`}
         </button>}

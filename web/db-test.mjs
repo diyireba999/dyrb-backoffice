@@ -750,3 +750,13 @@ await db.query(`select mark_payroll_paid(${paidRun}, '2027-12-02')`)  // already
 console.log(r2(await acctBal('2300')) === r2(p2300) ? 'mark paid without account posts nothing ok' : 'FAIL mark-only posted')
 try { await db.query(`select mark_payroll_paid(${paidRun}, null)`); await db.query(`select mark_payroll_paid(${paidRun}, '2027-12-02', '6000')`); console.log('FAIL: paid from expense account') }
 catch (e) { console.log('pay from wrong account rejected ok') }
+
+// ---- 030: accruals dated the 1st ----
+for (let i = 0; i < 2; i++)  // safe to run again
+  await db.exec(fs.readFileSync(new URL('../supabase/030_accrual_first_day.sql', import.meta.url), 'utf8'))
+const accDates = (await db.query(`select date::text d, source_ref from journals where source='accrual'`)).rows
+console.log(accDates.length > 0 && accDates.every(r => r.d === r.source_ref) ? 'existing accruals moved to the 1st ok' : 'FAIL accrual move ' + JSON.stringify(accDates))
+await db.exec(`update profiles set role='owner'`)
+await db.query(`select post_accruals('2027-02-15', '[{"account":"6100","amount":8000,"name":"Rent"}]'::jsonb)`)
+const febAcc = (await db.query(`select date::text d from journals where source='accrual' and source_ref='2027-02-01'`)).rows[0].d
+console.log(febAcc === '2027-02-01' ? 'new accrual dated the 1st ok' : 'FAIL new accrual date ' + febAcc)
