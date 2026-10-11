@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react'
 import { MONEY_ACCOUNTS, accountTotals, addDays, dmy, downloadCsv, loadDocuments, monthStart, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, useSuppliers, type Account, type DocRow, type Role } from '../lib'
-import { AccountSelect, Done, Empty, ReportBar } from '../ui'
+import { AccountSelect, Done, Empty, ReportBar, Ready } from '../ui'
 import { DocumentList } from '../DocumentList'
 
 const TYPE_LABEL: Record<Account['type'], string> = { asset: 'Asset', liability: 'Liability', equity: 'Equity', income: 'Income', expense: 'Expense' }
@@ -11,8 +11,9 @@ const debitNormal = (t: Account['type']) => t === 'asset' || t === 'expense'
 
 export function ChartOfAccounts({ role }: { role: Role }) {
   const [accounts, setAccounts] = useState<Account[]>([])
-  const [bal, setBal] = useState<Map<string, number>>(new Map())
-  useEffect(() => { accountTotals(null, todayMY()).then(setBal) }, [])
+  const [bal, setBal] = useState<Map<string, number> | null>(null)  // null while loading
+  const [balError, setBalError] = useState('')
+  useEffect(() => { accountTotals(null, todayMY()).then(setBal, (e: Error) => setBalError(e.message)) }, [])
   const [f, setF] = useState({ code: '', name: '', type: 'expense' as Account['type'] })
   const [error, setError] = useState('')
   const canEdit = role === 'owner' || role === 'accountant'
@@ -32,11 +33,11 @@ export function ChartOfAccounts({ role }: { role: Role }) {
   }
 
   const balanceOf = (a: Account) => {
-    const net = bal.get(a.code) ?? 0
+    const net = bal?.get(a.code) ?? 0
     return debitNormal(a.type) ? net : -net
   }
   const csv = () => downloadCsv('chart-of-accounts.csv', [['Code', 'Name', 'Type', 'Balance', 'Active'],
-    ...accounts.map(a => [a.code, a.name, TYPE_LABEL[a.type], round2(balanceOf(a)), a.active ? 'Yes' : 'No'])])
+    ...accounts.map(a => [a.code, a.name, TYPE_LABEL[a.type], bal ? round2(balanceOf(a)) : '', a.active ? 'Yes' : 'No'])])
 
   return (
     <div className="space-y-6">
@@ -54,6 +55,7 @@ export function ChartOfAccounts({ role }: { role: Role }) {
         </form>
       )}
       <ReportBar title="Chart of Accounts" period={`As at ${dmy(todayMY())}`} onCsv={csv} />
+      {balError && <p className="alert-error">{balError}</p>}
       <div className="card overflow-x-auto p-0">
         <table>
           <thead><tr><th className="w-20">Code</th><th>Account name</th><th>Type</th><th className="text-right">Balance</th><th className="no-print w-24 text-center">Active</th></tr></thead>
@@ -66,7 +68,7 @@ export function ChartOfAccounts({ role }: { role: Role }) {
                       onBlur={e => e.target.value !== a.name && update(a.code, { name: e.target.value })} />
                   : a.name}</td>
                 <td><span className="badge">{TYPE_LABEL[a.type]}</span></td>
-                <td className="text-right">{rm(balanceOf(a))}</td>
+                <td className="text-right">{bal ? rm(balanceOf(a)) : balError ? '—' : '…'}</td>
                 <td className="no-print text-center">
                   <input type="checkbox" className="size-4 h-4 w-4" checked={a.active} disabled={!canEdit} onChange={e => update(a.code, { active: e.target.checked })} />
                 </td>
@@ -227,7 +229,8 @@ async function fetchLines(account: string, from: string | null, to: string, open
     .eq('account', account).lte('journals.date', to)
   if (from) q = q.gte('journals.date', from)
   if (openOn) q = q.or(`cleared_on.is.null,cleared_on.eq.${openOn}`)
-  const { data } = await q
+  const { data, error } = await q
+  if (error) throw new Error('Could not load the entries: ' + error.message)
   return ((data as unknown as LedgerLine[]) ?? [])
     .sort((a, b) => a.journals.date.localeCompare(b.journals.date) || a.journals.doc_no.localeCompare(b.journals.doc_no))
 }
@@ -240,13 +243,18 @@ export function AccountLedger({ moneyOnly = false }: { moneyOnly?: boolean }) {
   const [to, setTo] = useState(todayMY())
   const [opening, setOpening] = useState(0)
   const [lines, setLines] = useState<LedgerLine[]>([])
+  const [state, setState] = useState<string | null>('loading')  // null once loaded, else 'loading' or the error
   const acct = accounts.find(a => a.code === code)
   const sign = acct && !debitNormal(acct.type) ? -1 : 1
 
   useEffect(() => {
     if (!code) return
-    accountTotals(null, addDays(from, -1)).then(m => setOpening(m.get(code) ?? 0))
-    fetchLines(code, from, to).then(setLines)
+    let stale = false
+    setState('loading')
+    Promise.all([accountTotals(null, addDays(from, -1)), fetchLines(code, from, to)])
+      .then(([m, l]) => { if (!stale) { setOpening(m.get(code) ?? 0); setLines(l); setState(null) } },
+        (e: Error) => { if (!stale) setState(e.message) })
+    return () => { stale = true }
   }, [code, from, to])
 
   const rows = lines.reduce<(LedgerLine & { balance: number })[]>((acc, l) =>
@@ -272,7 +280,8 @@ export function AccountLedger({ moneyOnly = false }: { moneyOnly?: boolean }) {
       </ReportBar>
       <div className="card overflow-x-auto p-0">
         {!code && <Empty text="Choose an account." />}
-        {code && (
+        {code && state && <Ready states={[state]}>{null}</Ready>}
+        {code && !state && (
           <table>
             <thead><tr><th className="w-24">Date</th><th className="w-28">Doc No</th><th>Description</th><th className="text-right">Debit</th><th className="text-right">Credit</th><th className="text-right">Balance</th></tr></thead>
             <tbody>
@@ -306,11 +315,13 @@ export function BankReconciliation() {
   const [date, setDate] = useState(todayMY())
   const [statement, setStatement] = useState('')
   const [lines, setLines] = useState<LedgerLine[]>([])
-  const [book, setBook] = useState(0)
+  const [book, setBook] = useState<number | null>(null)  // null while loading
   const [cleared, setCleared] = useState(0)
+  const [loadError, setLoadError] = useState('')
   const load = () => {
-    fetchLines(code, null, date, date).then(setLines)
-    accountTotals(null, date).then(m => setBook(m.get(code) ?? 0))
+    setLoadError(''); setBook(null)
+    fetchLines(code, null, date, date).then(setLines, (e: Error) => setLoadError(e.message))
+    accountTotals(null, date).then(m => setBook(m.get(code) ?? 0), (e: Error) => setLoadError(e.message))
     supabase.rpc('cleared_total', { p_account: code, p_date: date }).then(({ data }) => setCleared(Number(data ?? 0)))
   }
   useEffect(load, [code, date])
@@ -333,14 +344,15 @@ export function BankReconciliation() {
         <div><label>Statement closing balance (RM)</label><input type="number" step="0.01" inputMode="decimal" value={statement} onChange={e => setStatement(e.target.value)} placeholder="From bank statement" /></div>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="card p-4"><div className="muted">Balance in books</div><div className="text-lg font-semibold">{rm(book)}</div></div>
+        <div className="card p-4"><div className="muted">Balance in books</div><div className="text-lg font-semibold">{book === null ? '…' : rm(book)}</div></div>
         <div className="card p-4"><div className="muted">Ticked (cleared) balance</div><div className="text-lg font-semibold">{rm(cleared)}</div></div>
-        <div className="card p-4"><div className="muted">Not yet on statement</div><div className="text-lg font-semibold">{rm(book - cleared)}</div></div>
+        <div className="card p-4"><div className="muted">Not yet on statement</div><div className="text-lg font-semibold">{book === null ? '…' : rm(book - cleared)}</div></div>
         <div className={`card p-4 ${diff === 0 ? 'border-emerald-300 bg-emerald-50' : ''}`}>
           <div className="muted">Difference</div>
           <div className="flex items-center gap-2 text-lg font-semibold">{diff === null ? '—' : rm(diff)}{diff === 0 && <CheckCircle2 className="size-5 text-emerald-600" />}</div>
         </div>
       </div>
+      {loadError && <p className="alert-error">{loadError}</p>}
       <p className="muted">Tick each item that appears on the bank statement. When the difference is RM 0.00 the bank is reconciled.</p>
       <div className="card overflow-x-auto p-0">
         {shown.length === 0 && <Empty text="Everything up to this date is ticked." />}

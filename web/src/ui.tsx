@@ -81,6 +81,15 @@ export function ReportBar({ title, period, onCsv, children }: {
   )
 }
 
+// Shows the figures only once every total they need has loaded. Each state is
+// null (ready), 'loading', or an error message.
+export function Ready({ states, children }: { states: (string | null)[]; children: React.ReactNode }) {
+  const err = states.find(s => s && s !== 'loading')
+  if (err) return <p className="alert-error">{err}</p>
+  if (states.includes('loading')) return <div className="card p-0"><p className="muted px-5 py-10 text-center">Loading…</p></div>
+  return <>{children}</>
+}
+
 export function Empty({ text }: { text: string }) {
   const loading = useLoading()
   return <p className="muted px-5 py-10 text-center">{loading ? 'Loading…' : text}</p>

@@ -86,7 +86,7 @@ export function ItemCosts({ role }: { role: Role }) {
 export function StockCount({ role }: { role: Role }) {
   const [costing, setCosting] = useState<Costing[]>([])
   const [names, setNames] = useState<Record<string, string>>({})
-  const [book, setBook] = useState<Map<string, number>>(new Map())
+  const [book, setBook] = useState<Map<string, number> | null>(null)  // null while loading
   const [date, setDate] = useState(todayMY())
   const [counted, setCounted] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
@@ -98,7 +98,8 @@ export function StockCount({ role }: { role: Role }) {
     supabase.from('category_costing').select('*').then(({ data }) => setCosting(data ?? []))
     supabase.from('accounts').select('code, name')
       .then(({ data }) => setNames(Object.fromEntries((data ?? []).map(a => [a.code, a.name]))))
-    accountTotals(null, date).then(setBook)
+    setBook(null)
+    accountTotals(null, date).then(setBook, (e: Error) => setError(e.message))
   }
   useEffect(load, [date])
 
@@ -129,13 +130,13 @@ export function StockCount({ role }: { role: Role }) {
           <tbody>
             {costing.length === 0 && <tr><td colSpan={4}><Empty text="No stock accounts are set up." /></td></tr>}
             {costing.map(c => {
-              const value = round2(book.get(c.stock_account) ?? 0)
+              const value = round2(book?.get(c.stock_account) ?? 0)
               const typed = counted[c.stock_account]
-              const diff = typed === undefined || typed === '' ? null : round2(Number(typed) - value)
+              const diff = !book || typed === undefined || typed === '' ? null : round2(Number(typed) - value)
               return (
                 <tr key={c.stock_account}>
                   <td className="pl-6 font-medium">{names[c.stock_account] ?? c.stock_account}</td>
-                  <td className="text-right">{rm(value)}</td>
+                  <td className="text-right">{book ? rm(value) : '…'}</td>
                   <td><input className="text-right" type="number" step="0.01" min="0" inputMode="decimal" disabled={!canEdit}
                     value={typed ?? ''} onChange={e => setCounted({ ...counted, [c.stock_account]: e.target.value })} /></td>
                   <td className={`pr-6 text-right ${diff && diff < 0 ? 'text-rose-600' : diff ? 'text-emerald-600' : 'text-slate-400'}`}>
@@ -149,7 +150,7 @@ export function StockCount({ role }: { role: Role }) {
       </div>
       {error && <p className="alert-error">{error}</p>}
       {msg && <p className="text-sm text-emerald-700">{msg}</p>}
-      {canEdit && <div className="flex justify-end"><button className="btn" disabled={busy}>{busy ? 'Saving…' : 'Post stock count'}</button></div>}
+      {canEdit && <div className="flex justify-end"><button className="btn" disabled={busy || !book}>{busy ? 'Saving…' : 'Post stock count'}</button></div>}
     </form>
   )
 }

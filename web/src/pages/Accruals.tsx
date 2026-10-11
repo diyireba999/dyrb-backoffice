@@ -15,7 +15,7 @@ export function Accruals({ role }: { role: Role }) {
   const [month, setMonth] = useState(todayMY().slice(0, 7))
   const [pick, setPick] = useState<Record<number, boolean>>({})
   const [posted, setPosted] = useState<{ doc_no: string; date: string } | null>(null)
-  const [owing, setOwing] = useState(0)
+  const [owing, setOwing] = useState<number | null>(null)  // null while loading
   const [add, setAdd] = useState({ name: '', account: '6900', amount: '' })
   const [busy, setBusy] = useState(false)
   const [version, setVersion] = useState(0)
@@ -30,7 +30,7 @@ export function Accruals({ role }: { role: Role }) {
         setItems(list)
         setPick(Object.fromEntries(list.filter(i => Number(i.amount) > 0).map(i => [i.id, true])))
       })
-    accountTotals(null, todayMY()).then(m => setOwing(-round2(m.get('2600') ?? 0)))
+    accountTotals(null, todayMY()).then(m => setOwing(-round2(m.get('2600') ?? 0)), (e: Error) => setError(e.message))
   }
   useEffect(load, [])
   useEffect(() => {
@@ -80,7 +80,7 @@ export function Accruals({ role }: { role: Role }) {
         <div className="w-48"><label>Month</label><MonthInput value={month} onChange={setMonth} /></div>
         <div>
           <div className="muted">Still owed on accruals</div>
-          <div className="text-lg font-semibold tabular-nums">{rm(owing)}</div>
+          <div className="text-lg font-semibold tabular-nums">{owing === null ? '…' : rm(owing)}</div>
         </div>
         {posted && <p className="flex items-center gap-1 text-sm text-emerald-700"><CheckCircle2 className="size-4" />{monthLabel(month)} posted as {posted.doc_no} on {dmy(posted.date)}</p>}
       </div>

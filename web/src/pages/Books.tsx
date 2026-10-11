@@ -226,14 +226,14 @@ export function Transfer() {
   const [editing, setEditing] = useState<DocRow | null>(null)
   const [rows, setRows] = useState<DocRow[]>([])
   const [f, setF] = useState(blank)
-  const [balances, setBalances] = useState<Map<string, number>>(new Map())
+  const [balances, setBalances] = useState<Map<string, number> | null>(null)  // null while loading
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
   const [error, setError] = useState('')
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
   const load = () => { loadDocuments('transfer').then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
   useEffect(load, [])
-  useEffect(() => { accountTotals(null, todayMY()).then(setBalances) }, [done, mode])
+  useEffect(() => { accountTotals(null, todayMY()).then(setBalances, (e: Error) => setError(e.message)) }, [done, mode])
 
   function startEdit(d: DocRow) {
     const debit = d.journal_lines.find(l => Number(l.debit) > 0)
@@ -296,9 +296,9 @@ export function Transfer() {
         <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
         <div><label>Ref no. (bank-in slip)</label><input value={f.reference} onChange={e => set('reference', e.target.value)} placeholder="Optional" /></div>
         <div><label>From</label><AccountSelect accounts={accounts} value={f.from} onChange={v => set('from', v)} filter={a => money(a) || waiting(a)} />
-          <p className="muted mt-1">Sitting there now: {rm(balances.get(f.from) ?? 0)}
+          <p className="muted mt-1">Sitting there now: {balances ? rm(balances.get(f.from) ?? 0) : '…'}
             {waiting({ code: f.from } as Account) && <button type="button" className="link ml-2"
-              onClick={() => set('amount', String(round2(balances.get(f.from) ?? 0)))}>Move it all</button>}
+              disabled={!balances} onClick={() => set('amount', String(round2(balances?.get(f.from) ?? 0)))}>Move it all</button>}
           </p>
         </div>
         <div><label>To</label><AccountSelect accounts={accounts} value={f.to} onChange={v => set('to', v)} filter={money} /></div>

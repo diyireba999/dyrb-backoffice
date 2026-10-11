@@ -118,9 +118,10 @@ export function Dashboard({ profile }: { profile: Profile }) {
           if (r.error) setAccountsError(r.error.message)
           setAccounts(rowsOf(r, 'the account list'))
         }, (e: Error) => setAccountsError(e.message)),
-      accountTotals(null, todayMY()).then(setAll),
-      accountTotals(monthStart(), todayMY()).then(setMonth),
-      accountTotals(lastMonthStart, lastMonthEnd).then(setLastMonth),
+      // A failed total shows as an error, never as a confident RM 0.00.
+      accountTotals(null, todayMY()).then(setAll, (e: Error) => setAccountsError(e.message)),
+      accountTotals(monthStart(), todayMY()).then(setMonth, (e: Error) => setAccountsError(e.message)),
+      accountTotals(lastMonthStart, lastMonthEnd).then(setLastMonth, (e: Error) => setAccountsError(e.message)),
       supplierDue(todayMY()).then(setDue).catch(() => setDue(null)),
     ]).then(() => setLoaded(true))
   }, [office])
@@ -202,7 +203,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
 
   const bal = (codes: string[], sign = 1) => codes.reduce((s, c) => s + sign * (all.get(c) ?? 0), 0)
   // A muted placeholder, not RM0.00, while the balances are still in flight.
-  const kpiValue = (n: number) => (loaded ? rm(n) : '—')
+  const kpiValue = (n: number) => (loaded && !accountsError ? rm(n) : '—')
   const sales = -sumCodes(accounts, month, '4000', '4100')
   const service = -sumCodes(accounts, month, '4100', '4900')
   const otherIncome = -sumCodes(accounts, month, '4900', '5000')
@@ -261,6 +262,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
         <QuickButton to="/ap/invoices" icon={FileText} label="Purchase Invoice" />
       </div>}
 
+      {accountsError && <p className="alert-error">Could not load the balances, so the figures below are left blank: {accountsError}</p>}
       {loaded && negativeStock.length > 0 && (
         <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <b>Stock below zero:</b> {negativeStock.map(a => `${a.name} ${rm(all.get(a.code))}`).join(' · ')}.

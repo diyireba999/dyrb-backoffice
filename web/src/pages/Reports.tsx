@@ -1,17 +1,21 @@
 import { useEffect, useState } from 'react'
 import { accountTotals, addDays, dmy, downloadCsv, round2, rm, todayMY, useAccounts, type Account } from '../lib'
-import { Empty, ReportBar } from '../ui'
+import { Empty, ReportBar, Ready } from '../ui'
 import { comparePeriod, shiftMonths, type CompareMode } from '../dashboard-math'
 
 // Net debit (debit minus credit) per account for entries dated within [from, to].
-function useNet(from: string | null, to: string) {
+// Second value: null once loaded, 'loading', or the error message.
+function useNet(from: string | null, to: string): [Map<string, number>, string | null] {
   const [net, setNet] = useState<Map<string, number>>(new Map())
+  const [state, setState] = useState<string | null>('loading')
   useEffect(() => {
     let stale = false  // a slow reply for dates already changed must not win
-    accountTotals(from, to).then(m => { if (!stale) setNet(m) })
+    setState('loading')
+    accountTotals(from, to).then(m => { if (!stale) { setNet(m); setState(null) } },
+      (e: Error) => { if (!stale) setState(e.message) })
     return () => { stale = true }
   }, [from, to])
-  return net
+  return [net, state]
 }
 
 const yearStart = () => todayMY().slice(0, 4) + '-01-01'
@@ -19,7 +23,7 @@ const yearStart = () => todayMY().slice(0, 4) + '-01-01'
 export function TrialBalance() {
   const accounts = useAccounts(true)
   const [asAt, setAsAt] = useState(todayMY())
-  const net = useNet(null, asAt)
+  const [net, netState] = useNet(null, asAt)
   const rows = accounts.map(a => [a, round2(net.get(a.code) ?? 0)] as const).filter(([, v]) => v !== 0)
   const dr = rows.reduce((s, [, v]) => s + (v > 0 ? v : 0), 0)
   const cr = rows.reduce((s, [, v]) => s + (v < 0 ? -v : 0), 0)
@@ -31,7 +35,7 @@ export function TrialBalance() {
       <ReportBar title="Trial Balance" period={`As at ${dmy(asAt)}`} onCsv={csv}>
         <div className="w-44"><label>As at</label><input type="date" value={asAt} onChange={e => setAsAt(e.target.value)} /></div>
       </ReportBar>
-      <div className="card overflow-x-auto p-0">
+      <Ready states={[netState]}><div className="card overflow-x-auto p-0">
         {rows.length === 0 && <Empty text="No entries up to this date." />}
         {rows.length > 0 && <table>
           <thead><tr><th className="w-20">Code</th><th>Account</th><th className="text-right">Debit</th><th className="text-right">Credit</th></tr></thead>
@@ -43,7 +47,7 @@ export function TrialBalance() {
             <tr className="bg-slate-50 font-semibold"><td></td><td>Total</td><td className="text-right">{rm(dr)}</td><td className="text-right">{rm(cr)}</td></tr>
           </tbody>
         </table>}
-      </div>
+      </div></Ready>
       {rows.length > 0 && round2(dr) !== round2(cr) && <p className="alert-error">Debit and credit totals do not agree. Please tell the developer.</p>}
     </div>
   )
@@ -159,8 +163,8 @@ export function ProfitAndLoss() {
   const [to, setTo] = useState(monthEnd())
   const [mode, setMode] = useState<CompareMode>('prev')
   const cmp = comparePeriod(from, to, mode)
-  const cur = useNet(from, to)
-  const prevNet = useNet(cmp?.[0] ?? from, cmp?.[1] ?? to)
+  const [cur, curState] = useNet(from, to)
+  const [prevNet, prevState] = useNet(cmp?.[0] ?? from, cmp?.[1] ?? to)
   const prev = cmp ? prevNet : new Map<string, number>()
 
   const by = (f: (a: Account) => boolean, sign: number) => group(accounts.filter(f), cur, prev, sign)
@@ -204,11 +208,13 @@ export function ProfitAndLoss() {
           <button className="btn-light" onClick={() => setRange(yearStart(), todayMY())}>Year to date</button>
         </div>
       </ReportBar>
+      <Ready states={[curState, cmp ? prevState : null]}>
       <Tiles compare={!!cmp} tiles={[['Sales', sales], ['Gross profit', gross], ['Operating expenses', opex], [round2(profit.cur) < 0 ? 'Net loss' : 'Net profit', profit]]} />
       <div className="max-w-4xl print:max-w-none">
         <StatementTable lines={lines} curLabel={curLabel} prevLabel={prevLabel} pctOf={sales} />
         <p className="muted mt-2 print:text-[9px]">% is of food and drink sales. Service charge is passed on to staff, so it is left out of the margins.</p>
       </div>
+      </Ready>
     </div>
   )
 }
@@ -220,10 +226,10 @@ export function BalanceSheet() {
   const ok = isDate(asAt)
   const prevAt = ok ? addDays(asAt.slice(0, 8) + '01', -1) : asAt  // end of the month before
   const lastYearEnd = (d: string) => ok ? `${Number(d.slice(0, 4)) - 1}-12-31` : asAt
-  const cur = useNet(null, asAt)
-  const prevAll = useNet(null, prevAt)
-  const curBf = useNet(null, lastYearEnd(asAt))
-  const prevBf = useNet(null, lastYearEnd(prevAt))
+  const [cur, s1] = useNet(null, asAt)
+  const [prevAll, s2] = useNet(null, prevAt)
+  const [curBf, s3] = useNet(null, lastYearEnd(asAt))
+  const [prevBf, s4] = useNet(null, lastYearEnd(prevAt))
   const prev = compare ? prevAll : new Map<string, number>()
 
   const of = (f: (a: Account) => boolean, sign: number) => group(accounts.filter(f), cur, prev, sign)
@@ -274,12 +280,14 @@ export function BalanceSheet() {
           Compare with end of previous month
         </label>
       </ReportBar>
+      <Ready states={[s1, s3, ...(compare ? [s2, s4] : [])]}>
       <Tiles compare={compare} tiles={[['Total assets', totalAssets], ['Total liabilities', totalLiab], ['Equity', totalEquity], ['Working capital', working]]} />
       <div className="max-w-4xl print:max-w-none">
         <StatementTable lines={lines} curLabel={curLabel} prevLabel={prevLabel} />
         <p className="muted mt-2 print:text-[9px]">Working capital is current assets less current liabilities: what is left to run the business day to day.</p>
       </div>
       {!balanced && <p className="alert-error">Assets do not equal liabilities + equity. Please tell the developer.</p>}
+      </Ready>
     </div>
   )
 }

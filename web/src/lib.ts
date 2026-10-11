@@ -143,7 +143,8 @@ export const addDays = (iso: string, days: number) => {
 // Net debit (debit minus credit) per account code, summed in the database.
 export async function accountTotals(from: string | null, to: string) {
   const { data, error } = await supabase.rpc('account_totals', { p_from: from, p_to: to })
-  if (error) console.error('Could not total the accounts:', error.message)
+  // Thrown, not swallowed: a failed load must never show as RM 0.00.
+  if (error) throw new Error('Could not total the accounts: ' + error.message)
   return new Map(((data ?? []) as { code: string; debit: number; credit: number }[])
     .map(r => [r.code, Number(r.debit) - Number(r.credit)]))
 }
