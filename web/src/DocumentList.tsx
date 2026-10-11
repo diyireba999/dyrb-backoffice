@@ -25,7 +25,7 @@ export function DocumentList({ rows, newLabel, emptyText, onNew, onEdit, onDelet
   return (
     <div className="space-y-4">
       <div className="no-print flex flex-wrap items-center gap-3">
-        <input className="w-64" value={q} onChange={e => setQ(e.target.value)}
+        <input type="search" className="w-full sm:w-80" value={q} onChange={e => setQ(e.target.value)}
           placeholder="Search number, description or amount" />
         <button className="btn-light ml-auto" onClick={() => window.print()}>
           <Printer className="size-4" />Print / PDF</button>

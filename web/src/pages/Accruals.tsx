@@ -121,7 +121,7 @@ export function Accruals({ role }: { role: Role }) {
       </div>
 
       {canEdit && (
-        <form onSubmit={addItem} className="card grid items-end gap-3 sm:grid-cols-[1fr_16rem_10rem_auto]">
+        <form onSubmit={addItem} className="card grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_16rem_10rem_auto]">
           <div><label>Add a monthly cost</label><input value={add.name} onChange={e => setAdd({ ...add, name: e.target.value })} placeholder="e.g. Liquor licence" required /></div>
           <div><label>Account</label><AccountSelect accounts={accounts} value={add.account} onChange={v => setAdd({ ...add, account: v })} filter={a => a.type === 'expense'} /></div>
           <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={add.amount} onChange={e => setAdd({ ...add, amount: e.target.value })} /></div>

@@ -1010,7 +1010,7 @@ export function PayrollSettings({ role }: { role: Role }) {
   return (
     <form onSubmit={save} className="card max-w-3xl space-y-5 p-6">
       <p className="muted">These rates are used for new payslips. Check them against KWSP, PERKESO and LHDN whenever the rules change.</p>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid items-end gap-4 sm:grid-cols-3">
         {RATE_FIELDS.map(([k, label]) => (
           <div key={k}><label>{label}</label>
             <input name={k} type="number" step="0.01" min="0" defaultValue={rates[k]} disabled={!canEdit} /></div>
