@@ -231,6 +231,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
   const corkage = -(month.get('4030') ?? 0)
   const directorOwed = -accounts.filter(a => isDirector(a.code)).reduce((s, a) => s + (all.get(a.code) ?? 0), 0)
   const openClaims = office ? claims : claims.filter(c => c.staff_id === profile.id)
+  const negativeStock = accounts.filter(a => ['1400', '1410', '1420'].includes(a.code) && (all.get(a.code) ?? 0) < -0.005)
   const claimsTotal = openClaims.reduce((s, c) => s + Number(c.amount), 0)
   const monthName = new Date().toLocaleDateString('en-MY', { month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
   const topExpenses = (() => {
@@ -259,6 +260,14 @@ export function Dashboard({ profile }: { profile: Profile }) {
         <QuickButton to="/cash/receipt" icon={ArrowDownLeft} label="Official Receipt" />
         <QuickButton to="/ap/invoices" icon={FileText} label="Purchase Invoice" />
       </div>}
+
+      {loaded && negativeStock.length > 0 && (
+        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <b>Stock below zero:</b> {negativeStock.map(a => `${a.name} ${rm(all.get(a.code))}`).join(' · ')}.
+          {' '}More has been sold than bought in — supplier invoices are probably missing.{' '}
+          {!investor && <><Link to="/ap/invoices" className="font-medium underline">Enter purchase invoices</Link>, then do a <Link to="/stock/count" className="font-medium underline">stock count</Link>.</>}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
         <Kpi icon={Landmark} label="Bank balance" value={kpiValue(bal(['1100']))} tone="bg-blue-50 text-blue-600" />

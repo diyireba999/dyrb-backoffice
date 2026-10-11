@@ -1,11 +1,26 @@
 import { createClient } from '@supabase/supabase-js'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { DayAmount } from './dashboard-math'
 import { supplierInvoiceCategory } from './dashboard-math'
+
+// Count requests in flight so the UI can say "Loading…" instead of an empty
+// "No invoices" while the data is still on its way.
+let inFlight = 0
+const loadingListeners = new Set<() => void>()
+const bump = (d: number) => { inFlight += d; loadingListeners.forEach(l => l()) }
+export const useLoading = () => useSyncExternalStore(
+  l => { loadingListeners.add(l); return () => { loadingListeners.delete(l) } },
+  () => inFlight > 0)
 
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY,
+  { global: { fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+    bump(1)
+    // Released a moment after the reply, so the page has set its data before
+    // the empty message is allowed to show.
+    try { return await fetch(input, init) } finally { setTimeout(() => bump(-1), 150) }
+  } } },
 )
 
 // Every list in the app goes through this, so a failed request is never mistaken

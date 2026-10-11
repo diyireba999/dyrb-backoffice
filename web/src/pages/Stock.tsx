@@ -127,6 +127,7 @@ export function StockCount({ role }: { role: Role }) {
         <table>
           <thead><tr><th className="pl-6">Stock</th><th className="text-right">Value in the books</th><th className="w-44 text-right">Counted value (RM)</th><th className="w-40 pr-6 text-right">Difference</th></tr></thead>
           <tbody>
+            {costing.length === 0 && <tr><td colSpan={4}><Empty text="No stock accounts are set up." /></td></tr>}
             {costing.map(c => {
               const value = round2(book.get(c.stock_account) ?? 0)
               const typed = counted[c.stock_account]

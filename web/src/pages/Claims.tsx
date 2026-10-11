@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { MONEY_ACCOUNTS, MONEY_NAMES, dmy, isDirector, isOffice, openReceipt, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, type Profile } from '../lib'
+import { Empty } from '../ui'
 
 type Status = 'pending' | 'approved' | 'rejected' | 'paid'
 type Claim = {
@@ -149,7 +150,7 @@ export function Claims({ profile }: { profile: Profile }) {
         </div>
       )}
 
-      {shown.length === 0 && <p className="card muted py-10 text-center">Nothing here.</p>}
+      {shown.length === 0 && <div className="card p-0"><Empty text="Nothing here." /></div>}
       {shown.map(c => (
         <ClaimCard key={c.id} c={c} actions={<>
           {c.status === 'pending' && canReview(c) && rejecting !== c.id && <>

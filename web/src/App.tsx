@@ -15,6 +15,7 @@ import { Claims } from './pages/Claims'
 import { Dashboard } from './pages/Dashboard'
 import { SearchDialog } from './Search'
 import { SetupWarning } from './ui'
+import { useLoading } from './lib'
 import { Employees, MyPayslips, PayrollRun, PayrollSettings, PayrollYear, StaffAdvances, Timesheet } from './pages/Payroll'
 import { CardSettlement, SalesSettings, UploadSales } from './pages/Sales'
 import { ItemCosts, StockCount } from './pages/Stock'
@@ -276,6 +277,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
               ))}
             </nav>
           )}
+          <LoadingBar />
           <SetupWarning />
           <Routes>
             <Route path="/" element={<Dashboard profile={profile} />} />
@@ -321,6 +323,11 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
       </div>
     </div>
   )
+}
+
+// Thin bar along the top while anything is loading or saving.
+function LoadingBar() {
+  return useLoading() ? <div className="no-print fixed inset-x-0 top-0 z-50 h-0.5 animate-pulse bg-brand" /> : null
 }
 
 export default function App() {

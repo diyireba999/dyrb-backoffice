@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Download, Printer } from 'lucide-react'
-import { supabase, todayMY, type Account } from './lib'
+import { supabase, todayMY, useLoading, type Account } from './lib'
 
 export function Done({ msg, doc, again }: { msg: string; doc?: string; again: () => void }) {
   return (
@@ -82,7 +82,8 @@ export function ReportBar({ title, period, onCsv, children }: {
 }
 
 export function Empty({ text }: { text: string }) {
-  return <p className="muted px-5 py-10 text-center">{text}</p>
+  const loading = useLoading()
+  return <p className="muted px-5 py-10 text-center">{loading ? 'Loading…' : text}</p>
 }
 
 // If part of the database setup is missing, reports quietly show zero. Say so instead.
