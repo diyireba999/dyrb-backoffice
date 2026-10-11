@@ -726,7 +726,7 @@ export function PayrollRun({ role }: { role: Role }) {
               <tbody>
                 {slips.map(p => (
                   <tr key={p.id}>
-                    <td className="sticky left-0 z-10 bg-white"><button className="whitespace-nowrap text-left font-medium hover:text-brand hover:underline" title="View payslip" onClick={() => setFocus({ id: p.employee_id })}>{p.name}</button><div className="text-xs text-slate-500">{p.is_local ? '' : 'Foreign · '}{p.bank_name} {p.bank_account}</div></td>
+                    <td className="sticky left-0 z-10 bg-white"><button className="whitespace-nowrap text-left font-medium hover:text-brand hover:underline" title="View payslip" onClick={() => setFocus({ id: p.employee_id })}>{p.name}</button><div className="text-xs text-slate-500">{[!p.is_local && 'Foreign', p.bank_name && `${p.bank_name} ${p.bank_account ?? ''}`].filter(Boolean).join(' · ')}</div></td>
                     <td className="text-right">{rm(p.basic)}</td>
                     <td className="text-right">{rm(p.ot_amount)}</td>
                     <td className="text-right">{rm(n(p.allowance) + n(p.service_charge))}</td>
