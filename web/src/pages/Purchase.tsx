@@ -197,9 +197,9 @@ function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: str
         </table>
       </div>
       {error && <p className="alert-error">{error}</p>}
-      <div className="flex justify-end gap-2">
-        {!editing && <button className="btn-light" name="again" disabled={busy || total <= 0}>Save & add another</button>}
+      <div className="flex flex-row-reverse justify-start gap-2">
         <button className="btn" disabled={busy || total <= 0}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Save invoice'}</button>
+        {!editing && <button className="btn-light" name="again" disabled={busy || total <= 0}>Save & add another</button>}
       </div>
     </form>
   )

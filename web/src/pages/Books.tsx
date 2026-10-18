@@ -125,10 +125,10 @@ export function PaymentVoucher() {
         <div><label>Description</label><input value={f.note} onChange={e => set('note', e.target.value)} placeholder="Optional" /></div>
       </div>
       {error && <p className="alert-error">{error}</p>}
-      <div className="flex justify-end gap-2">
-        <button type="button" className="btn-ghost" onClick={() => { setMode('list'); setError('') }}>Cancel</button>
-        {!editing && <button className="btn-light" name="again" disabled={busy}>Save & add another</button>}
+      <div className="flex flex-row-reverse justify-start gap-2">
         <button className="btn" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Save payment'}</button>
+        {!editing && <button className="btn-light" name="again" disabled={busy}>Save & add another</button>}
+        <button type="button" className="btn-ghost" onClick={() => { setMode('list'); setError('') }}>Cancel</button>
       </div>
     </form>
   )
