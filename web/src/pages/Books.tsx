@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Paperclip, Trash2 } from 'lucide-react'
-import { EDITABLE_SOURCES, MONEY_ACCOUNTS, accountTotals, dmy, downloadCsv, isCostAccount, isDirector, loadDocuments, openReceipt, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, type Account, type DocRow } from '../lib'
+import { EDITABLE_SOURCES, MONEY_ACCOUNTS, accountTotals, dmy, docTotal, downloadCsv, isCostAccount, isDirector, loadDocuments, openReceipt, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, type Account, type DocRow } from '../lib'
 import { AccountSelect, Done, Empty, ReportBar, MonthInput } from '../ui'
 import { DocumentList } from '../DocumentList'
+import { confirmDialog, toast } from '../feedback'
+import { submittedAgain, useEscape } from '../page'
 
 const money = (a: Account) => MONEY_ACCOUNTS.includes(a.code)
 // 1200 card and 1210 e-wallet hold money already taken but not yet in the bank.
@@ -23,19 +25,20 @@ export function PaymentVoucher() {
   const [rows, setRows] = useState<DocRow[]>([])
   const [f, setF] = useState(blank)
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
+  const [highlight, setHighlight] = useState('')
   const [error, setError] = useState('')
   const [params] = useSearchParams()
   const [all, setAll] = useState(!!params.get('doc'))
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
   const load = () => { loadDocuments('pv', all ? 240 : 3).then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
   useEffect(load, [all])
+  useEscape(() => { if (mode === 'form' && !busy) { setMode('list'); setError('') } })
 
   // A payment voucher is always one debit (what for) and one credit (paid from).
   function startEdit(d: DocRow) {
     const debit = d.journal_lines.find(l => Number(l.debit) > 0)
     const credit = d.journal_lines.find(l => Number(l.credit) > 0)
-    if (!debit || !credit) return alert('This voucher has an unusual shape. Use Journal Entry to correct it.')
+    if (!debit || !credit) return toast('This voucher has an unusual shape. Use Journal Entry to correct it.', { kind: 'error' })
     const dash = d.description.indexOf(' – ')
     setEditing(d)
     setF({
@@ -51,9 +54,9 @@ export function PaymentVoucher() {
   }
 
   async function remove(d: DocRow) {
-    if (!confirm(`Delete ${d.doc_no}? This cannot be undone.`)) return
+    if (!await confirmDialog({ title: `Delete ${d.doc_no}?`, body: `${d.description} · ${rm(docTotal(d))}. This cannot be undone.`, confirmLabel: 'Delete', danger: true })) return
     const { error } = await supabase.rpc('delete_journal', { p_id: d.id })
-    if (error) return alert(error.message)
+    if (error) return toast(error.message, { kind: 'error' })
     load()
   }
 
@@ -62,34 +65,37 @@ export function PaymentVoucher() {
     const amount = round2(Number(f.amount))
     if (!(amount > 0)) return setError('Enter an amount')
     setBusy(true); setError('')
+    const again = submittedAgain(e)
     try {
       const desc = [f.payee, f.note].filter(Boolean).join(' – ') || 'Payment'
       const lines = [
         { account: f.what, debit: amount, memo: f.note },
         { account: f.from, credit: amount },
       ]
+      let doc: string | undefined
       if (editing) {
         await updateJournal(editing.id, f.date, desc, lines, { reference: f.reference })
-        setDone({ msg: `${editing.doc_no} changed to ${rm(amount)}`, doc: editing.doc_no })
+        doc = editing.doc_no
+        toast(`${doc} changed to ${rm(amount)}`)
       } else {
         const id = await postJournal(f.date, desc, lines, { source: 'pv', reference: f.reference })
-        setDone({ msg: `Payment of ${rm(amount)} saved`, doc: await docNo(id) })
+        doc = await docNo(id)
+        toast(`${doc ?? 'Payment'} saved · ${rm(amount)}`)
       }
       setF({ ...blank, date: f.date, from: f.from }); setEditing(null)
+      setHighlight(doc ?? '')
+      if (!again) setMode('list')
       load()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
   }
-
-  if (done) return <Done msg={done.msg} doc={done.doc}
-    again={() => { setDone(null); setMode('list') }} />
 
   if (mode === 'list') return (
     <>
       {error && <p className="alert-error">{error}</p>}
       <DocumentList rows={rows} all={all} onShowAll={() => setAll(true)} newLabel="New payment voucher"
         emptyText={all ? 'No payment vouchers.' : 'No payment vouchers in the last three months.'}
-        onNew={startNew} onEdit={startEdit} onDelete={remove} canEdit canDelete />
+        onNew={startNew} onEdit={startEdit} onDelete={remove} canEdit canDelete highlight={highlight} />
     </>
   )
 
@@ -102,7 +108,7 @@ export function PaymentVoucher() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
         <div><label>Cheque / Ref no.</label><input value={f.reference} onChange={e => set('reference', e.target.value)} placeholder="Optional" /></div>
-        <div className="sm:col-span-2"><label>Pay to</label><input value={f.payee} onChange={e => set('payee', e.target.value)} placeholder="Shop, TNB, landlord…" required /></div>
+        <div className="sm:col-span-2"><label>Pay to</label><input value={f.payee} onChange={e => set('payee', e.target.value)} placeholder="Shop, TNB, landlord…" required autoFocus /></div>
         <div><label>Account (what for)</label>
           <AccountSelect accounts={accounts} value={f.what} onChange={v => set('what', v)}
             filter={a => (a.type === 'expense' && !isCostAccount(a.code)) || a.code === '3100' || (a.type === 'asset' && a.code >= '1300')
@@ -119,7 +125,9 @@ export function PaymentVoucher() {
         <div><label>Description</label><input value={f.note} onChange={e => set('note', e.target.value)} placeholder="Optional" /></div>
       </div>
       {error && <p className="alert-error">{error}</p>}
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <button type="button" className="btn-ghost" onClick={() => { setMode('list'); setError('') }}>Cancel</button>
+        {!editing && <button className="btn-light" name="again" disabled={busy}>Save & add another</button>}
         <button className="btn" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Save payment'}</button>
       </div>
     </form>

@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Pencil, Plus, Trash2, XCircle } from 'lucide-react'
 import { MONEY_ACCOUNTS, MONEY_NAMES, addDays, dmy, isDirector, downloadCsv, openReceipt, rm, round2, supabase, todayMY, useAccounts, useSuppliers, type Role } from '../lib'
-import { AccountSelect, Done, Empty, ReportBar } from '../ui'
+import { AccountSelect, Empty, Pill, ReportBar } from '../ui'
+import { confirmDialog, toast } from '../feedback'
+import { PageActions, submittedAgain, useEscape } from '../page'
+import { dueLabel } from '../dashboard-math'
 
 type Invoice = {
   id: number; supplier_id: number; supplier: string; invoice_no: string | null; date: string; due_date: string
@@ -47,9 +50,10 @@ export function Suppliers() {
   }
 
   async function remove(id: number) {
-    if (!confirm('Remove this supplier?')) return
+    const s = list.find(s => s.id === id)
+    if (!await confirmDialog({ title: `Remove ${s?.name ?? 'this supplier'}?`, body: 'Only possible while they have no documents.', confirmLabel: 'Remove', danger: true })) return
     const { error } = await supabase.from('suppliers').delete().eq('id', id)
-    if (error) alert('Cannot remove: this supplier already has documents.')
+    if (error) toast('Cannot remove: this supplier already has documents.', { kind: 'error' })
     load()
   }
 
@@ -78,7 +82,7 @@ export function Suppliers() {
               <tr key={s.id}>
                 <td className="font-medium">{s.name}</td><td className="text-slate-600">{s.phone}</td><td className="text-slate-600">{acctName(s.default_account)}</td>
                 <td className={`text-right ${s.owed > 0 ? 'font-semibold text-rose-600' : 'text-slate-400'}`}>{rm(s.owed)}</td>
-                <td className="text-right"><button title="Remove" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => remove(s.id)}><Trash2 className="size-4" /></button></td>
+                <td className="text-right"><button title="Remove" className="btn-ghost px-1.5 hover:bg-red-50 hover:text-red-600" onClick={() => remove(s.id)}><Trash2 className="size-4" /></button></td>
               </tr>
             ))}
           </tbody>
@@ -97,7 +101,7 @@ export type InvoiceForEdit = {
   description: string; doc_no: string; lines: PiLine[]
 }
 
-function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: string; doc: string }) => void; editing?: InvoiceForEdit | null }) {
+function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: string; doc: string }, again: boolean) => void; editing?: InvoiceForEdit | null }) {
   const accounts = useAccounts()
   const { list: suppliers } = useSuppliers()
   const [head, setHead] = useState(editing
@@ -118,6 +122,7 @@ function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: str
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    const again = submittedAgain(e)
     const used = lines.filter(l => l.account && Number(l.amount) > 0)
     if (!used.length) return setError('Add at least one line with an amount')
     setBusy(true); setError('')
@@ -129,7 +134,7 @@ function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: str
           p_description: editing.description, p_lines: payload,
         })
         if (error) throw new Error(error.message)
-        onSaved({ msg: `Invoice ${editing.invoice_no ?? ''} changed`, doc: editing.doc_no })
+        onSaved({ msg: `Invoice ${editing.invoice_no ?? ''} changed`, doc: editing.doc_no }, again)
       } else {
         const s = suppliers.find(s => String(s.id) === head.supplier)!
         const { data, error } = await supabase.rpc('create_purchase_invoice', {
@@ -139,7 +144,7 @@ function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: str
         })
         if (error) throw new Error(error.message)
         const { data: inv } = await supabase.from('purchase_invoice_status').select('doc_no').eq('id', data).single()
-        onSaved({ msg: 'Purchase invoice saved', doc: inv?.doc_no ?? '' })
+        onSaved({ msg: 'Purchase invoice saved', doc: inv?.doc_no ?? '' }, again)
       }
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
@@ -149,7 +154,7 @@ function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: str
     <form onSubmit={submit} className="card space-y-5 p-6">
       <div className="grid gap-4 sm:grid-cols-4">
         <div className="sm:col-span-2"><label>Supplier</label>
-          <select value={head.supplier} onChange={e => pickSupplier(e.target.value)} required disabled={!!editing}>
+          <select value={head.supplier} onChange={e => pickSupplier(e.target.value)} required disabled={!!editing} autoFocus>
             <option value="">— choose —</option>
             {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
@@ -192,7 +197,10 @@ function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: str
         </table>
       </div>
       {error && <p className="alert-error">{error}</p>}
-      <div className="flex justify-end"><button className="btn" disabled={busy || total <= 0}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Save invoice'}</button></div>
+      <div className="flex justify-end gap-2">
+        {!editing && <button className="btn-light" name="again" disabled={busy || total <= 0}>Save & add another</button>}
+        <button className="btn" disabled={busy || total <= 0}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Save invoice'}</button>
+      </div>
     </form>
   )
 }
@@ -200,28 +208,30 @@ function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: str
 export function PurchaseInvoices({ role }: { role: Role }) {
   const [mode, setMode] = useState<'list' | 'new' | 'edit'>('list')
   const [editing, setEditing] = useState<InvoiceForEdit | null>(null)
-  const [saved, setSaved] = useState<{ msg: string; doc: string } | null>(null)
+  const [highlight, setHighlight] = useState('')
+  const [formKey, setFormKey] = useState(0)
   const [show, setShow] = useState<'open' | 'all'>('open')
   const [rows, setRows] = useState<Invoice[]>([])
   const load = () => { loadInvoices({ open: show === 'open' }).then(setRows) }
   useEffect(load, [show])
+  useEscape(() => { if (mode !== 'list') { setMode('list'); setEditing(null) } })
 
   async function cancel(inv: Invoice) {
-    if (!confirm(`Cancel ${inv.doc_no}? This removes it from the books.`)) return
+    if (!await confirmDialog({ title: `Cancel ${inv.doc_no}?`, body: `${inv.supplier} · ${rm(inv.total)}. This removes it from the books.`, confirmLabel: 'Cancel invoice', danger: true })) return
     const { error } = await supabase.rpc('cancel_purchase_invoice', { p_id: inv.id })
-    if (error) alert(error.message)
+    if (error) toast(error.message, { kind: 'error' })
     load()
   }
   async function viewPhoto(inv: Invoice) {
     const { data } = await supabase.from('journals').select('attachment').eq('doc_no', inv.doc_no).single()
-    if (data?.attachment) openReceipt(data.attachment); else alert('No photo attached')
+    if (data?.attachment) openReceipt(data.attachment); else toast('No photo attached', { kind: 'error' })
   }
 
   async function startEdit(inv: Invoice) {
     const { data, error } = await supabase.from('purchase_invoices')
       .select('id, supplier_id, invoice_no, date, due_date, journals(description, journal_lines(account, debit, memo))')
       .eq('id', inv.id).single()
-    if (error || !data) return alert(error?.message ?? 'Could not open the invoice')
+    if (error || !data) return toast(error?.message ?? 'Could not open the invoice', { kind: 'error' })
     const j = data.journals as unknown as { description: string; journal_lines: { account: string; debit: number; memo: string | null }[] }
     setEditing({
       id: data.id, supplier_id: data.supplier_id, invoice_no: data.invoice_no,
@@ -232,24 +242,27 @@ export function PurchaseInvoices({ role }: { role: Role }) {
     setMode('edit')
   }
 
-  if (saved !== null) return <Done msg={saved.msg} doc={saved.doc} again={() => { setSaved(null); setMode('new') }} />
   if (mode !== 'list') return (
     <div className="space-y-4">
       <button className="link" onClick={() => { setMode('list'); setEditing(null) }}>← Back to list</button>
-      <NewPurchaseInvoice editing={editing}
-        onSaved={result => { setSaved(result); setMode('list'); setEditing(null); load() }} />
+      <NewPurchaseInvoice key={formKey} editing={editing}
+        onSaved={(result, again) => {
+          toast(`${result.doc || 'Invoice'} ${result.msg.includes('changed') ? 'changed' : 'saved'}`)
+          setHighlight(result.doc); setEditing(null); load()
+          if (again) setFormKey(k => k + 1); else setMode('list')
+        }} />
     </div>
   )
 
   const today = todayMY()
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="inline-flex gap-1 rounded-lg bg-slate-100 p-1">
-          <button className={`tab ${show === 'open' ? 'tab-active' : ''}`} onClick={() => setShow('open')}>Unpaid</button>
-          <button className={`tab ${show === 'all' ? 'tab-active' : ''}`} onClick={() => setShow('all')}>All</button>
-        </div>
-        <button className="btn ml-auto" onClick={() => setMode('new')}><Plus className="size-4" />New purchase invoice</button>
+      <PageActions>
+        <button className="btn" onClick={() => setMode('new')}><Plus className="size-4" />New purchase invoice</button>
+      </PageActions>
+      <div className="inline-flex gap-1 rounded-lg bg-slate-100 p-1">
+        <button className={`tab ${show === 'open' ? 'tab-active' : ''}`} onClick={() => setShow('open')}>Unpaid</button>
+        <button className={`tab ${show === 'all' ? 'tab-active' : ''}`} onClick={() => setShow('all')}>All</button>
       </div>
       <div className="card overflow-x-auto p-0">
         {rows.length === 0 && <Empty text={show === 'open' ? 'No unpaid invoices.' : 'No purchase invoices yet.'} />}
@@ -257,22 +270,22 @@ export function PurchaseInvoices({ role }: { role: Role }) {
           <thead><tr><th className="w-28">Doc No</th><th className="w-24">Date</th><th>Supplier</th><th>Inv no.</th><th className="w-24">Due</th><th className="text-right">Total</th><th className="text-right">Outstanding</th><th></th></tr></thead>
           <tbody>
             {rows.map(r => {
-              const overdue = Number(r.outstanding) > 0 && r.due_date < today
+              const due = Number(r.outstanding) > 0 ? dueLabel(r.due_date, today) : null
               return (
-                <tr key={r.id}>
+                <tr key={r.id} className={r.doc_no === highlight ? 'row-new' : ''}>
                   <td className="font-mono text-xs">{r.doc_no}</td>
                   <td className="text-slate-500">{dmy(r.date)}</td>
                   <td className="font-medium">{r.supplier}</td>
                   <td>{r.invoice_no}</td>
-                  <td className={overdue ? 'font-medium text-rose-600' : 'text-slate-500'}>{dmy(r.due_date)}</td>
+                  <td>{due ? <Pill tone={due.tone}>{due.text}</Pill> : <span className="text-slate-500">{dmy(r.due_date)}</span>}</td>
                   <td className="text-right">{rm(r.total)}</td>
-                  <td className={`text-right font-semibold ${Number(r.outstanding) > 0 ? '' : 'text-emerald-600'}`}>{Number(r.outstanding) > 0 ? rm(r.outstanding) : 'Paid'}</td>
+                  <td className={`text-right font-semibold ${Number(r.outstanding) > 0 ? '' : 'text-emerald-600'}`}>{Number(r.outstanding) > 0 ? rm(r.outstanding) : <Pill tone="ok">Paid</Pill>}</td>
                   <td className="whitespace-nowrap text-right">
-                    <button className="link mr-2" onClick={() => viewPhoto(r)}>Photo</button>
+                    <button className="btn-ghost" onClick={() => viewPhoto(r)}>Photo</button>
                     {canCancel(role) && Number(r.paid) === 0 && <button title="Edit invoice"
-                      className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand"
+                      className="btn-ghost px-1.5"
                       onClick={() => startEdit(r)}><Pencil className="size-4" /></button>}
-                    {canCancel(role) && Number(r.paid) === 0 && <button title="Cancel invoice" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => cancel(r)}><XCircle className="size-4" /></button>}
+                    {canCancel(role) && Number(r.paid) === 0 && <button title="Cancel invoice" className="btn-ghost px-1.5 hover:bg-red-50 hover:text-red-600" onClick={() => cancel(r)}><XCircle className="size-4" /></button>}
                   </td>
                 </tr>
               )
@@ -295,7 +308,7 @@ export function SupplierPayments({ role }: { role: Role }) {
   const [head, setHead] = useState({ date: todayMY(), from: '1100', reference: '' })
   const [history, setHistory] = useState<Payment[]>([])
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<{ msg: string; doc: string } | null>(null)
+  const [highlight, setHighlight] = useState(0)
   const [error, setError] = useState('')
   // alloc: what this payment put on each invoice when it was saved, so the
   // Outstanding column can show the figure before this payment while editing.
@@ -322,6 +335,7 @@ export function SupplierPayments({ role }: { role: Role }) {
       pendingPay.current = null
     })
   }, [supplier, editing])
+  useEscape(() => { if (editing) cancelEdit() })
 
   const total = round2(Object.values(pay).reduce((s, v) => s + Number(v || 0), 0))
   const payAll = () => setPay(Object.fromEntries(open.map(i => [i.id, String(owingOn(i))])))
@@ -335,7 +349,7 @@ export function SupplierPayments({ role }: { role: Role }) {
     const { data, error } = await supabase.from('supplier_payments')
       .select('id, supplier_id, date, journals(reference, journal_lines(account, credit)), payment_allocations(invoice_id, amount)')
       .eq('id', p.id).single()
-    if (error || !data) return alert(error?.message ?? 'Could not open the payment')
+    if (error || !data) return toast(error?.message ?? 'Could not open the payment', { kind: 'error' })
     const d = data as unknown as {
       id: number; supplier_id: number; date: string
       journals: { reference: string | null; journal_lines: { account: string; credit: number }[] }
@@ -363,7 +377,7 @@ export function SupplierPayments({ role }: { role: Role }) {
       })
       setBusy(false)
       if (error) return setError(error.message)
-      setDone({ msg: 'Supplier payment changed', doc: editing.doc_no })
+      toast(`${editing.doc_no} changed · ${rm(total)}`); setHighlight(editing.id)
       cancelEdit(); loadHistory()
       return
     }
@@ -374,18 +388,18 @@ export function SupplierPayments({ role }: { role: Role }) {
     setBusy(false)
     if (error) return setError(error.message)
     const { data: p } = await supabase.from('supplier_payments').select('journals(doc_no)').eq('id', data).single()
-    setDone({ msg: 'Supplier payment saved', doc: (p as unknown as { journals: { doc_no: string } })?.journals.doc_no ?? '' })
+    toast(`${(p as unknown as { journals: { doc_no: string } })?.journals.doc_no ?? 'Payment'} saved · ${rm(total)}`)
+    setHighlight(data as number)
     setSupplier(''); setHead({ ...head, reference: '' }); loadHistory()
   }
 
   async function cancel(p: Payment) {
-    if (!confirm(`Cancel ${p.journals.doc_no}? The invoices become unpaid again.`)) return
+    if (!await confirmDialog({ title: `Cancel ${p.journals.doc_no}?`, body: `${p.suppliers.name} · ${rm(p.amount)}. The invoices become unpaid again.`, confirmLabel: 'Cancel payment', danger: true })) return
     const { error } = await supabase.rpc('cancel_supplier_payment', { p_id: p.id })
-    if (error) alert(error.message)
+    if (error) toast(error.message, { kind: 'error' })
     loadHistory()
   }
 
-  if (done !== null) return <Done msg={done.msg} doc={done.doc} again={() => { setDone(null); cancelEdit() }} />
   return (
     <div className="space-y-6">
       <form onSubmit={submit} className="card space-y-5 p-6">
@@ -443,15 +457,15 @@ export function SupplierPayments({ role }: { role: Role }) {
             <thead><tr><th className="w-28">Doc No</th><th className="w-24">Date</th><th>Supplier</th><th>Ref</th><th className="text-right">Amount</th><th></th></tr></thead>
             <tbody>
               {history.map(p => (
-                <tr key={p.id}>
+                <tr key={p.id} className={p.id === highlight ? 'row-new' : ''}>
                   <td className="font-mono text-xs">{p.journals.doc_no}</td><td className="text-slate-500">{dmy(p.date)}</td>
                   <td className="font-medium">{p.suppliers.name}</td><td>{p.journals.reference}</td>
                   <td className="text-right">{rm(p.amount)}</td>
                   <td className="whitespace-nowrap text-right">
                     {canCancel(role) && <button title="Edit payment"
-                      className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand"
+                      className="btn-ghost px-1.5"
                       onClick={() => startEdit(p)}><Pencil className="size-4" /></button>}
-                    {canCancel(role) && <button title="Cancel payment" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => cancel(p)}><XCircle className="size-4" /></button>}
+                    {canCancel(role) && <button title="Cancel payment" className="btn-ghost px-1.5 hover:bg-red-50 hover:text-red-600" onClick={() => cancel(p)}><XCircle className="size-4" /></button>}
                   </td>
                 </tr>
               ))}
@@ -488,7 +502,7 @@ export function ApAging() {
   return (
     <div className="space-y-4">
       <ReportBar title="Supplier Aging (AP)" period={`As at ${dmy(asAt)}`} onCsv={csv}>
-        <div className="w-44"><label>As at</label><input type="date" value={asAt} onChange={e => setAsAt(e.target.value)} /></div>
+        <div className="w-40"><label>As at</label><input type="date" value={asAt} onChange={e => setAsAt(e.target.value)} /></div>
       </ReportBar>
       <div className="card overflow-x-auto p-0">
         {list.length === 0 && <Empty text="Nothing owed to suppliers." />}
