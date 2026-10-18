@@ -59,7 +59,7 @@ export function ReportBar({ title, period, onCsv, children }: {
           </div>
           <div className="text-right">
             <div className="text-xl font-bold uppercase tracking-wide">{title}</div>
-            <div className="text-sm font-medium">{period}</div>
+            <div className="text-[13px] font-medium">{period}</div>
             <div className="mt-1 text-[10px] text-slate-500">Printed {printed}</div>
           </div>
         </div>
@@ -91,7 +91,7 @@ export function SetupWarning() {
   }, [])
   if (!missing) return null
   return (
-    <div className="no-print mx-auto mb-4 max-w-7xl rounded-lg bg-red-50 px-4 py-3 text-sm text-red-800">
+    <div className="no-print mx-auto mb-4 max-w-7xl rounded-lg bg-red-50 px-4 py-3 text-[13px] text-red-800">
       <b>Database setup is not finished.</b> Reports and the General Ledger will show zero until it is.
       Run <code>supabase/003b_repair.sql</code> in the Supabase SQL Editor, then reload this page.
       <div className="mt-1 text-xs opacity-80">{missing}</div>

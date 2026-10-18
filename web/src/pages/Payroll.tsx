@@ -51,6 +51,7 @@ export function Employees({ role }: { role: Role }) {
   const load = () => { supabase.from('employees').select('*').order('active', { ascending: false }).order('name').then(({ data }) => setList(data ?? [])) }
   useEffect(load, [])
   useEffect(() => { supabase.from('profiles').select('*').order('full_name').then(({ data }) => setPeople(data ?? [])) }, [])
+  useEscape(() => { if (edit && !saving) { setEdit(null); setError('') } })
 
   function start(e?: Employee) {
     setError('')
@@ -123,8 +124,8 @@ export function Employees({ role }: { role: Role }) {
         </div>
       </div>
       <div className="rounded-xl bg-slate-50 p-4">
-        <p className="mb-3 text-sm font-medium">Deductions for this person</p>
-        <div className="flex flex-wrap gap-4 text-sm">
+        <p className="mb-3 text-[13px] font-medium">Deductions for this person</p>
+        <div className="flex flex-wrap gap-4 text-[13px]">
           {([['epf_on', 'EPF'], ['socso_on', 'SOCSO'], ['eis_on', 'EIS'], ['pcb_on', 'PCB (income tax)']] as const).map(([k, label]) => (
             <label key={k} className="flex items-center gap-2 font-normal">
               <input type="checkbox" checked={edit[k]} onChange={e => setEdit({ ...edit, [k]: e.target.checked })} />{label}
@@ -138,7 +139,7 @@ export function Employees({ role }: { role: Role }) {
       </div>
       {error && <p className="alert-error">{error}</p>}
       <div className="flex justify-end gap-2">
-        <button type="button" className="btn-light" onClick={() => setEdit(null)}>Cancel</button>
+        <button type="button" className="btn-ghost" onClick={() => setEdit(null)}>Cancel</button>
         <button className="btn" disabled={saving}>{saving ? 'Saving…' : 'Save staff'}</button>
       </div>
     </form>
@@ -608,7 +609,7 @@ export function PayrollRun({ role }: { role: Role }) {
     if (!runId) return
     const from = paidFrom ? accounts.find(a => a.code === paidFrom)?.name ?? paidFrom : ''
     const ok = date
-      ? await confirmDialog({ title: `Pay ${rm(total('net_pay'))} net salaries?`, body: from ? `From ${from} on ${dmy(date)}. This posts Dr 2300 Salaries Payable / Cr ${from}.` : `Mark as paid on ${dmy(date)} without a payment entry. Only do this if a Payment Voucher from 2300 already recorded it.`, confirmLabel: 'Mark as paid' })
+      ? await confirmDialog({ title: from ? `Pay ${rm(total('net_pay'))} net salaries?` : `Mark ${rm(total('net_pay'))} net salaries as paid?`, body: from ? `From ${from} on ${dmy(date)}. This posts Dr 2300 Salaries Payable / Cr ${from}.` : `Mark as paid on ${dmy(date)} without a payment entry. Only do this if a Payment Voucher from 2300 already recorded it.`, confirmLabel: 'Mark as paid' })
       : await confirmDialog({ title: 'Take off the paid mark?', body: run?.paid_journal_id ? 'The salary payment entry will be removed and the amount goes back to 2300 Salaries Payable.' : undefined, confirmLabel: 'Undo paid', danger: true })
     if (!ok) return
     const { error } = await supabase.rpc('mark_payroll_paid', { p_id: runId, p_date: date, p_from: date ? paidFrom || null : null })
@@ -700,14 +701,14 @@ export function PayrollRun({ role }: { role: Role }) {
         </div>
       </div>
       {error && <p className="alert-error">{error}</p>}
-      {!run && <Empty text="No payroll month yet. Pick a month and press Create." />}
+      {!run && <Empty text="No payroll month yet. Pick a month and press Create month." />}
 
       {run && (
         <>
           <ReportBar title={`Payroll ${monthName(run.month)}`} period={run.paid_on ? `Paid on ${dmy(run.paid_on)}` : `Pay date ${dmy(run.pay_date)} · ${runLabel(run)}`} onCsv={csv} />
-          {run.status === 'draft' && <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">Draft — not approved and not paid. Check the figures, then the owner approves.</p>}
+          {run.status === 'draft' && <p className="rounded-lg bg-slate-100 px-3 py-2 text-[13px] text-slate-700">Draft — not approved and not paid. Check the figures, then the owner approves.</p>}
           {run.status === 'approved' && !run.paid_on && (
-            <div className="flex flex-wrap items-end gap-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <div className="flex flex-wrap items-end gap-3 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
               <p className="min-w-64 flex-1">Approved — <b>salaries not paid yet</b>. The net pay of {rm(total('net_pay'))} is held in 2300 Salaries Payable (accrued) until you pay it.</p>
               {canEdit && <div className="no-print flex flex-wrap items-end gap-2">
                 <div className="w-40"><label>Paid on</label><input type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} /></div>
@@ -723,7 +724,7 @@ export function PayrollRun({ role }: { role: Role }) {
             </div>
           )}
           {run.paid_on && (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            <div className="flex flex-wrap items-center gap-3 rounded-lg bg-emerald-50 px-3 py-2 text-[13px] text-emerald-800">
               <p className="flex-1">Paid on {dmy(run.paid_on)}{run.paid_journal_id ? ' — payment posted, 2300 Salaries Payable cleared' : ' (recorded by Payment Voucher)'}.</p>
               {canEdit && <button className="no-print btn-light" onClick={() => markPaid(null)}>Undo paid</button>}
             </div>
@@ -857,7 +858,7 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
                     <div className="muted">Payslip · {monthName(p.month)}</div>
                   </div>
                 </div>
-                <div className="text-right text-sm">
+                <div className="text-right text-[13px]">
                   <div className="font-semibold">{p.name}</div>
                   <div className="text-slate-500">{p.position} {p.employee_no && `· ${p.employee_no}`}</div>
                   <div className="text-slate-500">{p.id_no}</div>
@@ -866,7 +867,7 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
               <div className="grid gap-6 pt-4 sm:grid-cols-2">
                 <div>
                   <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Earnings</h4>
-                  <dl className="space-y-1.5 text-sm">
+                  <dl className="space-y-1.5 text-[13px]">
                     {[['Basic pay', p.basic], ['Overtime', p.ot_amount], ['Allowance', p.allowance], ['Service charge', p.service_charge], ['Unpaid leave', -n(p.unpaid_leave)]]
                       .filter(([, v]) => n(v as number) !== 0)
                       .map(([label, v]) => <div key={label as string} className="flex justify-between"><dt className="text-slate-600">{label}</dt><dd className="tabular-nums">{rm(v as number)}</dd></div>)}
@@ -875,7 +876,7 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
                 </div>
                 <div>
                   <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Deductions</h4>
-                  <dl className="space-y-1.5 text-sm">
+                  <dl className="space-y-1.5 text-[13px]">
                     {[['EPF', p.epf_employee], ['SOCSO', p.socso_employee], ['EIS', p.eis_employee], ['PCB (income tax)', p.pcb], ['Salary advance recovered', p.advance_recovery], ['Other', p.other_deduction]]
                       .filter(([, v]) => n(v as number) !== 0)
                       .map(([label, v]) => <div key={label as string} className="flex justify-between"><dt className="text-slate-600">{label}</dt><dd className="tabular-nums">{rm(v as number)}</dd></div>)}
@@ -924,7 +925,7 @@ export function MyPayslips({ profile }: { profile: Profile }) {
   return (
     <div className="space-y-4">
       {advance > 0 &&
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">You still owe {rm(advance)} on a salary advance — it comes off your pay automatically.</p>}
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-800">You still owe {rm(advance)} on a salary advance — it comes off your pay automatically.</p>}
       {slips.length === 0 ? <Empty text="No payslips yet." /> : <Payslips slips={slips} />}
     </div>
   )

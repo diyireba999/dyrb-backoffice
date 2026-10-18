@@ -163,7 +163,7 @@ export function UploadSales({ role }: { role: Role }) {
           {fileName && <span className="badge mt-1">{fileName}</span>}
           <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} />
         </label>
-        <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 py-4 text-center text-sm hover:border-brand">
+        <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 py-4 text-center text-[13px] hover:border-brand">
           <span className="font-medium">Optional: Product Sales export, to split food / beverage / liquor</span>
           {itemFile && <span className="badge">{itemFile}</span>}
           <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => e.target.files?.[0] && onItemFile(e.target.files[0])} />
@@ -232,7 +232,7 @@ export function UploadSales({ role }: { role: Role }) {
             </table>
           </div>
           {replacing.some(d => { const cogs = cogsFor(d); return !cogs || cogs.lines.length === 0 }) && (
-            <p className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            <p className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-700">
               <TriangleAlert className="size-4 shrink-0" />
               Replacing a day also removes its cost of sales. Load the Product Sales file too, or that day
               will show sales with no cost against it until you re-split.

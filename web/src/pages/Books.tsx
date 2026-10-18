@@ -46,11 +46,11 @@ export function PaymentVoucher() {
       what: debit.account, amount: String(Number(debit.debit)), from: credit.account,
       reference: d.reference ?? '', note: dash >= 0 ? d.description.slice(dash + 3) : '',
     })
-    setError(''); setMode('form')
+    setHighlight(''); setError(''); setMode('form')
   }
 
   function startNew() {
-    setEditing(null); setF(blank); setError(''); setMode('form')
+    setEditing(null); setF(blank); setHighlight(''); setError(''); setMode('form')
   }
 
   async function remove(d: DocRow) {
@@ -382,7 +382,7 @@ export function JournalListing({ isOwner }: { isOwner: boolean }) {
     if (!await confirmDialog({ title: `Delete ${r.doc_no}?`, body: `${r.description}. This cannot be undone.`, confirmLabel: 'Delete', danger: true })) return
     const { error } = await supabase.rpc('delete_journal', { p_id: r.id })
     if (error) return toast(error.message, { kind: 'error' })
-    setRows(rows.filter(x => x.id !== r.id))
+    setRows(rs => rs.filter(x => x.id !== r.id))
   }
 
   const csv = () => downloadCsv(`journal-${month}.csv`, [
@@ -393,7 +393,7 @@ export function JournalListing({ isOwner }: { isOwner: boolean }) {
   return (
     <div className="space-y-4">
       <ReportBar title="Journal Listing" period={doc ?? month} onCsv={csv}>
-        {doc && <div className="flex h-10 items-center gap-2 rounded-lg bg-brand-soft px-3 text-sm text-brand-dark">
+        {doc && <div className="flex h-8 items-center gap-2 rounded-lg bg-brand-soft px-3 text-[13px] text-brand-dark">
           Showing <b className="font-mono">{doc}</b>
           <button className="link" onClick={() => setParams({})}>Show all</button>
         </div>}

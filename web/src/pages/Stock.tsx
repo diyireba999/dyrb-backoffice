@@ -50,7 +50,7 @@ export function ItemCosts({ role }: { role: Role }) {
             <input className="pl-9" value={q} onChange={e => setQ(e.target.value)} placeholder="Code or name" />
           </div>
         </div>
-        <label className="flex h-10 items-center gap-2 text-sm font-normal">
+        <label className="flex h-8 items-center gap-2 text-[13px] font-normal">
           <input type="checkbox" checked={onlyMissing} onChange={e => setOnlyMissing(e.target.checked)} />
           Only items without a cost ({missing})
         </label>

@@ -275,7 +275,7 @@ export function BalanceSheet() {
     <div className="space-y-4">
       <ReportBar title="Balance Sheet" period={`As at ${dmy(asAt)}`} onCsv={csv}>
         <div className="w-44"><label>As at</label><input type="date" value={asAt} onChange={e => setAsAt(e.target.value)} /></div>
-        <label className="flex items-center gap-2 pb-2.5 text-sm font-normal text-slate-700">
+        <label className="flex items-center gap-2 pb-2.5 text-[13px] font-normal text-slate-700">
           <input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} />
           Compare with end of previous month
         </label>

@@ -12,17 +12,17 @@ export function Toasts() {
   const items = useSyncExternalStore(store.subscribe, store.getSnapshot)
   if (items.length === 0) return null
   return (
-    <div className="no-print fixed inset-x-4 bottom-20 z-50 flex flex-col items-center gap-2 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:items-end">
+    <div className="no-print pointer-events-none fixed inset-x-4 bottom-20 z-50 flex flex-col items-center gap-2 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:items-end">
       {items.map(t => (
         <div key={t.id} role="status" onClick={() => store.dismiss(t.id)}
-          className={`flex max-w-md cursor-pointer items-center gap-2 rounded-lg px-4 py-2.5 text-[13px] text-white shadow-lg ${t.kind === 'error' ? 'bg-red-700' : 'bg-slate-900'}`}>
+          className={`pointer-events-auto flex max-w-md cursor-pointer items-center gap-2 rounded-lg px-4 py-2.5 text-[13px] text-white shadow-lg ${t.kind === 'error' ? 'bg-red-700' : 'bg-slate-900'}`}>
           {t.kind === 'error'
             ? <XCircle className="size-4 shrink-0" />
             : <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />}
           <span>{t.message}</span>
           {t.action && (
             <button className="ml-2 font-semibold underline"
-              onClick={e => { e.stopPropagation(); t.action!.onClick(); store.dismiss(t.id) }}>{t.action.label}</button>
+              onClick={e => { e.stopPropagation(); store.dismiss(t.id); t.action!.onClick() }}>{t.action.label}</button>
           )}
         </div>
       ))}
@@ -77,8 +77,8 @@ export function ConfirmHost() {
   return (
     <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
       onClick={() => answer(false)}>
-      <div ref={cardRef} role="dialog" aria-modal="true" className="w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
-        <h3 className="font-semibold">{p.title}</h3>
+      <div ref={cardRef} role="dialog" aria-modal="true" aria-labelledby="confirm-title" className="w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h3 id="confirm-title" className="font-semibold">{p.title}</h3>
         {p.body && <div className="mt-2 text-[13px] text-slate-600">{p.body}</div>}
         <div className="mt-5 flex justify-end gap-2">
           <button className="btn-light" onClick={() => answer(false)}>Cancel</button>

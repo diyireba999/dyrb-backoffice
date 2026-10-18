@@ -220,7 +220,7 @@ export function JournalEntry() {
         </table>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className={`text-sm font-medium ${balanced ? 'text-emerald-600' : 'text-amber-600'}`}>
+        <span className={`text-[13px] font-medium ${balanced ? 'text-emerald-600' : 'text-amber-600'}`}>
           {balanced ? 'Balanced' : dr + cr === 0 ? 'Enter debit and credit amounts' : `Out of balance by ${rm(Math.abs(dr - cr))}`}
         </span>
         <div className="flex flex-row-reverse justify-start gap-2">

@@ -69,7 +69,7 @@ export function SearchDialog({ pages, canSeeDocs, open, setOpen }: {
           {hits.length === 0 && <p className="muted px-3 py-6 text-center">Nothing found.</p>}
           {hits.map((h, i) => (
             <button key={h.key} onMouseEnter={() => setActive(i)} onClick={() => go(h)}
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm ${i === active ? 'bg-brand-soft text-brand-dark' : 'text-slate-700'}`}>
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13px] ${i === active ? 'bg-brand-soft text-brand-dark' : 'text-slate-700'}`}>
               <h.icon className="size-4 shrink-0 opacity-70" />
               <span className="min-w-0 flex-1 truncate font-medium">{h.label}</span>
               <span className="shrink-0 text-xs text-slate-400">{h.sub}</span>

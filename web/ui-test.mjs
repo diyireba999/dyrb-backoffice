@@ -20,5 +20,8 @@ assert.deepEqual(store.getSnapshot().map(t => t.message), ['Could not save'])
 
 timers[1].fn()
 assert.equal(store.getSnapshot().length, 0, 'expired toast is gone')
+const before = notified
+store.dismiss(999)
+assert.equal(notified, before, 'dismissing a missing id is silent')
 assert.equal(notified, 4, 'listeners told on push, push, dismiss, expire')
 console.log('toast store ok')

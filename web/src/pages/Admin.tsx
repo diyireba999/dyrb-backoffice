@@ -64,7 +64,7 @@ export function Users({ me }: { me: string }) {
             {list.map(p => (
               <tr key={p.id} className={p.active ? '' : 'opacity-50'}>
                 <td><input defaultValue={p.full_name} onBlur={e => e.target.value !== p.full_name && update(p.id, { full_name: e.target.value })} /></td>
-                <td className="font-mono text-sm">{p.username}</td>
+                <td className="font-mono text-[13px]">{p.username}</td>
                 <td className="w-44">
                   <select value={p.role} disabled={p.id === me} title={p.id === me ? 'You cannot change your own role' : ''} onChange={e => update(p.id, { role: e.target.value as Role })}>
                     {ROLES.map(r => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}
@@ -101,7 +101,7 @@ export function CompanyDetails() {
     const { error } = await supabase.from('company').update({ ...f, updated_at: new Date().toISOString() }).eq('id', 1)
     forgetCompany()
     if (error) toast(error.message, { kind: 'error' })
-    else toast('Company details saved')
+    else { setMsg(''); toast('Company details saved') }
   }
 
   if (!f) return null

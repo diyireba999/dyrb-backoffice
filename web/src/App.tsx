@@ -124,7 +124,7 @@ function Login() {
           </div>
           <div><label>Username</label><input autoComplete="username" autoCapitalize="none" spellCheck={false} value={username} onChange={e => setUsername(e.target.value)} required /></div>
           <div><label>Password</label><input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required /></div>
-          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p>}
           <button className="btn w-full" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
         </form>
       </div>
@@ -150,7 +150,7 @@ function SetPassword({ done }: { done: () => void }) {
           <p className="muted mt-1">At least 8 characters.</p>
         </div>
         <div><label>New password</label><input type="password" autoComplete="new-password" minLength={8} value={password} onChange={e => setPassword(e.target.value)} required /></div>
-        {msg && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{msg}</p>}
+        {msg && <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{msg}</p>}
         <div className="flex gap-2">
           <button type="button" className="btn-light flex-1" onClick={done}>Cancel</button>
           <button className="btn flex-1">Save password</button>
@@ -177,7 +177,7 @@ function Sidebar({ profile, pages, onNavigate, onPassword, onSearch }: {
     <div className="flex h-full flex-col border-r border-slate-200 bg-white">
       <div className="px-5 pb-3 pt-5"><Logo /></div>
       <div className="space-y-2 px-3 pb-2">
-        <button onClick={onSearch} className="flex h-9 w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-500 hover:border-slate-300">
+        <button onClick={onSearch} className="flex h-9 w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-500 hover:border-slate-300">
           <SearchIcon className="size-4" />Search
           <kbd className="ml-auto rounded border border-slate-200 bg-white px-1.5 text-[10px]">Ctrl K</kbd>
         </button>
@@ -187,14 +187,14 @@ function Sidebar({ profile, pages, onNavigate, onPassword, onSearch }: {
           </button>
           {newOpen && <div className="mt-1 space-y-px rounded-lg border border-slate-200 p-1">
             {newItems.map(n => (
-              <Link key={n.to} to={n.to} onClick={go} className="flex items-center gap-3 rounded-md px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900">
+              <Link key={n.to} to={n.to} onClick={go} className="flex items-center gap-3 rounded-md px-3 py-1.5 text-[13px] text-slate-600 hover:bg-slate-100 hover:text-slate-900">
                 <n.icon className="size-4 text-slate-400" />{n.label}
               </Link>
             ))}
           </div>}
         </div>}
       </div>
-      <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-2">
+      <nav aria-label="Main" className="flex-1 space-y-4 overflow-y-auto px-3 py-2">
         {groups.map(g => {
           // One entry per section (its first tab), plus the pages that stand alone.
           const entries = pages.filter((p, i) => p.group === g && (!p.section || pages.findIndex(q => q.section === p.section) === i))
@@ -228,7 +228,7 @@ function Sidebar({ profile, pages, onNavigate, onPassword, onSearch }: {
         <div className="flex items-center gap-3 rounded-lg px-2 py-2">
           <div className="grid size-9 place-items-center rounded-full bg-gradient-to-br from-slate-100 to-slate-200 text-xs font-semibold text-slate-700">{initials}</div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-slate-900">{profile.full_name}</div>
+            <div className="truncate text-[13px] font-medium text-slate-900">{profile.full_name}</div>
             <div className="text-xs capitalize text-slate-500">{profile.role}</div>
           </div>
           <button title="Change password" onClick={onPassword} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><KeyRound className="size-4" /></button>
@@ -246,8 +246,10 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
   const [slot, setSlot] = useState<HTMLElement | null>(null)  // header action area, see page.tsx
   const { pathname } = useLocation()
   const pages = PAGES.filter(p => p.roles.includes(profile.role))
-  const page = pages.find(p => p.to === pathname) ?? pages[0]
+  // The title looks in every page, so an office login that opens /payslips still sees "My payslips"; the tabs only list pages this role can open.
+  const page = PAGES.find(p => p.to === pathname) ?? pages[0]
   const tabs = page.section ? pages.filter(p => p.section === page.section) : []
+  useEffect(() => { setOpen(false); setNewSheet(false) }, [pathname])
   const office = isOffice(profile.role)
   const newItems = NEW.filter(n => n.roles.includes(profile.role))
   const today = new Date().toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
@@ -295,7 +297,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
         <SearchDialog pages={pages.map(p => p.section ? { ...p, label: `${p.section} · ${p.label}` } : p)} canSeeDocs={office} open={search} setOpen={setSearch} />
         <main className="mx-auto max-w-7xl p-4 pb-20 sm:p-6 lg:pb-6">
           {tabs.length > 1 && (
-            <nav className="no-print -mt-1 mb-5 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200 [scrollbar-width:none]">
+            <nav aria-label="Section" className="no-print -mt-1 mb-5 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200 [scrollbar-width:none]">
               {tabs.map(t => (
                 <Link key={t.to} to={t.to} aria-current={t.to === pathname ? 'page' : undefined}
                   className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-[13px] transition ${
@@ -350,7 +352,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
         </main>
       </div>
 
-      <nav className="no-print fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-slate-200 bg-white/95 backdrop-blur lg:hidden"
+      <nav aria-label="Phone" className="no-print fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-slate-200 bg-white/95 backdrop-blur lg:hidden"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <Link to="/" className={`${barItem} ${pathname === '/' ? 'text-brand' : 'text-slate-500'}`}><LayoutDashboard className="size-5" />Today</Link>
         <button onClick={() => setSearch(true)} className={`${barItem} text-slate-500`}><SearchIcon className="size-5" />Search</button>

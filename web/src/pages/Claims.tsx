@@ -61,13 +61,13 @@ function ClaimCard({ c, actions }: { c: Claim; actions?: React.ReactNode }) {
       <div className="flex flex-wrap gap-2 items-baseline">
         <span className="font-semibold">{rm(c.amount)}</span>
         <span>{c.description}</span>
-        <Pill tone={c.status === 'paid' ? 'ok' : c.status === 'rejected' ? 'danger' : c.status === 'approved' ? 'none' : 'warn'}>{c.status}</Pill>
+        <Pill tone={c.status === 'paid' ? 'ok' : c.status === 'rejected' ? 'danger' : c.status === 'approved' ? 'none' : 'warn'}>{c.status[0].toUpperCase() + c.status.slice(1)}</Pill>
       </div>
-      <div className="text-sm text-slate-500 flex flex-wrap gap-3">
+      <div className="text-[13px] text-slate-500 flex flex-wrap gap-3">
         <span>{dmy(c.date)}</span><span>{c.staff.full_name}</span><span>{c.accounts.name}</span>
         {c.receipt && <button className="link" onClick={() => openReceipt(c.receipt!)}>Receipt</button>}
       </div>
-      {c.review_note && <p className="text-sm">Note: {c.review_note}</p>}
+      {c.review_note && <p className="text-[13px]">Note: {c.review_note}</p>}
       <div className="flex flex-wrap gap-2 pt-2 empty:hidden">{actions}</div>
     </div>
   )

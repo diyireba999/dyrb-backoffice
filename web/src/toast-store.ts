@@ -10,7 +10,11 @@ export function createToastStore(schedule: (fn: () => void, ms: number) => void 
   let nextId = 1
   const listeners = new Set<() => void>()
   const emit = () => listeners.forEach(l => l())
-  const dismiss = (id: number) => { items = items.filter(t => t.id !== id); emit() }
+  const dismiss = (id: number) => {
+    if (!items.some(t => t.id === id)) return
+    items = items.filter(t => t.id !== id)
+    emit()
+  }
   const push = (message: string, opts: ToastOpts = {}) => {
     const id = nextId++
     items = [...items, { id, message, kind: opts.kind ?? 'ok', action: opts.action }]

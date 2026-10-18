@@ -84,7 +84,7 @@ export function Accruals({ role }: { role: Role }) {
           <div className="muted">Still owed on accruals</div>
           <div className="text-lg font-semibold tabular-nums">{owing === null ? '…' : rm(owing)}</div>
         </div>
-        {posted && <p className="flex items-center gap-1 text-sm text-emerald-700"><CheckCircle2 className="size-4" />{monthLabel(month)} posted as {posted.doc_no} on {dmy(posted.date)}</p>}
+        {posted && <p className="flex items-center gap-1 text-[13px] text-emerald-700"><CheckCircle2 className="size-4" />{monthLabel(month)} posted as {posted.doc_no} on {dmy(posted.date)}</p>}
       </div>
 
       <div className="card overflow-x-auto p-0">
