@@ -378,11 +378,11 @@ export function JournalListing({ isOwner }: { isOwner: boolean }) {
       .then(({ data }) => setRows((data as unknown as EntryRow[]) ?? []))
   }, [month, type, doc])
 
-  async function remove(id: number) {
-    if (!confirm('Delete this document? This cannot be undone.')) return
-    const { error } = await supabase.rpc('delete_journal', { p_id: id })
-    if (error) return alert(error.message)
-    setRows(rows.filter(r => r.id !== id))
+  async function remove(r: EntryRow) {
+    if (!await confirmDialog({ title: `Delete ${r.doc_no}?`, body: `${r.description}. This cannot be undone.`, confirmLabel: 'Delete', danger: true })) return
+    const { error } = await supabase.rpc('delete_journal', { p_id: r.id })
+    if (error) return toast(error.message, { kind: 'error' })
+    setRows(rows.filter(x => x.id !== r.id))
   }
 
   const csv = () => downloadCsv(`journal-${month}.csv`, [
@@ -419,12 +419,12 @@ export function JournalListing({ isOwner }: { isOwner: boolean }) {
                   <td className="text-right">{r.journal_lines.map((l, i) => <div key={i}>{l.debit ? rm(l.debit) : ' '}</div>)}</td>
                   <td className="text-right">{r.journal_lines.map((l, i) => <div key={i}>{l.credit ? rm(l.credit) : ' '}</div>)}</td>
                   <td className="no-print whitespace-nowrap text-right">
-                    {r.attachment && <button title="View receipt" className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-brand" onClick={() => openReceipt(r.attachment!)}><Paperclip className="size-4" /></button>}
+                    {r.attachment && <button title="View receipt" className="btn-ghost px-1.5" onClick={() => openReceipt(r.attachment!)}><Paperclip className="size-4" /></button>}
                     {OWNER_SCREEN[r.source] && <Link to={EDITABLE_SOURCES.includes(r.source) ? `${OWNER_SCREEN[r.source]}?doc=${r.doc_no}` : OWNER_SCREEN[r.source]} className="link mr-2"
                       title={EDITABLE_SOURCES.includes(r.source) ? 'Open this document' : 'Change this on the screen that made it'}>
                       {EDITABLE_SOURCES.includes(r.source) ? 'Open' : 'Fix here'}</Link>}
                     {(['manual', 'pv', 'or', 'jv', 'transfer'].includes(r.source) || (isOwner && !['pi', 'sp'].includes(r.source))) &&
-                      <button title="Delete" className="rounded-md p-1.5 text-slate-500 hover:bg-red-50 hover:text-red-600" onClick={() => remove(r.id)}><Trash2 className="size-4" /></button>}
+                      <button title="Delete" className="btn-ghost px-1.5 hover:bg-red-50 hover:text-red-600" onClick={() => remove(r)}><Trash2 className="size-4" /></button>}
                   </td>
                 </tr>
               ))}
