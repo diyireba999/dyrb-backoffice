@@ -184,6 +184,7 @@ export function StaffAdvances({ role }: { role: Role }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [highlight, setHighlight] = useState(0)
+  const first = useRef<HTMLSelectElement>(null)
   const canEdit = role === 'owner' || role === 'accountant'
   const nameOf = (id: number) => employees.find(e => e.id === id)?.name ?? '—'
   const outstandingFor = (id: number) => rows.filter(r => r.employee_id === id).reduce((s, r) => s + Number(r.outstanding), 0)
@@ -209,12 +210,20 @@ export function StaffAdvances({ role }: { role: Role }) {
     const { data, error } = await supabase.rpc('record_advance', {
       p_employee: Number(f.employee), p_date: f.date, p_amount: amount, p_from: f.from, p_note: f.note || null,
     })
+    if (error) { setBusy(false); return setError(error.message) }
+    // The advance is already saved at this point; a failed doc-number lookup should
+    // not stop the toast, just drop the number from it.
+    let doc: string | undefined
+    try {
+      const { data: adv } = await supabase.from('staff_advances').select('journals(doc_no)').eq('id', data).single()
+      doc = (adv as unknown as { journals: { doc_no: string } } | null)?.journals?.doc_no
+    } catch { /* no number in the toast, but the save already succeeded */ }
     setBusy(false)
-    if (error) return setError(error.message)
-    toast(`Salary advance of ${rm(amount)} given to ${nameOf(Number(f.employee))}`)
+    toast(`${doc ? doc + ' · ' : ''}Salary advance of ${rm(amount)} given to ${nameOf(Number(f.employee))}`)
     setHighlight(data as number)
     setF(blankAdvance)
     if (!again) setMode('list')
+    else setTimeout(() => first.current?.focus(), 0)
     load()
   }
 
@@ -234,7 +243,7 @@ export function StaffAdvances({ role }: { role: Role }) {
         <p className="muted">This pays a staff member ahead of payday. The money leaves the till now, and comes back out of their next payslip by itself.</p>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2"><label>Staff member</label>
-            <select value={f.employee} onChange={e => setF({ ...f, employee: e.target.value })} required>
+            <select ref={first} value={f.employee} onChange={e => setF({ ...f, employee: e.target.value })} required autoFocus>
               <option value="">— choose —</option>
               {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
             </select>
@@ -689,7 +698,7 @@ export function PayrollRun({ role }: { role: Role }) {
         {run && <span className={`mb-2 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${runTone(run)}`}>{runLabel(run)}</span>}
         {canEdit && <PageActions>
           <div className="flex items-end gap-2">
-            <div className="w-40"><MonthInput value={newMonth} onChange={setNewMonth} /></div>
+            <label className="mb-0 flex items-center gap-2 whitespace-nowrap">New month<span className="w-40"><MonthInput value={newMonth} onChange={setNewMonth} /></span></label>
             <button className="btn-light" onClick={create} disabled={busyRun}><Plus className="size-4" />Create month</button>
           </div>
         </PageActions>}

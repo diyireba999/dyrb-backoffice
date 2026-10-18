@@ -107,6 +107,6 @@ export function MonthInput({ value, onChange }: { value: string; onChange: (v: s
     onChange={e => { if (/^20\d\d-(0[1-9]|1[0-2])$/.test(e.target.value)) onChange(e.target.value) }} />
 }
 
-export function Pill({ tone = 'none', children }: { tone?: 'none' | 'ok' | 'warn' | 'danger'; children: React.ReactNode }) {
-  return <span className={`pill ${tone === 'none' ? '' : `pill-${tone}`}`}>{children}</span>
+export function Pill({ tone = 'none', title, children }: { tone?: 'none' | 'ok' | 'warn' | 'danger'; title?: string; children: React.ReactNode }) {
+  return <span className={`pill ${tone === 'none' ? '' : `pill-${tone}`}`} title={title}>{children}</span>
 }

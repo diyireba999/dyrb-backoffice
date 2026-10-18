@@ -101,12 +101,12 @@ export type InvoiceForEdit = {
   description: string; doc_no: string; lines: PiLine[]
 }
 
-function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: string; doc: string; amount: number }, again: boolean) => void; editing?: InvoiceForEdit | null }) {
+function NewPurchaseInvoice({ onSaved, editing, initialDate }: { onSaved: (result: { msg: string; doc: string; amount: number; date: string }, again: boolean) => void; editing?: InvoiceForEdit | null; initialDate?: string }) {
   const accounts = useAccounts()
   const { list: suppliers } = useSuppliers()
   const [head, setHead] = useState(editing
     ? { supplier: String(editing.supplier_id), invoice_no: editing.invoice_no ?? '', date: editing.date, terms: '30', due: editing.due_date }
-    : { supplier: '', invoice_no: '', date: todayMY(), terms: '30', due: '' })
+    : { supplier: '', invoice_no: '', date: initialDate ?? todayMY(), terms: '30', due: '' })
   const [lines, setLines] = useState<PiLine[]>(editing ? editing.lines : [{ account: '', memo: '', amount: '' }])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -134,7 +134,7 @@ function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: str
           p_description: editing.description, p_lines: payload,
         })
         if (error) throw new Error(error.message)
-        onSaved({ msg: `Invoice ${editing.invoice_no ?? ''} changed`, doc: editing.doc_no, amount: total }, again)
+        onSaved({ msg: `Invoice ${editing.invoice_no ?? ''} changed`, doc: editing.doc_no, amount: total, date: head.date }, again)
       } else {
         const s = suppliers.find(s => String(s.id) === head.supplier)!
         const { data, error } = await supabase.rpc('create_purchase_invoice', {
@@ -144,7 +144,7 @@ function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: str
         })
         if (error) throw new Error(error.message)
         const { data: inv } = await supabase.from('purchase_invoice_status').select('doc_no').eq('id', data).single()
-        onSaved({ msg: 'Purchase invoice saved', doc: inv?.doc_no ?? '', amount: total }, again)
+        onSaved({ msg: 'Purchase invoice saved', doc: inv?.doc_no ?? '', amount: total, date: head.date }, again)
       }
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
@@ -210,6 +210,7 @@ export function PurchaseInvoices({ role }: { role: Role }) {
   const [editing, setEditing] = useState<InvoiceForEdit | null>(null)
   const [highlight, setHighlight] = useState('')
   const [formKey, setFormKey] = useState(0)
+  const [lastDate, setLastDate] = useState<string | undefined>()
   const [show, setShow] = useState<'open' | 'all'>('open')
   const [rows, setRows] = useState<Invoice[]>([])
   const load = () => { loadInvoices({ open: show === 'open' }).then(setRows) }
@@ -245,11 +246,11 @@ export function PurchaseInvoices({ role }: { role: Role }) {
   if (mode !== 'list') return (
     <div className="space-y-4">
       <button className="link" onClick={() => { setMode('list'); setEditing(null) }}>← Back to list</button>
-      <NewPurchaseInvoice key={formKey} editing={editing}
+      <NewPurchaseInvoice key={formKey} editing={editing} initialDate={lastDate}
         onSaved={(result, again) => {
           toast(`${result.doc || 'Invoice'} ${result.msg.includes('changed') ? 'changed' : 'saved'} · ${rm(result.amount)}`)
           setHighlight(result.doc); setEditing(null); load()
-          if (again) setFormKey(k => k + 1); else setMode('list')
+          if (again) { setLastDate(result.date); setFormKey(k => k + 1) } else setMode('list')
         }} />
     </div>
   )
@@ -258,7 +259,7 @@ export function PurchaseInvoices({ role }: { role: Role }) {
   return (
     <div className="space-y-4">
       <PageActions>
-        <button className="btn" onClick={() => setMode('new')}><Plus className="size-4" />New purchase invoice</button>
+        <button className="btn" onClick={() => { setLastDate(undefined); setMode('new') }}><Plus className="size-4" />New purchase invoice</button>
       </PageActions>
       <div className="inline-flex gap-1 rounded-lg bg-slate-100 p-1">
         <button className={`tab ${show === 'open' ? 'tab-active' : ''}`} onClick={() => setShow('open')}>Unpaid</button>
@@ -277,7 +278,7 @@ export function PurchaseInvoices({ role }: { role: Role }) {
                   <td className="text-slate-500">{dmy(r.date)}</td>
                   <td className="font-medium">{r.supplier}</td>
                   <td>{r.invoice_no}</td>
-                  <td>{due ? <Pill tone={due.tone}>{due.text}</Pill> : <span className="text-slate-500">{dmy(r.due_date)}</span>}</td>
+                  <td>{due ? <Pill tone={due.tone} title={dmy(r.due_date)}>{due.text}</Pill> : <span className="text-slate-500">{dmy(r.due_date)}</span>}</td>
                   <td className="text-right">{rm(r.total)}</td>
                   <td className="text-right font-semibold">{Number(r.outstanding) > 0 ? rm(r.outstanding) : <Pill tone="ok">Paid</Pill>}</td>
                   <td className="whitespace-nowrap text-right">

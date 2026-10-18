@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react'
 import { MONEY_ACCOUNTS, accountTotals, addDays, dmy, docTotal, downloadCsv, loadDocuments, monthStart, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, useSuppliers, type Account, type DocRow, type Role } from '../lib'
@@ -97,6 +97,7 @@ export function JournalEntry() {
   const [head, setHead] = useState({ date: todayMY(), description: '', reference: '', supplier: '' })
   const [lines, setLines] = useState<JvLine[]>([emptyLine(), emptyLine()])
   const [busy, setBusy] = useState(false)
+  const first = useRef<HTMLInputElement>(null)
   const [highlight, setHighlight] = useState('')
   const [error, setError] = useState('')
   const [params] = useSearchParams()
@@ -167,6 +168,7 @@ export function JournalEntry() {
       setLines([emptyLine(), emptyLine()])
       setHighlight(doc)
       if (!again) setMode('list')
+      else setTimeout(() => first.current?.focus(), 0)
       load()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
@@ -187,7 +189,7 @@ export function JournalEntry() {
       {editing && <p className="muted">Changing <b className="font-mono">{editing.doc_no}</b>. It keeps the same number.</p>}
       <div className="grid gap-4 sm:grid-cols-4">
         <div><label>Date</label><input type="date" value={head.date} onChange={e => setHead({ ...head, date: e.target.value })} required /></div>
-        <div className="sm:col-span-2"><label>Description</label><input value={head.description} onChange={e => setHead({ ...head, description: e.target.value })} placeholder="e.g. Depreciation September" required autoFocus /></div>
+        <div className="sm:col-span-2"><label>Description</label><input ref={first} value={head.description} onChange={e => setHead({ ...head, description: e.target.value })} placeholder="e.g. Depreciation September" required autoFocus /></div>
         <div><label>Ref no.</label><input value={head.reference} onChange={e => setHead({ ...head, reference: e.target.value })} placeholder="Optional" /></div>
         {needsSupplier && <div className="sm:col-span-2"><label>Supplier (for Suppliers Owed line)</label>
           <select value={head.supplier} onChange={e => setHead({ ...head, supplier: e.target.value })} required={!editing}>

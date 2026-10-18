@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Paperclip, Trash2 } from 'lucide-react'
 import { EDITABLE_SOURCES, MONEY_ACCOUNTS, accountTotals, dmy, docTotal, downloadCsv, isCostAccount, isDirector, loadDocuments, openReceipt, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, type Account, type DocRow } from '../lib'
@@ -27,6 +27,7 @@ export function PaymentVoucher() {
   const [busy, setBusy] = useState(false)
   const [highlight, setHighlight] = useState('')
   const [error, setError] = useState('')
+  const first = useRef<HTMLInputElement>(null)
   const [params] = useSearchParams()
   const [all, setAll] = useState(!!params.get('doc'))
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
@@ -85,6 +86,7 @@ export function PaymentVoucher() {
       setF({ ...blank, date: f.date, from: f.from }); setEditing(null)
       setHighlight(doc ?? '')
       if (!again) setMode('list')
+      else setTimeout(() => first.current?.focus(), 0)
       load()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
@@ -108,7 +110,7 @@ export function PaymentVoucher() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
         <div><label>Cheque / Ref no.</label><input value={f.reference} onChange={e => set('reference', e.target.value)} placeholder="Optional" /></div>
-        <div className="sm:col-span-2"><label>Pay to</label><input value={f.payee} onChange={e => set('payee', e.target.value)} placeholder="Shop, TNB, landlord…" required autoFocus /></div>
+        <div className="sm:col-span-2"><label>Pay to</label><input value={f.payee} onChange={e => set('payee', e.target.value)} placeholder="Shop, TNB, landlord…" ref={first} required autoFocus /></div>
         <div><label>Account (what for)</label>
           <AccountSelect accounts={accounts} value={f.what} onChange={v => set('what', v)}
             filter={a => (a.type === 'expense' && !isCostAccount(a.code)) || a.code === '3100' || (a.type === 'asset' && a.code >= '1300')
@@ -145,6 +147,7 @@ export function OfficialReceipt() {
   const [busy, setBusy] = useState(false)
   const [highlight, setHighlight] = useState('')
   const [error, setError] = useState('')
+  const first = useRef<HTMLInputElement>(null)
   const [params] = useSearchParams()
   const [all, setAll] = useState(!!params.get('doc'))
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
@@ -191,6 +194,7 @@ export function OfficialReceipt() {
       setF({ ...blank, date: f.date }); setEditing(null)
       setHighlight(doc ?? '')
       if (!again) setMode('list')
+      else setTimeout(() => first.current?.focus(), 0)
       load()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
@@ -215,7 +219,7 @@ export function OfficialReceipt() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
         <div><label>Ref no.</label><input value={f.reference} onChange={e => set('reference', e.target.value)} placeholder="Optional" /></div>
-        <div className="sm:col-span-2"><label>Received from</label><input value={f.from} onChange={e => set('from', e.target.value)} required autoFocus /></div>
+        <div className="sm:col-span-2"><label>Received from</label><input ref={first} value={f.from} onChange={e => set('from', e.target.value)} required autoFocus /></div>
         <div><label>Account</label>
           <AccountSelect accounts={accounts} value={f.kind} onChange={v => set('kind', v)}
             filter={a => a.type === 'income' || a.code === '3000' || a.code === '1300' || isDirector(a.code)} />
@@ -244,6 +248,7 @@ export function Transfer() {
   const [busy, setBusy] = useState(false)
   const [highlight, setHighlight] = useState('')
   const [error, setError] = useState('')
+  const first = useRef<HTMLInputElement>(null)
   const [params] = useSearchParams()
   const [all, setAll] = useState(!!params.get('doc'))
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
@@ -293,6 +298,7 @@ export function Transfer() {
       setF({ ...f, amount: '', reference: '' }); setEditing(null)
       setHighlight(doc ?? '')
       if (!again) setMode('list')
+      else setTimeout(() => first.current?.focus(), 0)
       load()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
@@ -324,7 +330,7 @@ export function Transfer() {
           </p>
         </div>
         <div><label>To</label><AccountSelect accounts={accounts} value={f.to} onChange={v => set('to', v)} filter={money} /></div>
-        <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required autoFocus /></div>
+        <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} ref={first} required autoFocus /></div>
       </div>
       {error && <p className="alert-error">{error}</p>}
       <div className="flex flex-row-reverse justify-start gap-2">
