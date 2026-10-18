@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { CheckCircle2, XCircle } from 'lucide-react'
 import { createToastStore, type ToastOpts } from './toast-store'
 
@@ -26,6 +26,40 @@ export function Toasts() {
           )}
         </div>
       ))}
+    </div>
+  )
+}
+
+// ---- confirm dialog: await confirmDialog({ title: 'Delete PV-000012?', confirmLabel: 'Delete', danger: true })
+type ConfirmOpts = { title: string; body?: ReactNode; confirmLabel?: string; danger?: boolean }
+type Pending = ConfirmOpts & { resolve: (ok: boolean) => void }
+let pending: Pending | null = null
+const confirmListeners = new Set<() => void>()
+const setPending = (p: Pending | null) => { pending = p; confirmListeners.forEach(l => l()) }
+const subscribeConfirm = (l: () => void) => { confirmListeners.add(l); return () => { confirmListeners.delete(l) } }
+
+export function confirmDialog(opts: ConfirmOpts): Promise<boolean> {
+  return new Promise(resolve => setPending({ ...opts, resolve }))
+}
+
+// Rendered once by the Shell. Enter confirms (the confirm button has focus), Esc cancels.
+export function ConfirmHost() {
+  const p = useSyncExternalStore(subscribeConfirm, () => pending)
+  const okRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => { if (p) okRef.current?.focus() }, [p])
+  if (!p) return null
+  const answer = (ok: boolean) => { p.resolve(ok); setPending(null) }
+  return (
+    <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      onClick={() => answer(false)} onKeyDown={e => { if (e.key === 'Escape') answer(false) }}>
+      <div role="dialog" aria-modal="true" className="w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h3 className="font-semibold">{p.title}</h3>
+        {p.body && <div className="mt-2 text-[13px] text-slate-600">{p.body}</div>}
+        <div className="mt-5 flex justify-end gap-2">
+          <button className="btn-light" onClick={() => answer(false)}>Cancel</button>
+          <button ref={okRef} className={p.danger ? 'btn-danger' : 'btn'} onClick={() => answer(true)}>{p.confirmLabel ?? 'OK'}</button>
+        </div>
+      </div>
     </div>
   )
 }
