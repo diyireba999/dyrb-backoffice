@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, Download, Printer } from 'lucide-react'
 import { supabase, todayMY, useLoading, type Account } from './lib'
+import { PageActions } from './page'
 
 export function Done({ msg, doc, again }: { msg: string; doc?: string; again: () => void }) {
   return (
@@ -42,9 +43,8 @@ export function useCompany() {
 }
 export const forgetCompany = () => { companyCache = null }
 
-// Title block + Print / Excel buttons used on every report and listing.
-// The printed header carries the logo, company details and when it was printed;
-// page numbers come from @page in index.css.
+// Report screens: Print / Excel in the page header, filters in the body, and a
+// print-only header carrying the logo, company details and when it was printed.
 export function ReportBar({ title, period, onCsv, children }: {
   title: string; period: string; onCsv?: () => void; children?: React.ReactNode
 }) {
@@ -52,13 +52,11 @@ export function ReportBar({ title, period, onCsv, children }: {
   const printed = new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', dateStyle: 'medium', timeStyle: 'short' })
   return (
     <>
-      <div className="no-print flex flex-wrap items-end gap-3">
-        {children}
-        <div className="ml-auto flex gap-2">
-          <button className="btn-light" onClick={() => window.print()}><Printer className="size-4" />Print / PDF</button>
-          {onCsv && <button className="btn-light" onClick={onCsv}><Download className="size-4" />Excel</button>}
-        </div>
-      </div>
+      <PageActions>
+        <button className="btn-light" onClick={() => window.print()}><Printer className="size-4" />Print / PDF</button>
+        {onCsv && <button className="btn-light" onClick={onCsv}><Download className="size-4" />Excel</button>}
+      </PageActions>
+      {children && <div className="no-print flex flex-wrap items-end gap-3">{children}</div>}
       <div className="hidden print:block">
         <div className="flex items-start justify-between gap-6 border-b-2 border-slate-800 pb-3">
           <div className="flex items-start gap-3">
