@@ -203,9 +203,9 @@ export function ProfitAndLoss() {
           </select>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="btn-light" onClick={() => setRange(monthStart, monthEnd())}>This month</button>
-          <button className="btn-light" onClick={() => setRange(shiftMonths(monthStart, -1), addDays(monthStart, -1))}>Last month</button>
-          <button className="btn-light" onClick={() => setRange(yearStart(), monthEnd())}>Year to date</button>
+          <button className="btn-ghost" onClick={() => setRange(monthStart, monthEnd())}>This month</button>
+          <button className="btn-ghost" onClick={() => setRange(shiftMonths(monthStart, -1), addDays(monthStart, -1))}>Last month</button>
+          <button className="btn-ghost" onClick={() => setRange(yearStart(), monthEnd())}>Year to date</button>
         </div>
       </ReportBar>
       <Ready states={[curState, cmp ? prevState : null]}>
@@ -275,7 +275,7 @@ export function BalanceSheet() {
     <div className="space-y-4">
       <ReportBar title="Balance Sheet" period={`As at ${dmy(asAt)}`} onCsv={csv}>
         <div className="w-44"><label>As at</label><input type="date" value={asAt} onChange={e => setAsAt(e.target.value)} /></div>
-        <label className="flex items-center gap-2 pb-2.5 text-sm font-normal text-slate-700">
+        <label className="flex items-center gap-2 pb-2.5 text-[13px] font-normal text-slate-700">
           <input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} />
           Compare with end of previous month
         </label>

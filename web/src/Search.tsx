@@ -51,14 +51,14 @@ export function SearchDialog({ pages, canSeeDocs, open, setOpen }: {
 
   return (
     <div className="no-print fixed inset-0 z-50 flex items-start justify-center bg-slate-900/30 p-4 pt-[12vh] backdrop-blur-sm" onClick={() => setOpen(false)}>
-      <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div role="dialog" className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 border-b border-slate-100 px-4">
           <SearchIcon className="size-4 text-slate-400" />
           <input ref={input} value={q} placeholder="Search screens or documents (e.g. PV-000012, TNB)…"
             className="h-12 !border-0 px-0 !shadow-none !ring-0"
             onChange={e => { setQ(e.target.value); setActive(0) }}
             onKeyDown={e => {
-              if (e.key === 'Escape') setOpen(false)
+              if (e.key === 'Escape') { e.preventDefault(); setOpen(false) }
               if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(a + 1, hits.length - 1)) }
               if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(a - 1, 0)) }
               if (e.key === 'Enter') go(hits[active])
@@ -69,7 +69,7 @@ export function SearchDialog({ pages, canSeeDocs, open, setOpen }: {
           {hits.length === 0 && <p className="muted px-3 py-6 text-center">Nothing found.</p>}
           {hits.map((h, i) => (
             <button key={h.key} onMouseEnter={() => setActive(i)} onClick={() => go(h)}
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm ${i === active ? 'bg-brand-soft text-brand-dark' : 'text-slate-700'}`}>
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13px] ${i === active ? 'bg-brand-soft text-brand-dark' : 'text-slate-700'}`}>
               <h.icon className="size-4 shrink-0 opacity-70" />
               <span className="min-w-0 flex-1 truncate font-medium">{h.label}</span>
               <span className="shrink-0 text-xs text-slate-400">{h.sub}</span>

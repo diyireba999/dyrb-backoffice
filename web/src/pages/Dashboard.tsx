@@ -30,7 +30,7 @@ function supplierDueNote(due: { dueSoon: number; overdue: number } | null | unde
 }
 
 function QuickButton({ to, icon: Icon, label }: { to: string; icon: LucideIcon; label: string }) {
-  return <Link to={to} className="btn-light h-9"><Icon className="size-4 text-brand" />{label}</Link>
+  return <Link to={to} className="btn-light h-8"><Icon className="size-4 text-brand" />{label}</Link>
 }
 
 // Monday (UTC weekday) of the week containing this date.
@@ -266,7 +266,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
 
       {accountsError && <p className="alert-error">Could not load the balances, so the figures below are left blank: {accountsError}</p>}
       {loaded && negativeStock.length > 0 && (
-        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="rounded-lg bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
           <b>Stock below zero:</b> {negativeStock.map(a => `${a.name} ${rm(all.get(a.code))}`).join(' · ')}.
           {' '}More has been sold than bought in — supplier invoices are probably missing.{' '}
           {!investor && <><Link to="/ap/invoices" className="font-medium underline">Enter purchase invoices</Link>, then do a <Link to="/stock/count" className="font-medium underline">stock count</Link>.</>}
@@ -286,7 +286,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
           <h3 className="font-semibold">Sales</h3>
           <p className="muted mb-4">Using yesterday throughout — today's sales are not uploaded yet.</p>
           {salesBandError ? (
-            <p className="text-sm text-rose-600">Could not load the sales band: {salesBandError}</p>
+            <p className="text-[13px] text-rose-600">Could not load the sales band: {salesBandError}</p>
           ) : !salesBand ? (
             <p className="muted">Loading…</p>
           ) : (
@@ -329,10 +329,10 @@ export function Dashboard({ profile }: { profile: Profile }) {
         <div className="card">
           <h3 className="font-semibold">{monthName}</h3>
           {!loaded ? <p className="muted mt-4">Loading…</p> : accountsError ? (
-            <p className="mt-4 text-sm text-rose-600">Could not load the account list, so these figures are unavailable: {accountsError}</p>
+            <p className="mt-4 text-[13px] text-rose-600">Could not load the account list, so these figures are unavailable: {accountsError}</p>
           ) : (
             <>
-              <dl className="mt-4 space-y-3 text-sm">
+              <dl className="mt-4 space-y-3 text-[13px]">
                 <div className="flex justify-between"><dt className="text-slate-500">Sales (food &amp; drink)</dt><dd className="font-medium tabular-nums">{rm(sales)}</dd></div>
                 <div className="flex justify-between"><dt className="text-slate-500">Cost of sales</dt><dd className="font-medium tabular-nums">{rm(costOfSales)}</dd></div>
                 <div className="flex justify-between border-t border-slate-100 pt-3">
@@ -374,7 +374,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
                   <dd className={`font-semibold tabular-nums ${income - costOfSales - expense < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{rm(income - costOfSales - expense)}</dd>
                 </div>
               </dl>
-              <h4 className="mb-3 mt-6 text-sm font-semibold text-slate-500">Top running costs this month</h4>
+              <h4 className="mb-3 mt-6 text-[13px] font-semibold text-slate-500">Top running costs this month</h4>
               {topExpenses.length ? <RankedBars rows={topExpenses} /> : <p className="muted">No expenses yet.</p>}
             </>
           )}

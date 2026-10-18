@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react'
-import { MONEY_ACCOUNTS, accountTotals, addDays, dmy, downloadCsv, loadDocuments, monthStart, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, useSuppliers, type Account, type DocRow, type Role } from '../lib'
-import { AccountSelect, Done, Empty, ReportBar, Ready } from '../ui'
+import { MONEY_ACCOUNTS, accountTotals, addDays, dmy, docTotal, downloadCsv, loadDocuments, monthStart, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, useSuppliers, type Account, type DocRow, type Role } from '../lib'
+import { AccountSelect, Empty, ReportBar, Ready } from '../ui'
 import { DocumentList } from '../DocumentList'
+import { confirmDialog, toast } from '../feedback'
+import { submittedAgain, useEscape } from '../page'
 
 const TYPE_LABEL: Record<Account['type'], string> = { asset: 'Asset', liability: 'Liability', equity: 'Equity', income: 'Income', expense: 'Expense' }
 // Assets and expenses grow on the debit side; the rest grow on the credit side.
@@ -26,10 +28,11 @@ export function ChartOfAccounts({ role }: { role: Role }) {
     const { error } = await supabase.from('accounts').insert(f)
     if (error) return setError(error.message.includes('duplicate') ? 'That account code already exists' : error.message)
     setF({ ...f, code: '', name: '' }); setError(''); load()
+    toast(`Account ${f.code} added`)
   }
   async function update(code: string, patch: Partial<Account>) {
     const { error } = await supabase.from('accounts').update(patch).eq('code', code)
-    if (error) alert(error.message)
+    if (error) toast(error.message, { kind: 'error' })
     load()
   }
 
@@ -94,14 +97,17 @@ export function JournalEntry() {
   const [head, setHead] = useState({ date: todayMY(), description: '', reference: '', supplier: '' })
   const [lines, setLines] = useState<JvLine[]>([emptyLine(), emptyLine()])
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<{ msg: string; doc: string } | null>(null)
+  const first = useRef<HTMLInputElement>(null)
+  const [highlight, setHighlight] = useState('')
   const [error, setError] = useState('')
   const [params] = useSearchParams()
   const [all, setAll] = useState(!!params.get('doc'))
   const load = () => { loadDocuments('jv', all ? 240 : 3).then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
   useEffect(load, [all])
+  useEscape(() => { if (mode === 'form' && !busy) { setMode('list'); setError('') } })
 
   function startNew() {
+    setHighlight('')
     setEditing(null)
     setHead({ date: todayMY(), description: '', reference: '', supplier: '' })
     setLines([emptyLine(), emptyLine()])
@@ -109,6 +115,7 @@ export function JournalEntry() {
   }
 
   function startEdit(d: DocRow) {
+    setHighlight('')
     setEditing(d)
     setHead({ date: d.date, description: d.description, reference: d.reference ?? '', supplier: '' })
     setLines(d.journal_lines.map(l => ({
@@ -120,9 +127,9 @@ export function JournalEntry() {
   }
 
   async function remove(d: DocRow) {
-    if (!confirm(`Delete ${d.doc_no}? This cannot be undone.`)) return
+    if (!await confirmDialog({ title: `Delete ${d.doc_no}?`, body: `${d.description} · ${rm(docTotal(d))}. This cannot be undone.`, confirmLabel: 'Delete', danger: true })) return
     const { error } = await supabase.rpc('delete_journal', { p_id: d.id })
-    if (error) return alert(error.message)
+    if (error) return toast(error.message, { kind: 'error' })
     load()
   }
 
@@ -138,37 +145,41 @@ export function JournalEntry() {
     if (used.some(l => Number(l.debit) && Number(l.credit))) return setError('Each line is either debit or credit, not both')
     if (!balanced) return setError('Total debit must equal total credit')
     setBusy(true); setError('')
+    const again = submittedAgain(e)
     try {
       const payload = used.map(l => ({
         account: l.account, memo: l.memo || undefined,
         ...(Number(l.debit) ? { debit: round2(Number(l.debit)) } : { credit: round2(Number(l.credit)) }),
       }))
+      let doc = ''
       if (editing) {
         await updateJournal(editing.id, head.date, head.description, payload, { reference: head.reference })
-        setDone({ msg: `${editing.doc_no} changed`, doc: editing.doc_no })
+        doc = editing.doc_no
+        toast(`${doc} changed`)
       } else {
         const id = await postJournal(head.date, head.description, payload,
           { source: 'jv', reference: head.reference, supplier: head.supplier ? Number(head.supplier) : undefined })
         const { data } = await supabase.from('journals').select('doc_no').eq('id', id).single()
-        setDone({ msg: 'Journal entry saved', doc: data?.doc_no ?? '' })
+        doc = data?.doc_no ?? ''
+        toast(`${doc || 'Journal'} saved · ${rm(dr)}`)
       }
       setEditing(null)
       setHead({ ...head, description: '', reference: '', supplier: '' })
       setLines([emptyLine(), emptyLine()])
+      setHighlight(doc)
+      if (!again) setMode('list')
+      else setTimeout(() => first.current?.focus(), 0)
       load()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
   }
-
-  if (done !== null) return <Done msg={done.msg} doc={done.doc}
-    again={() => { setDone(null); setMode('list') }} />
 
   if (mode === 'list') return (
     <>
       {error && <p className="alert-error">{error}</p>}
       <DocumentList rows={rows} all={all} onShowAll={() => setAll(true)} newLabel="New journal entry"
         emptyText={all ? 'No journal entries.' : 'No journal entries in the last three months.'}
-        onNew={startNew} onEdit={startEdit} onDelete={remove} canEdit canDelete />
+        onNew={startNew} onEdit={startEdit} onDelete={remove} canEdit canDelete highlight={highlight} />
     </>
   )
 
@@ -178,7 +189,7 @@ export function JournalEntry() {
       {editing && <p className="muted">Changing <b className="font-mono">{editing.doc_no}</b>. It keeps the same number.</p>}
       <div className="grid gap-4 sm:grid-cols-4">
         <div><label>Date</label><input type="date" value={head.date} onChange={e => setHead({ ...head, date: e.target.value })} required /></div>
-        <div className="sm:col-span-2"><label>Description</label><input value={head.description} onChange={e => setHead({ ...head, description: e.target.value })} placeholder="e.g. Depreciation September" required /></div>
+        <div className="sm:col-span-2"><label>Description</label><input ref={first} value={head.description} onChange={e => setHead({ ...head, description: e.target.value })} placeholder="e.g. Depreciation September" required autoFocus /></div>
         <div><label>Ref no.</label><input value={head.reference} onChange={e => setHead({ ...head, reference: e.target.value })} placeholder="Optional" /></div>
         {needsSupplier && <div className="sm:col-span-2"><label>Supplier (for Suppliers Owed line)</label>
           <select value={head.supplier} onChange={e => setHead({ ...head, supplier: e.target.value })} required={!editing}>
@@ -211,10 +222,14 @@ export function JournalEntry() {
         </table>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className={`text-sm font-medium ${balanced ? 'text-emerald-600' : 'text-amber-600'}`}>
+        <span className={`text-[13px] font-medium ${balanced ? 'text-emerald-600' : 'text-amber-600'}`}>
           {balanced ? 'Balanced' : dr + cr === 0 ? 'Enter debit and credit amounts' : `Out of balance by ${rm(Math.abs(dr - cr))}`}
         </span>
-        <button className="btn" disabled={busy || !balanced}>{busy ? 'Saving…' : 'Save journal'}</button>
+        <div className="flex flex-row-reverse justify-start gap-2">
+          <button className="btn" disabled={busy || !balanced}>{busy ? 'Saving…' : 'Save journal'}</button>
+          {!editing && <button className="btn-light" name="again" disabled={busy || !balanced}>Save & add another</button>}
+          <button type="button" className="btn-ghost" onClick={() => { setMode('list'); setError('') }}>Cancel</button>
+        </div>
       </div>
       {error && <p className="alert-error">{error}</p>}
     </form>
@@ -331,7 +346,7 @@ export function BankReconciliation() {
 
   async function toggle(l: LedgerLine) {
     const { error } = await supabase.rpc('set_cleared', { p_line_ids: [l.id], p_date: l.cleared_on ? null : date })
-    if (error) return alert(error.message)
+    if (error) return toast(error.message, { kind: 'error' })
     load()
   }
 

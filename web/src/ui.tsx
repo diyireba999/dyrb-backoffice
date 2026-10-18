@@ -1,17 +1,7 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Download, Printer } from 'lucide-react'
+import { Download, Printer } from 'lucide-react'
 import { supabase, todayMY, useLoading, type Account } from './lib'
-
-export function Done({ msg, doc, again }: { msg: string; doc?: string; again: () => void }) {
-  return (
-    <div className="card flex max-w-xl flex-col items-center gap-3 py-10 text-center">
-      <CheckCircle2 className="size-10 text-emerald-500" />
-      <p className="font-semibold">{msg}</p>
-      {doc && <p className="badge">{doc}</p>}
-      <button className="btn" onClick={again}>Add another</button>
-    </div>
-  )
-}
+import { PageActions } from './page'
 
 export function AccountSelect({ accounts, value, onChange, filter = () => true, required = true, disabled = false }: {
   accounts: Account[]; value: string; onChange: (v: string) => void
@@ -42,9 +32,8 @@ export function useCompany() {
 }
 export const forgetCompany = () => { companyCache = null }
 
-// Title block + Print / Excel buttons used on every report and listing.
-// The printed header carries the logo, company details and when it was printed;
-// page numbers come from @page in index.css.
+// Report screens: Print / Excel in the page header, filters in the body, and a
+// print-only header carrying the logo, company details and when it was printed.
 export function ReportBar({ title, period, onCsv, children }: {
   title: string; period: string; onCsv?: () => void; children?: React.ReactNode
 }) {
@@ -52,13 +41,11 @@ export function ReportBar({ title, period, onCsv, children }: {
   const printed = new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', dateStyle: 'medium', timeStyle: 'short' })
   return (
     <>
-      <div className="no-print flex flex-wrap items-end gap-3">
-        {children}
-        <div className="ml-auto flex gap-2">
-          <button className="btn-light" onClick={() => window.print()}><Printer className="size-4" />Print / PDF</button>
-          {onCsv && <button className="btn-light" onClick={onCsv}><Download className="size-4" />Excel</button>}
-        </div>
-      </div>
+      <PageActions>
+        <button className="btn-light" onClick={() => window.print()}><Printer className="size-4" />Print / PDF</button>
+        {onCsv && <button className="btn-light" onClick={onCsv}><Download className="size-4" />Excel</button>}
+      </PageActions>
+      {children && <div className="no-print flex flex-wrap items-end gap-3">{children}</div>}
       <div className="hidden print:block">
         <div className="flex items-start justify-between gap-6 border-b-2 border-slate-800 pb-3">
           <div className="flex items-start gap-3">
@@ -72,7 +59,7 @@ export function ReportBar({ title, period, onCsv, children }: {
           </div>
           <div className="text-right">
             <div className="text-xl font-bold uppercase tracking-wide">{title}</div>
-            <div className="text-sm font-medium">{period}</div>
+            <div className="text-[13px] font-medium">{period}</div>
             <div className="mt-1 text-[10px] text-slate-500">Printed {printed}</div>
           </div>
         </div>
@@ -104,7 +91,7 @@ export function SetupWarning() {
   }, [])
   if (!missing) return null
   return (
-    <div className="no-print mx-auto mb-4 max-w-7xl rounded-lg bg-red-50 px-4 py-3 text-sm text-red-800">
+    <div className="no-print mx-auto mb-4 max-w-7xl rounded-lg bg-red-50 px-4 py-3 text-[13px] text-red-800">
       <b>Database setup is not finished.</b> Reports and the General Ledger will show zero until it is.
       Run <code>supabase/003b_repair.sql</code> in the Supabase SQL Editor, then reload this page.
       <div className="mt-1 text-xs opacity-80">{missing}</div>
@@ -118,4 +105,8 @@ export function SetupWarning() {
 export function MonthInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return <input type="month" defaultValue={value}
     onChange={e => { if (/^20\d\d-(0[1-9]|1[0-2])$/.test(e.target.value)) onChange(e.target.value) }} />
+}
+
+export function Pill({ tone = 'none', title, children }: { tone?: 'none' | 'ok' | 'warn' | 'danger'; title?: string; children: React.ReactNode }) {
+  return <span className={`pill ${tone === 'none' ? '' : `pill-${tone}`}`} title={title}>{children}</span>
 }

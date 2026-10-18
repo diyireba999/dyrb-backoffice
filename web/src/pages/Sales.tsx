@@ -4,6 +4,7 @@ import { CheckCircle2, CloudUpload, Plus, Trash2, TriangleAlert } from 'lucide-r
 import { MONEY_ACCOUNTS, dmy, rm, round2, supabase, useAccounts, type Account, type Role } from '../lib'
 import { cogsLinesFor, dayTotal, daySuspect, parseBillSummary, parseFiuu, parseProductSales, paymentTotal, salesLinesFor, type Day, type ItemSale, type Settlement } from '../zeoniq'
 import { AccountSelect, Empty } from '../ui'
+import { confirmDialog } from '../feedback'
 
 export function UploadSales({ role }: { role: Role }) {
   const [days, setDays] = useState<Day[]>([])
@@ -155,14 +156,14 @@ export function UploadSales({ role }: { role: Role }) {
   return (
     <div className="space-y-4">
       <div className="card">
-        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 py-10 text-center hover:border-brand">
+        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-slate-300 py-10 text-center hover:border-brand">
           <CloudUpload className="size-8 text-slate-400" />
           <span className="font-medium">Choose the Zeoniq Bill Summary file</span>
           <span className="muted">Zeoniq → Reports → Bill Summary Listing → Export to Excel (.xlsx)</span>
           {fileName && <span className="badge mt-1">{fileName}</span>}
           <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} />
         </label>
-        <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 py-4 text-center text-sm hover:border-brand">
+        <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 py-4 text-center text-[13px] hover:border-brand">
           <span className="font-medium">Optional: Product Sales export, to split food / beverage / liquor</span>
           {itemFile && <span className="badge">{itemFile}</span>}
           <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => e.target.files?.[0] && onItemFile(e.target.files[0])} />
@@ -231,7 +232,7 @@ export function UploadSales({ role }: { role: Role }) {
             </table>
           </div>
           {replacing.some(d => { const cogs = cogsFor(d); return !cogs || cogs.lines.length === 0 }) && (
-            <p className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            <p className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-700">
               <TriangleAlert className="size-4 shrink-0" />
               Replacing a day also removes its cost of sales. Load the Product Sales file too, or that day
               will show sales with no cost against it until you re-split.
@@ -329,7 +330,7 @@ export function CardSettlement() {
   return (
     <div className="space-y-4">
       <div className="card">
-        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 py-10 text-center hover:border-brand">
+        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-slate-300 py-10 text-center hover:border-brand">
           <CloudUpload className="size-8 text-slate-400" />
           <span className="font-medium">Choose the Fiuu transaction listing</span>
           <span className="muted">Fiuu portal → Transaction Listing → export to Excel</span>
@@ -449,7 +450,7 @@ export function SalesSettings({ role }: { role: Role }) {
     setAdd({ code: '', label: '', account: '1000' }); load()
   }
   async function remove(code: string) {
-    if (!confirm(`Remove ${code}? Files containing it will not import until it is added back.`)) return
+    if (!await confirmDialog({ title: `Remove ${code}?`, body: 'Files containing it will not import until it is added back.', confirmLabel: 'Remove', danger: true })) return
     await supabase.from('payment_map').delete().eq('code', code); load()
   }
   async function setSetting(key: string, value: string) {
@@ -494,7 +495,7 @@ export function SalesSettings({ role }: { role: Role }) {
                 <td className="font-mono text-xs">{r.code}</td>
                 <td>{r.label}</td>
                 <td className="w-72"><AccountSelect accounts={accounts} value={r.account} onChange={v => setAccount(r.code, v)} disabled={!canEdit} /></td>
-                <td className="text-right">{canEdit && <button title="Remove" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => remove(r.code)}><Trash2 className="size-4" /></button>}</td>
+                <td className="text-right">{canEdit && <button title="Remove" className="btn-ghost px-1.5 hover:bg-red-50 hover:text-red-600" onClick={() => remove(r.code)}><Trash2 className="size-4" /></button>}</td>
               </tr>
             ))}
           </tbody>
@@ -534,7 +535,7 @@ function ItemCategories({ canEdit, accounts }: { canEdit: boolean; accounts: Acc
     setAdd({ prefix: '', label: '', account: '4000' }); load()
   }
   async function remove(prefix: string) {
-    if (!confirm(`Remove ${prefix}?`)) return
+    if (!await confirmDialog({ title: `Remove ${prefix}?`, confirmLabel: 'Remove', danger: true })) return
     await supabase.from('item_category_map').delete().eq('prefix', prefix); load()
   }
 
@@ -554,7 +555,7 @@ function ItemCategories({ canEdit, accounts }: { canEdit: boolean; accounts: Acc
               <td className="font-mono text-xs">{r.prefix}</td>
               <td>{r.label}</td>
               <td className="w-72"><AccountSelect accounts={accounts} value={r.account} onChange={v => setAccount(r.prefix, v)} filter={a => a.type === 'income'} disabled={!canEdit} /></td>
-              <td className="text-right">{canEdit && <button title="Remove" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => remove(r.prefix)}><Trash2 className="size-4" /></button>}</td>
+              <td className="text-right">{canEdit && <button title="Remove" className="btn-ghost px-1.5 hover:bg-red-50 hover:text-red-600" onClick={() => remove(r.prefix)}><Trash2 className="size-4" /></button>}</td>
             </tr>
           ))}
         </tbody>

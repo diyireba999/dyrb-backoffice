@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { DayAmount } from './dashboard-math'
 import { supplierInvoiceCategory } from './dashboard-math'
+import { toast } from './feedback'
 
 // Count requests in flight so the UI can say "Loading…" instead of an empty
 // "No invoices" while the data is still on its way.
@@ -90,7 +91,7 @@ export const isCostAccount = (code: string) => code >= '5000' && code < '5100'
 // Photos already attached can still be viewed; nothing new is uploaded (storage is limited).
 export async function openReceipt(path: string) {
   const { data, error } = await supabase.storage.from('receipts').createSignedUrl(path, 300)
-  if (error || !data) return alert('Could not open the receipt: ' + (error?.message ?? 'not found'))
+  if (error || !data) return toast('Could not open the receipt: ' + (error?.message ?? 'not found'), { kind: 'error' })
   window.open(data.signedUrl, '_blank')
 }
 

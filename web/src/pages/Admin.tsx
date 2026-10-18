@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase, type Profile, type Role } from '../lib'
 import { forgetCompany, type Company } from '../ui'
+import { confirmDialog, toast } from '../feedback'
 
 const ROLES: Role[] = ['owner', 'manager', 'accountant', 'staff', 'investor']
 
@@ -13,7 +14,7 @@ export function Users({ me }: { me: string }) {
 
   async function update(id: string, patch: Partial<Profile>) {
     const { error } = await supabase.from('profiles').update(patch).eq('id', id)
-    if (error) alert(error.message)
+    if (error) toast(error.message, { kind: 'error' })
     load()
   }
 
@@ -22,8 +23,8 @@ export function Users({ me }: { me: string }) {
     const { error } = await supabase.rpc('create_login', {
       p_username: add.username, p_full_name: add.full_name, p_role: add.role, p_password: add.password,
     })
-    if (error) return alert(error.message)
-    alert(`Added. ${add.full_name} signs in as "${add.username.trim().toLowerCase()}" with the password you set.`)
+    if (error) return toast(error.message, { kind: 'error' })
+    toast(`Added. ${add.full_name} signs in as "${add.username.trim().toLowerCase()}".`)
     setAdd({ username: '', full_name: '', role: 'staff', password: '' })
     load()
   }
@@ -32,13 +33,14 @@ export function Users({ me }: { me: string }) {
     const password = prompt(`New password for ${p.full_name} (at least 8 characters):`)
     if (!password) return
     const { error } = await supabase.rpc('set_login_password', { p_user: p.id, p_password: password })
-    alert(error ? error.message : `Password changed. Tell ${p.full_name} the new one.`)
+    if (error) toast(error.message, { kind: 'error' })
+    else toast(`Password changed. Tell ${p.full_name} the new one.`)
   }
 
   async function setActive(p: Profile, active: boolean) {
-    if (!active && !confirm(`Disable ${p.full_name}? They are signed out and cannot sign in until enabled again. Their records stay.`)) return
+    if (!active && !await confirmDialog({ title: `Disable ${p.full_name}?`, body: 'They are signed out and cannot sign in until enabled again. Their records stay.', confirmLabel: 'Disable', danger: true })) return
     const { error } = await supabase.rpc('set_login_active', { p_user: p.id, p_active: active })
-    if (error) alert(error.message)
+    if (error) toast(error.message, { kind: 'error' })
     load()
   }
 
@@ -62,7 +64,7 @@ export function Users({ me }: { me: string }) {
             {list.map(p => (
               <tr key={p.id} className={p.active ? '' : 'opacity-50'}>
                 <td><input defaultValue={p.full_name} onBlur={e => e.target.value !== p.full_name && update(p.id, { full_name: e.target.value })} /></td>
-                <td className="font-mono text-sm">{p.username}</td>
+                <td className="font-mono text-[13px]">{p.username}</td>
                 <td className="w-44">
                   <select value={p.role} disabled={p.id === me} title={p.id === me ? 'You cannot change your own role' : ''} onChange={e => update(p.id, { role: e.target.value as Role })}>
                     {ROLES.map(r => <option key={r} value={r}>{r[0].toUpperCase() + r.slice(1)}</option>)}
@@ -98,7 +100,8 @@ export function CompanyDetails() {
     if (!f) return
     const { error } = await supabase.from('company').update({ ...f, updated_at: new Date().toISOString() }).eq('id', 1)
     forgetCompany()
-    setMsg(error ? error.message : 'Saved')
+    if (error) toast(error.message, { kind: 'error' })
+    else { setMsg(''); toast('Company details saved') }
   }
 
   if (!f) return null
@@ -109,7 +112,7 @@ export function CompanyDetails() {
       <div><label>Registration no. (SSM)</label><input value={f.reg_no} onChange={e => setF({ ...f, reg_no: e.target.value })} placeholder="e.g. 202301012345 (1500000-X)" /></div>
       <div><label>Address</label><textarea rows={3} value={f.address} onChange={e => setF({ ...f, address: e.target.value })} /></div>
       <div><label>Phone</label><input value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} /></div>
-      {msg && <p className={msg === 'Saved' ? 'text-sm text-emerald-700' : 'alert-error'}>{msg}</p>}
+      {msg && <p className="alert-error">{msg}</p>}
       <div className="flex justify-end"><button className="btn">Save</button></div>
     </form>
   )

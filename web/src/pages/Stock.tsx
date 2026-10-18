@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Search } from 'lucide-react'
 import { accountTotals, dmy, downloadCsv, rm, round2, supabase, todayMY, type Role } from '../lib'
 import { Empty, ReportBar } from '../ui'
+import { toast } from '../feedback'
 import { codePrefix } from '../zeoniq'
 
 type ItemCost = { code: string; name: string; unit_cost: number; last_seen: string | null }
@@ -14,7 +15,6 @@ export function ItemCosts({ role }: { role: Role }) {
   const [names, setNames] = useState<Record<string, string>>({})
   const [q, setQ] = useState('')
   const [onlyMissing, setOnlyMissing] = useState(false)
-  const [msg, setMsg] = useState('')
   const canEdit = role === 'owner' || role === 'accountant'
 
   const load = () => {
@@ -29,7 +29,7 @@ export function ItemCosts({ role }: { role: Role }) {
   async function setCost(code: string, value: string) {
     const unit_cost = round2(Number(value || 0))
     const { error } = await supabase.from('item_costs').update({ unit_cost, updated_at: new Date().toISOString() }).eq('code', code)
-    if (error) return setMsg(error.message)
+    if (error) return toast(error.message, { kind: 'error' })
     setRows(rows.map(r => r.code === code ? { ...r, unit_cost } : r))
   }
 
@@ -50,12 +50,11 @@ export function ItemCosts({ role }: { role: Role }) {
             <input className="pl-9" value={q} onChange={e => setQ(e.target.value)} placeholder="Code or name" />
           </div>
         </div>
-        <label className="flex h-10 items-center gap-2 text-sm font-normal">
+        <label className="flex h-8 items-center gap-2 text-[13px] font-normal">
           <input type="checkbox" checked={onlyMissing} onChange={e => setOnlyMissing(e.target.checked)} />
           Only items without a cost ({missing})
         </label>
       </ReportBar>
-      {msg && <p className="alert-error">{msg}</p>}
       <p className="muted">
         Cost per unit is what the drink or dish costs you — one mug, one bottle, one plate.
         Items appear here by themselves when you upload a Product Sales file. An item with no cost adds nothing to cost of sales.
@@ -90,7 +89,6 @@ export function StockCount({ role }: { role: Role }) {
   const [date, setDate] = useState(todayMY())
   const [counted, setCounted] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
   const canEdit = role === 'owner' || role === 'accountant'
 
@@ -113,7 +111,7 @@ export function StockCount({ role }: { role: Role }) {
     const { data, error } = await supabase.rpc('post_stock_count', { p_date: date, p_lines: lines })
     setBusy(false)
     if (error) return setError(error.message)
-    setMsg(data ? 'Stock count posted' : 'Nothing to adjust: the count matches the books')
+    toast(data ? 'Stock count posted' : 'Nothing to adjust: the count matches the books')
     setCounted({}); load()
   }
 
@@ -149,7 +147,6 @@ export function StockCount({ role }: { role: Role }) {
         </table>
       </div>
       {error && <p className="alert-error">{error}</p>}
-      {msg && <p className="text-sm text-emerald-700">{msg}</p>}
       {canEdit && <div className="flex justify-end"><button className="btn" disabled={busy || !book}>{busy ? 'Saving…' : 'Post stock count'}</button></div>}
     </form>
   )

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { MONEY_ACCOUNTS, MONEY_NAMES, dmy, isCostAccount, isDirector, isOffice, openReceipt, rm, round2, supabase, todayMY, useAccounts, type Profile } from '../lib'
-import { Empty } from '../ui'
+import { Empty, Pill } from '../ui'
+import { confirmDialog, toast } from '../feedback'
 
 type Status = 'pending' | 'approved' | 'rejected' | 'paid'
 type Claim = {
@@ -9,10 +10,6 @@ type Claim = {
   staff: { full_name: string }; accounts: { name: string }
 }
 
-const STATUS_STYLE: Record<Status, string> = {
-  pending: 'bg-amber-100 text-amber-800', approved: 'bg-blue-100 text-blue-800',
-  rejected: 'bg-red-100 text-red-800', paid: 'bg-green-100 text-green-800',
-}
 const SELECT = '*, staff:profiles!claims_staff_id_fkey(full_name), accounts(name)'
 
 function NewClaim({ onSaved }: { onSaved: () => void }) {
@@ -32,6 +29,7 @@ function NewClaim({ onSaved }: { onSaved: () => void }) {
       if (error) throw new Error(error.message)
       setF({ ...f, account: '', description: '', amount: '' })
       onSaved()
+      toast(`Claim saved · ${rm(amount)}`)
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
   }
@@ -63,13 +61,13 @@ function ClaimCard({ c, actions }: { c: Claim; actions?: React.ReactNode }) {
       <div className="flex flex-wrap gap-2 items-baseline">
         <span className="font-semibold">{rm(c.amount)}</span>
         <span>{c.description}</span>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLE[c.status]}`}>{c.status}</span>
+        <Pill tone={c.status === 'paid' ? 'ok' : c.status === 'rejected' ? 'danger' : c.status === 'approved' ? 'none' : 'warn'}>{c.status[0].toUpperCase() + c.status.slice(1)}</Pill>
       </div>
-      <div className="text-sm text-slate-500 flex flex-wrap gap-3">
+      <div className="text-[13px] text-slate-500 flex flex-wrap gap-3">
         <span>{dmy(c.date)}</span><span>{c.staff.full_name}</span><span>{c.accounts.name}</span>
         {c.receipt && <button className="link" onClick={() => openReceipt(c.receipt!)}>Receipt</button>}
       </div>
-      {c.review_note && <p className="text-sm">Note: {c.review_note}</p>}
+      {c.review_note && <p className="text-[13px]">Note: {c.review_note}</p>}
       <div className="flex flex-wrap gap-2 pt-2 empty:hidden">{actions}</div>
     </div>
   )
@@ -95,26 +93,26 @@ export function Claims({ profile }: { profile: Profile }) {
   async function review(c: Claim, status: 'approved' | 'rejected', note = '') {
     const { error } = await supabase.from('claims')
       .update({ status, review_note: note || null, reviewed_by: profile.id }).eq('id', c.id)
-    if (error) alert(error.message)
+    if (error) toast(error.message, { kind: 'error' })
     setRejecting(null); setReason('')
     load()
   }
 
   async function pay(c: Claim) {
     const { error } = await supabase.rpc('pay_claim', { p_id: c.id, p_from: payFrom, p_date: todayMY() })
-    if (error) alert(error.message)
+    if (error) toast(error.message, { kind: 'error' })
     load()
   }
 
   async function unpay(c: Claim) {
-    if (!confirm(`Undo the payment of ${rm(c.amount)}? The claim goes back to approved and the payment entry is removed.`)) return
+    if (!await confirmDialog({ title: `Undo the payment of ${rm(c.amount)}?`, body: 'The claim goes back to approved and the payment entry is removed.', confirmLabel: 'Undo paid' })) return
     const { error } = await supabase.rpc('unpay_claim', { p_id: c.id })
-    if (error) alert(error.message)
+    if (error) toast(error.message, { kind: 'error' })
     load()
   }
 
   async function remove(c: Claim) {
-    if (!confirm('Cancel this claim?')) return
+    if (!await confirmDialog({ title: 'Cancel this claim?', body: `${c.description} · ${rm(c.amount)}`, confirmLabel: 'Cancel claim', danger: true })) return
     await supabase.from('claims').delete().eq('id', c.id)
     load()
   }

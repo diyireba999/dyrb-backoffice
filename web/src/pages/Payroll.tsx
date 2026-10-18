@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Download, FileText, Pencil, Plus, Printer, RefreshCw, Trash2, XCircle } from 'lucide-react'
 import { dmy, downloadCsv, isDirector, isOffice, MONEY_ACCOUNTS, MONEY_NAMES, rm, round2, supabase, todayMY, useAccounts, type Profile, type Role } from '../lib'
-import { Done, Empty, ReportBar, MonthInput, useCompany } from '../ui'
+import { Empty, ReportBar, MonthInput, useCompany } from '../ui'
+import { confirmDialog, toast } from '../feedback'
+import { PageActions, submittedAgain, useEscape } from '../page'
 
 type Employee = {
   id: number; profile_id: string | null; employee_no: string | null; name: string; id_no: string | null
@@ -49,6 +51,7 @@ export function Employees({ role }: { role: Role }) {
   const load = () => { supabase.from('employees').select('*').order('active', { ascending: false }).order('name').then(({ data }) => setList(data ?? [])) }
   useEffect(load, [])
   useEffect(() => { supabase.from('profiles').select('*').order('full_name').then(({ data }) => setPeople(data ?? [])) }, [])
+  useEscape(() => { if (edit && !saving) { setEdit(null); setError('') } })
 
   function start(e?: Employee) {
     setError('')
@@ -83,6 +86,7 @@ export function Employees({ role }: { role: Role }) {
     setSaving(false)
     if (error) return setError(error.message)
     setEdit(null); load()
+    toast(`${f.name} saved`)
   }
 
   if (edit) return (
@@ -120,8 +124,8 @@ export function Employees({ role }: { role: Role }) {
         </div>
       </div>
       <div className="rounded-xl bg-slate-50 p-4">
-        <p className="mb-3 text-sm font-medium">Deductions for this person</p>
-        <div className="flex flex-wrap gap-4 text-sm">
+        <p className="mb-3 text-[13px] font-medium">Deductions for this person</p>
+        <div className="flex flex-wrap gap-4 text-[13px]">
           {([['epf_on', 'EPF'], ['socso_on', 'SOCSO'], ['eis_on', 'EIS'], ['pcb_on', 'PCB (income tax)']] as const).map(([k, label]) => (
             <label key={k} className="flex items-center gap-2 font-normal">
               <input type="checkbox" checked={edit[k]} onChange={e => setEdit({ ...edit, [k]: e.target.checked })} />{label}
@@ -135,7 +139,7 @@ export function Employees({ role }: { role: Role }) {
       </div>
       {error && <p className="alert-error">{error}</p>}
       <div className="flex justify-end gap-2">
-        <button type="button" className="btn-light" onClick={() => setEdit(null)}>Cancel</button>
+        <button type="button" className="btn-ghost" onClick={() => setEdit(null)}>Cancel</button>
         <button className="btn" disabled={saving}>{saving ? 'Saving…' : 'Save staff'}</button>
       </div>
     </form>
@@ -143,7 +147,7 @@ export function Employees({ role }: { role: Role }) {
 
   return (
     <div className="space-y-4">
-      {canEdit && <div className="flex justify-end"><button className="btn" onClick={() => start()}><Plus className="size-4" />New staff</button></div>}
+      {canEdit && <PageActions><button className="btn" onClick={() => start()}><Plus className="size-4" />New staff</button></PageActions>}
       <div className="card overflow-x-auto p-0">
         {list.length === 0 && <Empty text="No staff yet." />}
         {list.length > 0 && <table>
@@ -156,7 +160,7 @@ export function Employees({ role }: { role: Role }) {
                 <td>{e.pay_type === 'monthly' ? 'Monthly' : 'Hourly'}</td>
                 <td className="text-right">{rm(e.rate)}{e.pay_type === 'hourly' && <span className="text-xs text-slate-500"> /hr</span>}</td>
                 <td className="text-xs text-slate-600">{[e.epf_on && 'EPF', e.socso_on && 'SOCSO', e.eis_on && 'EIS', e.pcb_on && 'PCB'].filter(Boolean).join(' · ') || 'None'}</td>
-                <td className="text-right">{canEdit && <button title="Edit" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand" onClick={() => start(e)}><Pencil className="size-4" /></button>}</td>
+                <td className="text-right">{canEdit && <button title="Edit" className="btn-ghost px-1.5" onClick={() => start(e)}><Pencil className="size-4" /></button>}</td>
               </tr>
             ))}
           </tbody>
@@ -179,7 +183,8 @@ export function StaffAdvances({ role }: { role: Role }) {
   const [f, setF] = useState(blankAdvance)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
+  const [highlight, setHighlight] = useState(0)
+  const first = useRef<HTMLSelectElement>(null)
   const canEdit = role === 'owner' || role === 'accountant'
   const nameOf = (id: number) => employees.find(e => e.id === id)?.name ?? '—'
   const outstandingFor = (id: number) => rows.filter(r => r.employee_id === id).reduce((s, r) => s + Number(r.outstanding), 0)
@@ -187,11 +192,12 @@ export function StaffAdvances({ role }: { role: Role }) {
   const load = () => { supabase.from('advance_balances').select('*').order('date', { ascending: false }).then(({ data }) => setRows((data as Advance[]) ?? [])) }
   useEffect(load, [])
   useEffect(() => { supabase.from('employees').select('*').order('name').then(({ data }) => setEmployees((data as Employee[]) ?? [])) }, [])
+  useEscape(() => { if (mode === 'form' && !busy) { setMode('list'); setError('') } })
 
   // Newest first within each staff member, staff grouped alphabetically.
   const sorted = [...rows].sort((a, b) => nameOf(a.employee_id).localeCompare(nameOf(b.employee_id)) || b.date.localeCompare(a.date))
 
-  function startNew() { setF(blankAdvance); setError(''); setMode('form') }
+  function startNew() { setF(blankAdvance); setHighlight(0); setError(''); setMode('form') }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -200,32 +206,33 @@ export function StaffAdvances({ role }: { role: Role }) {
     const amount = round2(Number(f.amount))
     if (!(amount > 0)) return setError('Enter an amount')
     setBusy(true); setError('')
+    const again = submittedAgain(e)
     const { data, error } = await supabase.rpc('record_advance', {
       p_employee: Number(f.employee), p_date: f.date, p_amount: amount, p_from: f.from, p_note: f.note || null,
     })
-    setBusy(false)
-    if (error) return setError(error.message)
-    const msg = `Salary advance of ${rm(amount)} given to ${nameOf(Number(f.employee))}`
-    // The advance is already saved at this point; a failed doc-number lookup
-    // should not stop the success screen from showing, just its badge.
+    if (error) { setBusy(false); return setError(error.message) }
+    // The advance is already saved at this point; a failed doc-number lookup should
+    // not stop the toast, just drop the number from it.
     let doc: string | undefined
     try {
       const { data: adv } = await supabase.from('staff_advances').select('journals(doc_no)').eq('id', data).single()
       doc = (adv as unknown as { journals: { doc_no: string } } | null)?.journals?.doc_no
-    } catch { /* no badge, but the save already succeeded */ }
-    setDone({ msg, doc })
+    } catch { /* no number in the toast, but the save already succeeded */ }
+    setBusy(false)
+    toast(`${doc ? doc + ' · ' : ''}Salary advance of ${rm(amount)} given to ${nameOf(Number(f.employee))}`)
+    setHighlight(data as number)
     setF(blankAdvance)
+    if (!again) setMode('list')
+    else setTimeout(() => first.current?.focus(), 0)
     load()
   }
 
   async function remove(a: Advance) {
-    if (!confirm('Remove this advance?')) return
+    if (!await confirmDialog({ title: 'Remove this advance?', body: `${nameOf(a.employee_id)} · ${rm(a.amount)}`, confirmLabel: 'Remove', danger: true })) return
     const { error } = await supabase.rpc('delete_advance', { p_id: a.id })
-    if (error) return alert(error.message)
+    if (error) return toast(error.message, { kind: 'error' })
     load()
   }
-
-  if (done) return <Done msg={done.msg} doc={done.doc} again={() => { setDone(null); setMode('list') }} />
 
   if (mode === 'form') {
     const chosen = f.employee ? Number(f.employee) : null
@@ -236,7 +243,7 @@ export function StaffAdvances({ role }: { role: Role }) {
         <p className="muted">This pays a staff member ahead of payday. The money leaves the till now, and comes back out of their next payslip by itself.</p>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2"><label>Staff member</label>
-            <select value={f.employee} onChange={e => setF({ ...f, employee: e.target.value })} required>
+            <select ref={first} value={f.employee} onChange={e => setF({ ...f, employee: e.target.value })} required autoFocus>
               <option value="">— choose —</option>
               {employees.filter(e => e.active).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
             </select>
@@ -252,21 +259,25 @@ export function StaffAdvances({ role }: { role: Role }) {
           <div className="sm:col-span-2"><label>Note (optional)</label><input value={f.note} onChange={e => setF({ ...f, note: e.target.value })} /></div>
         </div>
         {error && <p className="alert-error">{error}</p>}
-        <div className="flex justify-end"><button className="btn" disabled={busy}>{busy ? 'Saving…' : 'Give advance'}</button></div>
+        <div className="flex flex-row-reverse justify-start gap-2">
+          <button className="btn" disabled={busy}>{busy ? 'Saving…' : 'Give advance'}</button>
+          <button className="btn-light" name="again" disabled={busy}>Save & add another</button>
+          <button type="button" className="btn-ghost" onClick={() => { setMode('list'); setError('') }}>Cancel</button>
+        </div>
       </form>
     )
   }
 
   return (
     <div className="space-y-4">
-      {canEdit && <div className="flex justify-end"><button className="btn" onClick={startNew}><Plus className="size-4" />New advance</button></div>}
+      {canEdit && <PageActions><button className="btn" onClick={startNew}><Plus className="size-4" />New advance</button></PageActions>}
       <div className="card overflow-x-auto p-0">
         {sorted.length === 0 && <Empty text="No salary advances yet." />}
         {sorted.length > 0 && <table>
           <thead><tr><th>Date</th><th>Staff</th><th className="text-right">Amount</th><th className="text-right">Outstanding</th><th>Note</th><th></th></tr></thead>
           <tbody>
             {sorted.map(a => (
-              <tr key={a.id}>
+              <tr key={a.id} className={a.id === highlight ? 'row-new' : ''}>
                 <td>{dmy(a.date)}</td>
                 <td className="font-medium">{nameOf(a.employee_id)}</td>
                 <td className="text-right">{rm(a.amount)}</td>
@@ -274,7 +285,7 @@ export function StaffAdvances({ role }: { role: Role }) {
                 <td className="text-slate-600">{a.note}</td>
                 <td className="text-right">
                   {canEdit && Number(a.outstanding) === Number(a.amount) &&
-                    <button title="Remove" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => remove(a)}><Trash2 className="size-4" /></button>}
+                    <button title="Remove" className="btn-ghost px-1.5 hover:bg-red-50 hover:text-red-600" onClick={() => remove(a)}><Trash2 className="size-4" /></button>}
                 </td>
               </tr>
             ))}
@@ -293,6 +304,7 @@ type TsSaved = { hours: number; ot_hours: number }
 
 const daysInMonth = (ym: string) => { const [y, m] = ym.split('-').map(Number); return new Date(y, m, 0).getDate() }
 const closeEnough = (a: number, b: number) => Math.abs(a - b) < 0.005
+const monthLabelOf = (ym: string) => new Date(ym + '-01T00:00:00Z').toLocaleDateString('en-MY', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 
 export function Timesheet({ role }: { role: Role }) {
   const [month, setMonth] = useState(todayMY().slice(0, 7))
@@ -409,7 +421,7 @@ export function Timesheet({ role }: { role: Role }) {
   }
 
   async function clearMonth(e: Employee) {
-    if (!confirm(`Delete all attendance for ${e.name} in ${month}?`)) return
+    if (!await confirmDialog({ title: `Delete all attendance for ${e.name}?`, body: `${monthLabelOf(month)} · every day cleared.`, confirmLabel: 'Clear month', danger: true })) return
     const { error } = await supabase.from('timesheets').delete().eq('employee_id', e.id)
       .gte('work_date', `${month}-01`).lte('work_date', dateFor(days.length))
     if (error) return setError(error.message)
@@ -432,6 +444,7 @@ export function Timesheet({ role }: { role: Role }) {
     const cells = Object.fromEntries(rows.map(r => [`${e.id}:${r.work_date}`, { hours: String(dayHours), ot_hours: '0' }]))
     const sums = Object.fromEntries(rows.map(r => [`${e.id}:${r.work_date}`, { hours: dayHours, ot_hours: 0 }]))
     setData(d => ({ ...d, ...cells })); setSaved(s => ({ ...s, ...sums }))
+    toast(`Filled ${rows.length} day${rows.length === 1 ? '' : 's'} with ${dayHours}h`)
   }
 
   // Totals are built from what has saved, i.e. what create_payroll_run will read.
@@ -563,6 +576,7 @@ export function PayrollRun({ role }: { role: Role }) {
   useEffect(loadRuns, [])
   useEffect(loadSlips, [runId])
   useEffect(loadAdvances, [runId])
+  useEscape(() => { if (editing) { setEditing(null); setError('') } })
 
   async function create() {
     if (busyRun) return
@@ -585,27 +599,32 @@ export function PayrollRun({ role }: { role: Role }) {
 
   async function act(fn: string) {
     if (!runId) return
-    if (fn === 'cancel_payroll_run' && !confirm('Cancel this approved payroll? The salary entry will be removed.')) return
-    if (fn === 'approve_payroll_run' && !confirm(`Approve ${run ? monthName(run.month) : ''} payroll for ${slips.length} staff, net ${rm(total('net_pay'))}? It will be posted to the books (not paid yet) and the payslips locked.`)) return
-    if (fn === 'delete_payroll_run' && !confirm('Delete this draft payroll?')) return
-    if (fn === 'rerun_payroll_run' && !confirm('Build this draft payroll again from the latest timesheet, staff and rates? Changes typed on the payslips will be lost.')) return
+    const ok =
+      fn === 'cancel_payroll_run' ? await confirmDialog({ title: 'Cancel this approved payroll?', body: 'The salary entry will be removed.', confirmLabel: 'Cancel approval', danger: true }) :
+      fn === 'approve_payroll_run' ? await confirmDialog({ title: `Approve ${run ? monthName(run.month) : ''} payroll?`, body: `${slips.length} staff, net ${rm(total('net_pay'))}. It will be posted to the books (not paid yet) and the payslips locked.`, confirmLabel: 'Approve & post' }) :
+      fn === 'delete_payroll_run' ? await confirmDialog({ title: 'Delete this draft payroll?', confirmLabel: 'Delete', danger: true }) :
+      fn === 'rerun_payroll_run' ? await confirmDialog({ title: 'Build this draft again?', body: 'From the latest timesheet, staff and rates. Changes typed on the payslips will be lost.', confirmLabel: 'Re-run' }) :
+      true
+    if (!ok) return
     const { data, error } = await supabase.rpc(fn, { p_id: runId })
     if (error) return setError(error.message)
     if (fn === 'delete_payroll_run') setRunId(null)
     if (fn === 'rerun_payroll_run') setRunId(data)
     setError(''); loadRuns(); loadSlips(); loadAdvances()
+    toast(fn === 'approve_payroll_run' ? 'Payroll approved and posted' : fn === 'cancel_payroll_run' ? 'Approval cancelled' : fn === 'delete_payroll_run' ? 'Draft deleted' : 'Draft rebuilt')
   }
 
   async function markPaid(date: string | null) {
     if (!runId) return
-    if (!date && !confirm(`Take off the paid mark?${run?.paid_journal_id ? ' The salary payment entry will be removed and the amount goes back to 2300 Salaries Payable.' : ''}`)) return
     const from = paidFrom ? accounts.find(a => a.code === paidFrom)?.name ?? paidFrom : ''
-    if (date && !confirm(from
-      ? `Pay ${rm(total('net_pay'))} net salaries from ${from} on ${dmy(date)}? This posts Dr 2300 Salaries Payable / Cr ${from}.`
-      : `Mark as paid on ${dmy(date)} without a payment entry? Only do this if a Payment Voucher from 2300 already recorded it.`)) return
+    const ok = date
+      ? await confirmDialog({ title: from ? `Pay ${rm(total('net_pay'))} net salaries?` : `Mark ${rm(total('net_pay'))} net salaries as paid?`, body: from ? `From ${from} on ${dmy(date)}. This posts Dr 2300 Salaries Payable / Cr ${from}.` : `Mark as paid on ${dmy(date)} without a payment entry. Only do this if a Payment Voucher from 2300 already recorded it.`, confirmLabel: 'Mark as paid' })
+      : await confirmDialog({ title: 'Take off the paid mark?', body: run?.paid_journal_id ? 'The salary payment entry will be removed and the amount goes back to 2300 Salaries Payable.' : undefined, confirmLabel: 'Undo paid', danger: true })
+    if (!ok) return
     const { error } = await supabase.rpc('mark_payroll_paid', { p_id: runId, p_date: date, p_from: date ? paidFrom || null : null })
     if (error) return setError(error.message)
     setError(''); loadRuns(); loadSlips()
+    toast(date ? `Marked paid on ${dmy(date)}` : 'Paid mark removed')
   }
 
   const total = (k: keyof Payslip) => slips.reduce((s, p) => s + n(p[k] as number), 0)
@@ -677,10 +696,12 @@ export function PayrollRun({ role }: { role: Role }) {
           </select>
         </div>
         {run && <span className={`mb-2 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${runTone(run)}`}>{runLabel(run)}</span>}
-        {canEdit && <>
-          <div className="w-44"><label>Start a new month</label><MonthInput value={newMonth} onChange={setNewMonth} /></div>
-          <button className="btn-light" onClick={create} disabled={busyRun}><Plus className="size-4" />Create</button>
-        </>}
+        {canEdit && <PageActions>
+          <div className="flex items-end gap-2">
+            <label className="mb-0 flex items-center gap-2 whitespace-nowrap">New month<span className="w-40"><MonthInput value={newMonth} onChange={setNewMonth} /></span></label>
+            <button className="btn-light" onClick={create} disabled={busyRun}><Plus className="size-4" />Create month</button>
+          </div>
+        </PageActions>}
         <div className="ml-auto flex gap-2">
           {run?.status === 'draft' && canEdit && <button className="btn-light" onClick={() => act('rerun_payroll_run')}><RefreshCw className="size-4" />Re-run</button>}
           {run?.status === 'draft' && role === 'owner' && <button className="btn" onClick={() => act('approve_payroll_run')}><CheckCircle2 className="size-4" />Approve &amp; post</button>}
@@ -689,14 +710,14 @@ export function PayrollRun({ role }: { role: Role }) {
         </div>
       </div>
       {error && <p className="alert-error">{error}</p>}
-      {!run && <Empty text="No payroll month yet. Pick a month and press Create." />}
+      {!run && <Empty text="No payroll month yet. Pick a month and press Create month." />}
 
       {run && (
         <>
           <ReportBar title={`Payroll ${monthName(run.month)}`} period={run.paid_on ? `Paid on ${dmy(run.paid_on)}` : `Pay date ${dmy(run.pay_date)} · ${runLabel(run)}`} onCsv={csv} />
-          {run.status === 'draft' && <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">Draft — not approved and not paid. Check the figures, then the owner approves.</p>}
+          {run.status === 'draft' && <p className="rounded-lg bg-slate-100 px-3 py-2 text-[13px] text-slate-700">Draft — not approved and not paid. Check the figures, then the owner approves.</p>}
           {run.status === 'approved' && !run.paid_on && (
-            <div className="flex flex-wrap items-end gap-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <div className="flex flex-wrap items-end gap-3 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
               <p className="min-w-64 flex-1">Approved — <b>salaries not paid yet</b>. The net pay of {rm(total('net_pay'))} is held in 2300 Salaries Payable (accrued) until you pay it.</p>
               {canEdit && <div className="no-print flex flex-wrap items-end gap-2">
                 <div className="w-40"><label>Paid on</label><input type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} /></div>
@@ -712,7 +733,7 @@ export function PayrollRun({ role }: { role: Role }) {
             </div>
           )}
           {run.paid_on && (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            <div className="flex flex-wrap items-center gap-3 rounded-lg bg-emerald-50 px-3 py-2 text-[13px] text-emerald-800">
               <p className="flex-1">Paid on {dmy(run.paid_on)}{run.paid_journal_id ? ' — payment posted, 2300 Salaries Payable cleared' : ' (recorded by Payment Voucher)'}.</p>
               {canEdit && <button className="no-print btn-light" onClick={() => markPaid(null)}>Undo paid</button>}
             </div>
@@ -740,9 +761,9 @@ export function PayrollRun({ role }: { role: Role }) {
                     <td className="text-right">{rm(p.advance_recovery)}</td>
                     <td className="text-right font-semibold">{rm(p.net_pay)}</td>
                     <td className="no-print whitespace-nowrap text-right">
-                      <button title="View payslip" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand" onClick={() => setFocus({ id: p.employee_id })}><FileText className="size-4" /></button>
+                      <button title="View payslip" className="btn-ghost px-1.5" onClick={() => setFocus({ id: p.employee_id })}><FileText className="size-4" /></button>
                       {canEdit && run.status === 'draft' &&
-                        <button title="Edit" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand" onClick={() => setEditing(p)}><Pencil className="size-4" /></button>}
+                        <button title="Edit" className="btn-ghost px-1.5" onClick={() => setEditing(p)}><Pencil className="size-4" /></button>}
                     </td>
                   </tr>
                 ))}
@@ -846,7 +867,7 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
                     <div className="muted">Payslip · {monthName(p.month)}</div>
                   </div>
                 </div>
-                <div className="text-right text-sm">
+                <div className="text-right text-[13px]">
                   <div className="font-semibold">{p.name}</div>
                   <div className="text-slate-500">{p.position} {p.employee_no && `· ${p.employee_no}`}</div>
                   <div className="text-slate-500">{p.id_no}</div>
@@ -855,7 +876,7 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
               <div className="grid gap-6 pt-4 sm:grid-cols-2">
                 <div>
                   <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Earnings</h4>
-                  <dl className="space-y-1.5 text-sm">
+                  <dl className="space-y-1.5 text-[13px]">
                     {[['Basic pay', p.basic], ['Overtime', p.ot_amount], ['Allowance', p.allowance], ['Service charge', p.service_charge], ['Unpaid leave', -n(p.unpaid_leave)]]
                       .filter(([, v]) => n(v as number) !== 0)
                       .map(([label, v]) => <div key={label as string} className="flex justify-between"><dt className="text-slate-600">{label}</dt><dd className="tabular-nums">{rm(v as number)}</dd></div>)}
@@ -864,7 +885,7 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
                 </div>
                 <div>
                   <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Deductions</h4>
-                  <dl className="space-y-1.5 text-sm">
+                  <dl className="space-y-1.5 text-[13px]">
                     {[['EPF', p.epf_employee], ['SOCSO', p.socso_employee], ['EIS', p.eis_employee], ['PCB (income tax)', p.pcb], ['Salary advance recovered', p.advance_recovery], ['Other', p.other_deduction]]
                       .filter(([, v]) => n(v as number) !== 0)
                       .map(([label, v]) => <div key={label as string} className="flex justify-between"><dt className="text-slate-600">{label}</dt><dd className="tabular-nums">{rm(v as number)}</dd></div>)}
@@ -913,7 +934,7 @@ export function MyPayslips({ profile }: { profile: Profile }) {
   return (
     <div className="space-y-4">
       {advance > 0 &&
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">You still owe {rm(advance)} on a salary advance — it comes off your pay automatically.</p>}
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-800">You still owe {rm(advance)} on a salary advance — it comes off your pay automatically.</p>}
       {slips.length === 0 ? <Empty text="No payslips yet." /> : <Payslips slips={slips} />}
     </div>
   )
@@ -996,7 +1017,6 @@ const RATE_FIELDS: [string, string][] = [
 
 export function PayrollSettings({ role }: { role: Role }) {
   const [rates, setRates] = useState<Record<string, number> | null>(null)
-  const [msg, setMsg] = useState('')
   const canEdit = role === 'owner' || role === 'accountant'
   useEffect(() => { supabase.from('payroll_rates').select('*').single().then(({ data }) => setRates(data)) }, [])
 
@@ -1004,7 +1024,8 @@ export function PayrollSettings({ role }: { role: Role }) {
     e.preventDefault()
     const form = Object.fromEntries([...new FormData(e.target as HTMLFormElement).entries()].map(([k, v]) => [k, Number(v) || 0]))
     const { error } = await supabase.from('payroll_rates').update(form).eq('id', 1)
-    setMsg(error ? error.message : 'Saved')
+    if (error) toast(error.message, { kind: 'error' })
+    else toast('Rates saved')
   }
 
   if (!rates) return <Empty text="Loading…" />
@@ -1018,7 +1039,6 @@ export function PayrollSettings({ role }: { role: Role }) {
         ))}
       </div>
       <p className="muted">PCB (monthly income tax) is typed in per person on the payslip. Work it out with the LHDN e-PCB calculator; most staff on low wages pay nothing.</p>
-      {msg && <p className={msg === 'Saved' ? 'text-sm text-emerald-700' : 'alert-error'}>{msg}</p>}
       {canEdit && <div className="flex justify-end"><button className="btn">Save rates</button></div>}
     </form>
   )

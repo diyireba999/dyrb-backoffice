@@ -91,3 +91,15 @@ export function comparePeriod(from: string, to: string, mode: CompareMode): [str
   return [addDaysISO(from, -days), addDaysISO(from, -1)]
 }
 
+// ---- due-date pill for invoice lists ----
+// Overdue (past), Due today, "Due Tue" within the next six days, else "Due 25/10".
+export function dueLabel(due: string, today: string): { text: string; tone: 'danger' | 'warn' | 'none' } {
+  if (due < today) return { text: 'Overdue', tone: 'danger' }
+  if (due === today) return { text: 'Due today', tone: 'warn' }
+  const days = Math.round((Date.parse(due + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000)
+  if (days <= 6) {
+    const weekday = new Date(due + 'T00:00:00Z').toLocaleDateString('en-MY', { weekday: 'short', timeZone: 'UTC' })
+    return { text: `Due ${weekday}`, tone: 'warn' }
+  }
+  return { text: `Due ${due.slice(8, 10)}/${due.slice(5, 7)}`, tone: 'none' }
+}
