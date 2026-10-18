@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Paperclip, Trash2 } from 'lucide-react'
 import { EDITABLE_SOURCES, MONEY_ACCOUNTS, accountTotals, dmy, docTotal, downloadCsv, isCostAccount, isDirector, loadDocuments, openReceipt, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, type Account, type DocRow } from '../lib'
-import { AccountSelect, Done, Empty, ReportBar, MonthInput } from '../ui'
+import { AccountSelect, Empty, ReportBar, MonthInput } from '../ui'
 import { DocumentList } from '../DocumentList'
 import { confirmDialog, toast } from '../feedback'
 import { submittedAgain, useEscape } from '../page'
@@ -143,29 +143,30 @@ export function OfficialReceipt() {
   const [rows, setRows] = useState<DocRow[]>([])
   const [f, setF] = useState(blank)
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
+  const [highlight, setHighlight] = useState('')
   const [error, setError] = useState('')
   const [params] = useSearchParams()
   const [all, setAll] = useState(!!params.get('doc'))
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
   const load = () => { loadDocuments('or', all ? 240 : 3).then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
   useEffect(load, [all])
+  useEscape(() => { if (mode === 'form' && !busy) { setMode('list'); setError('') } })
 
   // A receipt is one debit (received into) and one credit (what kind of money).
   function startEdit(d: DocRow) {
     const debit = d.journal_lines.find(l => Number(l.debit) > 0)
     const credit = d.journal_lines.find(l => Number(l.credit) > 0)
-    if (!debit || !credit) return alert('This receipt has an unusual shape. Use Journal Entry to correct it.')
+    if (!debit || !credit) return toast('This receipt has an unusual shape. Use Journal Entry to correct it.', { kind: 'error' })
     setEditing(d)
     setF({ date: d.date, from: d.description, kind: credit.account,
            amount: String(Number(debit.debit)), into: debit.account, reference: d.reference ?? '' })
-    setError(''); setMode('form')
+    setHighlight(''); setError(''); setMode('form')
   }
 
   async function remove(d: DocRow) {
-    if (!confirm(`Delete ${d.doc_no}? This cannot be undone.`)) return
+    if (!await confirmDialog({ title: `Delete ${d.doc_no}?`, body: `${d.description} · ${rm(docTotal(d))}. This cannot be undone.`, confirmLabel: 'Delete', danger: true })) return
     const { error } = await supabase.rpc('delete_journal', { p_id: d.id })
-    if (error) return alert(error.message)
+    if (error) return toast(error.message, { kind: 'error' })
     load()
   }
 
@@ -174,29 +175,34 @@ export function OfficialReceipt() {
     const amount = round2(Number(f.amount))
     if (!(amount > 0)) return setError('Enter an amount')
     setBusy(true); setError('')
+    const again = submittedAgain(e)
     try {
       const lines = [{ account: f.into, debit: amount }, { account: f.kind, credit: amount }]
+      let doc: string | undefined
       if (editing) {
         await updateJournal(editing.id, f.date, f.from || 'Receipt', lines, { reference: f.reference })
-        setDone({ msg: `${editing.doc_no} changed to ${rm(amount)}`, doc: editing.doc_no })
+        doc = editing.doc_no
+        toast(`${doc} changed to ${rm(amount)}`)
       } else {
         const id = await postJournal(f.date, f.from || 'Receipt', lines, { source: 'or', reference: f.reference })
-        setDone({ msg: `Receipt of ${rm(amount)} saved`, doc: await docNo(id) })
+        doc = await docNo(id)
+        toast(`${doc ?? 'Receipt'} saved · ${rm(amount)}`)
       }
-      setF({ ...blank, date: f.date }); setEditing(null); load()
+      setF({ ...blank, date: f.date }); setEditing(null)
+      setHighlight(doc ?? '')
+      if (!again) setMode('list')
+      load()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
   }
-
-  if (done) return <Done msg={done.msg} doc={done.doc} again={() => { setDone(null); setMode('list') }} />
 
   if (mode === 'list') return (
     <>
       {error && <p className="alert-error">{error}</p>}
       <DocumentList rows={rows} all={all} onShowAll={() => setAll(true)} newLabel="New official receipt"
         emptyText={all ? 'No official receipts.' : 'No official receipts in the last three months.'}
-        onNew={() => { setEditing(null); setF(blank); setError(''); setMode('form') }}
-        onEdit={startEdit} onDelete={remove} canEdit canDelete />
+        onNew={() => { setEditing(null); setF(blank); setHighlight(''); setError(''); setMode('form') }}
+        onEdit={startEdit} onDelete={remove} canEdit canDelete highlight={highlight} />
     </>
   )
 
@@ -209,7 +215,7 @@ export function OfficialReceipt() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label>Date</label><input type="date" value={f.date} onChange={e => set('date', e.target.value)} required /></div>
         <div><label>Ref no.</label><input value={f.reference} onChange={e => set('reference', e.target.value)} placeholder="Optional" /></div>
-        <div className="sm:col-span-2"><label>Received from</label><input value={f.from} onChange={e => set('from', e.target.value)} required /></div>
+        <div className="sm:col-span-2"><label>Received from</label><input value={f.from} onChange={e => set('from', e.target.value)} required autoFocus /></div>
         <div><label>Account</label>
           <AccountSelect accounts={accounts} value={f.kind} onChange={v => set('kind', v)}
             filter={a => a.type === 'income' || a.code === '3000' || a.code === '1300' || isDirector(a.code)} />
@@ -218,8 +224,10 @@ export function OfficialReceipt() {
         <div><label>Received into</label><AccountSelect accounts={accounts} value={f.into} onChange={v => set('into', v)} filter={money} /></div>
       </div>
       {error && <p className="alert-error">{error}</p>}
-      <div className="flex justify-end">
+      <div className="flex flex-row-reverse justify-start gap-2">
         <button className="btn" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Save receipt'}</button>
+        {!editing && <button className="btn-light" name="again" disabled={busy}>Save & add another</button>}
+        <button type="button" className="btn-ghost" onClick={() => { setMode('list'); setError('') }}>Cancel</button>
       </div>
     </form>
   )
@@ -234,29 +242,30 @@ export function Transfer() {
   const [f, setF] = useState(blank)
   const [balances, setBalances] = useState<Map<string, number> | null>(null)  // null while loading
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
+  const [highlight, setHighlight] = useState('')
   const [error, setError] = useState('')
   const [params] = useSearchParams()
   const [all, setAll] = useState(!!params.get('doc'))
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
   const load = () => { loadDocuments('transfer', all ? 240 : 3).then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
   useEffect(load, [all])
-  useEffect(() => { accountTotals(null, todayMY()).then(setBalances, (e: Error) => setError(e.message)) }, [done, mode])
+  useEffect(() => { accountTotals(null, todayMY()).then(setBalances, (e: Error) => setError(e.message)) }, [highlight, mode])
+  useEscape(() => { if (mode === 'form' && !busy) { setMode('list'); setError('') } })
 
   function startEdit(d: DocRow) {
     const debit = d.journal_lines.find(l => Number(l.debit) > 0)
     const credit = d.journal_lines.find(l => Number(l.credit) > 0)
-    if (!debit || !credit) return alert('This transfer has an unusual shape. Use Journal Entry to correct it.')
+    if (!debit || !credit) return toast('This transfer has an unusual shape. Use Journal Entry to correct it.', { kind: 'error' })
     setEditing(d)
     setF({ date: d.date, from: credit.account, to: debit.account,
            amount: String(Number(debit.debit)), reference: d.reference ?? '' })
-    setError(''); setMode('form')
+    setHighlight(''); setError(''); setMode('form')
   }
 
   async function remove(d: DocRow) {
-    if (!confirm(`Delete ${d.doc_no}? This cannot be undone.`)) return
+    if (!await confirmDialog({ title: `Delete ${d.doc_no}?`, body: `${d.description} · ${rm(docTotal(d))}. This cannot be undone.`, confirmLabel: 'Delete', danger: true })) return
     const { error } = await supabase.rpc('delete_journal', { p_id: d.id })
-    if (error) return alert(error.message)
+    if (error) return toast(error.message, { kind: 'error' })
     load()
   }
 
@@ -266,31 +275,36 @@ export function Transfer() {
     if (f.from === f.to) return setError('From and To must be different')
     if (!(amount > 0)) return setError('Enter an amount')
     setBusy(true); setError('')
+    const again = submittedAgain(e)
     try {
       const name = (c: string) => accounts.find(a => a.code === c)?.name
       const desc = `Transfer ${name(f.from)} to ${name(f.to)}`
       const lines = [{ account: f.to, debit: amount }, { account: f.from, credit: amount }]
+      let doc: string | undefined
       if (editing) {
         await updateJournal(editing.id, f.date, desc, lines, { reference: f.reference })
-        setDone({ msg: `${editing.doc_no} changed to ${rm(amount)}`, doc: editing.doc_no })
+        doc = editing.doc_no
+        toast(`${doc} changed to ${rm(amount)}`)
       } else {
         const id = await postJournal(f.date, desc, lines, { source: 'transfer', reference: f.reference })
-        setDone({ msg: `Moved ${rm(amount)}`, doc: await docNo(id) })
+        doc = await docNo(id)
+        toast(`${doc ?? 'Transfer'} saved · ${rm(amount)}`)
       }
-      setF({ ...f, amount: '', reference: '' }); setEditing(null); load()
+      setF({ ...f, amount: '', reference: '' }); setEditing(null)
+      setHighlight(doc ?? '')
+      if (!again) setMode('list')
+      load()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
   }
-
-  if (done) return <Done msg={done.msg} doc={done.doc} again={() => { setDone(null); setMode('list') }} />
 
   if (mode === 'list') return (
     <>
       {error && <p className="alert-error">{error}</p>}
       <DocumentList rows={rows} all={all} onShowAll={() => setAll(true)} newLabel="New transfer"
         emptyText={all ? 'No transfers.' : 'No transfers in the last three months.'}
-        onNew={() => { setEditing(null); setF(blank); setError(''); setMode('form') }}
-        onEdit={startEdit} onDelete={remove} canEdit canDelete />
+        onNew={() => { setEditing(null); setF(blank); setHighlight(''); setError(''); setMode('form') }}
+        onEdit={startEdit} onDelete={remove} canEdit canDelete highlight={highlight} />
     </>
   )
 
@@ -310,11 +324,13 @@ export function Transfer() {
           </p>
         </div>
         <div><label>To</label><AccountSelect accounts={accounts} value={f.to} onChange={v => set('to', v)} filter={money} /></div>
-        <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required /></div>
+        <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required autoFocus /></div>
       </div>
       {error && <p className="alert-error">{error}</p>}
-      <div className="flex justify-end">
+      <div className="flex flex-row-reverse justify-start gap-2">
         <button className="btn" disabled={busy}>{busy ? 'Saving…' : editing ? 'Save changes' : 'Save transfer'}</button>
+        {!editing && <button className="btn-light" name="again" disabled={busy}>Save & add another</button>}
+        <button type="button" className="btn-ghost" onClick={() => { setMode('list'); setError('') }}>Cancel</button>
       </div>
     </form>
   )
