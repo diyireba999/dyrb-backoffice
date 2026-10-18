@@ -120,7 +120,8 @@ export function Dashboard({ profile }: { profile: Profile }) {
         }, (e: Error) => setAccountsError(e.message)),
       // A failed total shows as an error, never as a confident RM 0.00.
       accountTotals(null, todayMY()).then(setAll, (e: Error) => setAccountsError(e.message)),
-      accountTotals(monthStart(), todayMY()).then(setMonth, (e: Error) => setAccountsError(e.message)),
+      // To month end, like the P&L: payroll is dated the last day of the month.
+      accountTotals(monthStart(), addDaysISO(monthStartOffset(todayMY(), -1), -1)).then(setMonth, (e: Error) => setAccountsError(e.message)),
       accountTotals(lastMonthStart, lastMonthEnd).then(setLastMonth, (e: Error) => setAccountsError(e.message)),
       supplierDue(todayMY()).then(setDue).catch(() => setDue(null)),
     ]).then(() => setLoaded(true))
