@@ -39,20 +39,45 @@ const setPending = (p: Pending | null) => { pending = p; confirmListeners.forEac
 const subscribeConfirm = (l: () => void) => { confirmListeners.add(l); return () => { confirmListeners.delete(l) } }
 
 export function confirmDialog(opts: ConfirmOpts): Promise<boolean> {
-  return new Promise(resolve => setPending({ ...opts, resolve }))
+  return new Promise(resolve => {
+    pending?.resolve(false) // a superseded confirm is cancelled rather than left hanging
+    setPending({ ...opts, resolve })
+  })
 }
 
-// Rendered once by the Shell. Enter confirms (the confirm button has focus), Esc cancels.
+// Rendered once by the Shell. While open, Enter confirms and Esc cancels from anywhere; Tab stays inside the card.
 export function ConfirmHost() {
   const p = useSyncExternalStore(subscribeConfirm, () => pending)
+  const cardRef = useRef<HTMLDivElement>(null)
   const okRef = useRef<HTMLButtonElement>(null)
   useEffect(() => { if (p) okRef.current?.focus() }, [p])
+  const answer = (ok: boolean) => { p?.resolve(ok); setPending(null) }
+  useEffect(() => {
+    if (!p) return
+    const close = (ok: boolean) => { p.resolve(ok); setPending(null) }
+    const onKey = (e: KeyboardEvent) => {
+      const card = cardRef.current
+      const active = document.activeElement
+      const inCard = !!card && card.contains(active)
+      if (e.key === 'Escape') { e.preventDefault(); close(false) }
+      // Enter on a focused Cancel keeps its native click (cancel); a destructive confirm must not fire from it.
+      else if (e.key === 'Enter' && (!inCard || active === okRef.current)) { e.preventDefault(); close(true) }
+      else if (e.key === 'Tab') {
+        const buttons = card?.querySelectorAll<HTMLButtonElement>('button') ?? []
+        const first = buttons[0], last = buttons[buttons.length - 1]
+        if (!inCard) { e.preventDefault(); okRef.current?.focus() }
+        else if (e.shiftKey && active === first) { e.preventDefault(); last.focus() }
+        else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus() }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [p])
   if (!p) return null
-  const answer = (ok: boolean) => { p.resolve(ok); setPending(null) }
   return (
     <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-      onClick={() => answer(false)} onKeyDown={e => { if (e.key === 'Escape') answer(false) }}>
-      <div role="dialog" aria-modal="true" className="w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+      onClick={() => answer(false)}>
+      <div ref={cardRef} role="dialog" aria-modal="true" className="w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
         <h3 className="font-semibold">{p.title}</h3>
         {p.body && <div className="mt-2 text-[13px] text-slate-600">{p.body}</div>}
         <div className="mt-5 flex justify-end gap-2">
