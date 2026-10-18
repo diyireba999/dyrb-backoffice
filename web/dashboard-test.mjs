@@ -82,3 +82,12 @@ assert.equal(dateOrderOf(['1/10/26', '2/10/26', '12/10/26']), 'dmy', '1-12 Oct d
 assert.equal(dateOrderOf(['5/10/26']), 'dmy', 'one ambiguous day stays day-first')
 assert.equal(isoDate('10/1/26', dateOrderOf(['10/1/26', '10/2/26', '10/3/26'])), '2026-10-01')
 console.log('zeoniq date order ok')
+
+// --- due-date pill text ---
+const { dueLabel } = await import('./src/dashboard-math.ts')
+assert.deepEqual(dueLabel('2026-10-17', '2026-10-18'), { text: 'Overdue', tone: 'danger' })
+assert.deepEqual(dueLabel('2026-10-18', '2026-10-18'), { text: 'Due today', tone: 'warn' })
+assert.deepEqual(dueLabel('2026-10-20', '2026-10-18'), { text: 'Due Tue', tone: 'warn' }, 'within a week: weekday')
+assert.deepEqual(dueLabel('2026-10-24', '2026-10-18'), { text: 'Due Sat', tone: 'warn' }, 'six days out still a weekday')
+assert.deepEqual(dueLabel('2026-10-25', '2026-10-18'), { text: 'Due 25/10', tone: 'none' }, 'a week or more: date')
+console.log('due label ok')

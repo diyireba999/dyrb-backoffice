@@ -51,7 +51,7 @@ export function SearchDialog({ pages, canSeeDocs, open, setOpen }: {
 
   return (
     <div className="no-print fixed inset-0 z-50 flex items-start justify-center bg-slate-900/30 p-4 pt-[12vh] backdrop-blur-sm" onClick={() => setOpen(false)}>
-      <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div role="dialog" className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 border-b border-slate-100 px-4">
           <SearchIcon className="size-4 text-slate-400" />
           <input ref={input} value={q} placeholder="Search screens or documents (e.g. PV-000012, TNB)…"
