@@ -78,6 +78,8 @@ Turn on two-step login for each account once created — this system holds salar
 - A salary advance is recorded on the Staff Advance screen; the money leaves the till straight away and comes off the next payslip by itself, and if it is more than one month's pay the rest carries to the month after.
 - Hours go on the Timesheet before the monthly payroll is created; creating the run picks them up, and anything can still be corrected on the payslip before approving.
 - The dashboard's sales figures compare against the same day of the week a week ago (Tuesday vs Tuesday, not Tuesday vs Monday), because trade swings by day of week. Its break-even figure is worked out from the last two or three complete months of records, whichever there is, so it settles down and becomes more reliable once there is a few months of history.
+- The side menu is grouped by task: **Today**, **Money in**, **Money out**, **Month-end**, **Books**, **Setup**. On a phone the bottom bar has Today, Search, New and Menu. Every screen keeps its old web address, so bookmarks still work.
+- After saving a voucher, receipt, transfer, invoice or journal, the list comes back with the new row highlighted; press **Save & add another** to stay on the form. Esc closes a form.
 
 ## Run on this computer (optional, for testing changes)
 

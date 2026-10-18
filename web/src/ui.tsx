@@ -1,18 +1,7 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Download, Printer } from 'lucide-react'
+import { Download, Printer } from 'lucide-react'
 import { supabase, todayMY, useLoading, type Account } from './lib'
 import { PageActions } from './page'
-
-export function Done({ msg, doc, again }: { msg: string; doc?: string; again: () => void }) {
-  return (
-    <div className="card flex max-w-xl flex-col items-center gap-3 py-10 text-center">
-      <CheckCircle2 className="size-10 text-emerald-500" />
-      <p className="font-semibold">{msg}</p>
-      {doc && <p className="badge">{doc}</p>}
-      <button className="btn" onClick={again}>Add another</button>
-    </div>
-  )
-}
 
 export function AccountSelect({ accounts, value, onChange, filter = () => true, required = true, disabled = false }: {
   accounts: Account[]; value: string; onChange: (v: string) => void
