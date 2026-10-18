@@ -15,7 +15,7 @@ export function PageActions({ children }: { children: ReactNode }) {
 export function useEscape(onEscape: () => void) {
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || document.querySelector('[role="dialog"]')) return
+      if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('[role="dialog"]')) return
       onEscape()
     }
     window.addEventListener('keydown', h)

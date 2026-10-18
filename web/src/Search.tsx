@@ -58,7 +58,7 @@ export function SearchDialog({ pages, canSeeDocs, open, setOpen }: {
             className="h-12 !border-0 px-0 !shadow-none !ring-0"
             onChange={e => { setQ(e.target.value); setActive(0) }}
             onKeyDown={e => {
-              if (e.key === 'Escape') setOpen(false)
+              if (e.key === 'Escape') { e.preventDefault(); setOpen(false) }
               if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(a + 1, hits.length - 1)) }
               if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(a - 1, 0)) }
               if (e.key === 'Enter') go(hits[active])
