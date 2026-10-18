@@ -1,10 +1,16 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Paperclip, Pencil, Plus, Printer, Trash2 } from 'lucide-react'
 import { dmy, docTotal, isReconciled, openReceipt, rm, type DocRow } from './lib'
 import { Empty } from './ui'
 
-export function DocumentList({ rows, newLabel, emptyText, onNew, onEdit, onDelete, canEdit, canDelete }: {
+// Lists the last three months unless `all` is set (the page loads everything
+// then). Opened with ?doc=PV-000012 from the Documents screen, the search box
+// starts on that number so an old document is found straight away.
+export function DocumentList({ rows, all, onShowAll, newLabel, emptyText, onNew, onEdit, onDelete, canEdit, canDelete }: {
   rows: DocRow[]
+  all: boolean
+  onShowAll: () => void
   newLabel: string
   emptyText: string
   onNew: () => void
@@ -13,7 +19,8 @@ export function DocumentList({ rows, newLabel, emptyText, onNew, onEdit, onDelet
   canEdit: boolean
   canDelete: boolean
 }) {
-  const [q, setQ] = useState('')
+  const [params] = useSearchParams()
+  const [q, setQ] = useState(params.get('doc') ?? '')
   const needle = q.trim().toLowerCase()
   const shown = needle
     ? rows.filter(d => d.doc_no.toLowerCase().includes(needle)
@@ -27,6 +34,7 @@ export function DocumentList({ rows, newLabel, emptyText, onNew, onEdit, onDelet
       <div className="no-print flex flex-wrap items-center gap-3">
         <input type="search" className="w-full sm:w-80" value={q} onChange={e => setQ(e.target.value)}
           placeholder="Search number, description or amount" />
+        {!all && <button type="button" className="link" onClick={onShowAll}>Show older than 3 months</button>}
         <button className="btn-light ml-auto" onClick={() => window.print()}>
           <Printer className="size-4" />Print / PDF</button>
         <button className="btn" onClick={onNew}><Plus className="size-4" />{newLabel}</button>

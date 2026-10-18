@@ -72,3 +72,13 @@ assert.deepEqual(comparePeriod('2028-02-01', '2028-02-29', 'year'), ['2027-02-01
 assert.equal(comparePeriod('', '2026-09-30', 'prev'), null, 'half-typed date')
 assert.equal(comparePeriod('2026-09-01', '2026-09-30', 'none'), null)
 console.log('report periods ok')
+
+// --- Zeoniq date order: a day above 12 settles it; otherwise the tighter range wins ---
+const { dateOrderOf, isoDate } = await import('./src/zeoniq.ts')
+assert.equal(dateOrderOf(['21/9/2026', '22/9/2026']), 'dmy')
+assert.equal(dateOrderOf(['9/21/26', '9/22/26']), 'mdy')
+assert.equal(dateOrderOf(['10/1/26', '10/2/26', '10/12/26']), 'mdy', '1-12 Oct month-first: not twelve different months')
+assert.equal(dateOrderOf(['1/10/26', '2/10/26', '12/10/26']), 'dmy', '1-12 Oct day-first')
+assert.equal(dateOrderOf(['5/10/26']), 'dmy', 'one ambiguous day stays day-first')
+assert.equal(isoDate('10/1/26', dateOrderOf(['10/1/26', '10/2/26', '10/3/26'])), '2026-10-01')
+console.log('zeoniq date order ok')

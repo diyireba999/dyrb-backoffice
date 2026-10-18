@@ -1,0 +1,35 @@
+# Nightly copy of the books. Supabase's free plan keeps no backups, so this
+# dumps the public schema (every table, row, function and policy) and keeps the
+# last 30 nights as workflow artifacts in this private repository.
+#
+# One-time setup: GitHub repo → Settings → Secrets and variables → Actions →
+# New repository secret, name SUPABASE_DB_URL, value = the "Session pooler"
+# connection string from Supabase → Connect (the pooler one, not "Direct":
+# GitHub runners have no IPv6). Then Actions → "Nightly database backup" →
+# Run workflow once to check it works.
+#
+# Restore: run the migrations on a fresh project, then
+#   pg_restore --clean --if-exists --no-owner --no-privileges -d "<db url>" dyrb.dump
+name: Nightly database backup
+
+on:
+  schedule:
+    - cron: '0 19 * * *'   # 03:00 Malaysia time
+  workflow_dispatch:
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      # postgres:17 so pg_dump is never older than the Supabase server.
+      - name: Dump the database
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: docker run --rm postgres:17 pg_dump --schema=public --no-owner --no-privileges -Fc "$DB_URL" > dyrb.dump
+      - name: Check the dump is not empty
+        run: test "$(stat -c %s dyrb.dump)" -gt 10000
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dyrb-db-${{ github.run_number }}
+          path: dyrb.dump
+          retention-days: 30

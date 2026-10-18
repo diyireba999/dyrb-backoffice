@@ -327,7 +327,7 @@ export function Timesheet({ role }: { role: Role }) {
   const inFlight = useRef<Record<string, Promise<unknown>>>({})
 
   useEffect(() => {
-    supabase.from('employees').select('*').eq('active', true).order('name').then(({ data }) => setEmployees((data as Employee[]) ?? []))
+    supabase.from('employees').select('*').order('name').then(({ data }) => setEmployees((data as Employee[]) ?? []))
     supabase.from('payroll_rates').select('hours_per_day').single().then(({ data }) => data && setDayHours(Number(data.hours_per_day)))
   }, [])
 
@@ -352,7 +352,8 @@ export function Timesheet({ role }: { role: Role }) {
     return () => { stale = true }
   }, [month])
 
-  const shown = employees
+  // Someone who left this month is still shown, so their last days can be entered.
+  const shown = employees.filter(e => e.active || (e.leave_date && e.leave_date >= `${month}-01`))
   const days = Array.from({ length: daysInMonth(month) }, (_, i) => i + 1)
   const dateFor = (d: number) => `${month}-${String(d).padStart(2, '0')}`
   const cellOf = (id: number, date: string): TsCell => data[`${id}:${date}`] ?? { hours: '', ot_hours: '' }
@@ -929,10 +930,10 @@ export function PayrollYear() {
       .then(({ data }) => setSlips((data as Payslip[]) ?? []))
   }, [year])
 
-  const byStaff = new Map<string, Payslip[]>()
-  for (const p of slips) byStaff.set(p.name, [...(byStaff.get(p.name) ?? []), p])
-  const rows = [...byStaff.entries()].map(([name, list]) => ({
-    name, id_no: list[0].id_no, tax_no: list[0].tax_no, epf_no: list[0].epf_no,
+  const byStaff = new Map<number, Payslip[]>()
+  for (const p of slips) byStaff.set(p.employee_id, [...(byStaff.get(p.employee_id) ?? []), p])
+  const rows = [...byStaff.values()].map(list => ({
+    name: list[0].name, id_no: list[0].id_no, tax_no: list[0].tax_no, epf_no: list[0].epf_no,
     months: list.length,
     gross: list.reduce((s, p) => s + n(p.gross), 0),
     epf: list.reduce((s, p) => s + n(p.epf_employee), 0),

@@ -205,7 +205,7 @@ export function ProfitAndLoss() {
         <div className="flex flex-wrap gap-2">
           <button className="btn-light" onClick={() => setRange(monthStart, monthEnd())}>This month</button>
           <button className="btn-light" onClick={() => setRange(shiftMonths(monthStart, -1), addDays(monthStart, -1))}>Last month</button>
-          <button className="btn-light" onClick={() => setRange(yearStart(), todayMY())}>Year to date</button>
+          <button className="btn-light" onClick={() => setRange(yearStart(), monthEnd())}>Year to date</button>
         </div>
       </ReportBar>
       <Ready states={[curState, cmp ? prevState : null]}>

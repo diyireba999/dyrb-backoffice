@@ -161,18 +161,19 @@ export function Dashboard({ profile }: { profile: Profile }) {
       // would drag the average down and make break-even look easy).
       const threeMonthsStart = monthStartOffset(today, 3)
       const lastCompleteMonthEnd = addDaysISO(thisMonthStart, -1)
-      const [totals3mo, earliest] = await Promise.all([
-        accountTotals(threeMonthsStart, lastCompleteMonthEnd),
-        supabase.from('account_balances').select('date').order('date').limit(1),
-      ])
+      const earliest = await supabase.from('account_balances').select('date').order('date').limit(1)
+      const earliestDate = (earliest.data as { date: string }[] | null)?.[0]?.date ?? null
+      // Whole months only: a first journal dated mid-month doesn't count that month,
+      // and its costs are left out of the total too, or a half month would be
+      // averaged as if it were a full one.
+      const mIdx = (iso: string) => { const [y, m] = iso.slice(0, 7).split('-').map(Number); return y * 12 + m }
+      const firstWhole = earliestDate ? mIdx(earliestDate) + (earliestDate.slice(8) === '01' ? 0 : 1) : Infinity
+      const firstWholeStart = earliestDate ? (earliestDate.slice(8) === '01' ? earliestDate : monthStartOffset(earliestDate, -1)) : threeMonthsStart
+      const monthsCovered = Math.min(3, mIdx(thisMonthStart) - Math.max(firstWhole, mIdx(threeMonthsStart)))
+      const totals3mo = await accountTotals(firstWholeStart > threeMonthsStart ? firstWholeStart : threeMonthsStart, lastCompleteMonthEnd)
       const codeSum = (lo: string, hi: string) =>
         [...totals3mo].filter(([code]) => code >= lo && code < hi).reduce((s, [, v]) => s + v, 0)
       const cardFees = totals3mo.get('6200') ?? 0
-      const earliestDate = (earliest.data as { date: string }[] | null)?.[0]?.date ?? null
-      // Whole months only: a first journal dated mid-month doesn't count that month.
-      const mIdx = (iso: string) => { const [y, m] = iso.slice(0, 7).split('-').map(Number); return y * 12 + m }
-      const firstWhole = earliestDate ? mIdx(earliestDate) + (earliestDate.slice(8) === '01' ? 0 : 1) : Infinity
-      const monthsCovered = Math.min(3, mIdx(thisMonthStart) - Math.max(firstWhole, mIdx(threeMonthsStart)))
       const enoughHistory = monthsCovered >= 2
       const fixed = (codeSum('6000', '7000') - cardFees) / monthsCovered
       // Cost of sales is 5000-5999 throughout this screen (matches the gross-profit
