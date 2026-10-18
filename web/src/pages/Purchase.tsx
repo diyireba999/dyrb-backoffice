@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Pencil, Plus, Trash2, XCircle } from 'lucide-react'
-import { MONEY_ACCOUNTS, MONEY_NAMES, addDays, dmy, isDirector, downloadCsv, openReceipt, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, useSuppliers, type Role } from '../lib'
+import { MONEY_ACCOUNTS, MONEY_NAMES, addDays, dmy, isDirector, downloadCsv, openReceipt, rm, round2, supabase, todayMY, useAccounts, useSuppliers, type Role } from '../lib'
 import { AccountSelect, Done, Empty, ReportBar } from '../ui'
 
 type Invoice = {
@@ -61,7 +61,8 @@ export function Suppliers() {
         <div><label>Name</label><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} required /></div>
         <div><label>Phone</label><input value={f.phone} onChange={e => setF({ ...f, phone: e.target.value })} /></div>
         <div><label>Default account</label>
-          <AccountSelect accounts={accounts} value={f.default_account} onChange={v => setF({ ...f, default_account: v })} filter={a => a.type === 'expense'} required={false} />
+          <AccountSelect accounts={accounts} value={f.default_account} onChange={v => setF({ ...f, default_account: v })}
+            filter={a => a.type === 'expense' || (a.type === 'asset' && a.code >= '1300')} required={false} />
         </div>
         <div><label>Opening balance owed (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.opening} onChange={e => setF({ ...f, opening: e.target.value })} placeholder="Optional" /></div>
         {Number(f.opening) > 0 && <div><label>Owed as at</label><input type="date" value={f.opening_date} onChange={e => setF({ ...f, opening_date: e.target.value })} required /></div>}
@@ -103,7 +104,6 @@ function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: str
     ? { supplier: String(editing.supplier_id), invoice_no: editing.invoice_no ?? '', date: editing.date, terms: '30', due: editing.due_date }
     : { supplier: '', invoice_no: '', date: todayMY(), terms: '30', due: '' })
   const [lines, setLines] = useState<PiLine[]>(editing ? editing.lines : [{ account: '', memo: '', amount: '' }])
-  const [photo, setPhoto] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const total = round2(lines.reduce((s, l) => s + Number(l.amount || 0), 0))
@@ -131,12 +131,11 @@ function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: str
         if (error) throw new Error(error.message)
         onSaved({ msg: `Invoice ${editing.invoice_no ?? ''} changed`, doc: editing.doc_no })
       } else {
-        const attachment = photo ? await uploadReceipt(photo) : null
         const s = suppliers.find(s => String(s.id) === head.supplier)!
         const { data, error } = await supabase.rpc('create_purchase_invoice', {
           p_supplier: s.id, p_invoice_no: head.invoice_no, p_date: head.date, p_due: due,
           p_description: `${s.name}${head.invoice_no ? ' inv ' + head.invoice_no : ''}`,
-          p_lines: payload, p_attachment: attachment,
+          p_lines: payload,
         })
         if (error) throw new Error(error.message)
         const { data: inv } = await supabase.from('purchase_invoice_status').select('doc_no').eq('id', data).single()
@@ -168,7 +167,6 @@ function NewPurchaseInvoice({ onSaved, editing }: { onSaved: (result: { msg: str
               </select>
             </div>
             <div><label>Due date</label><input value={dmy(due)} disabled /></div>
-            <div className="sm:col-span-2"><label>Invoice photo</label><input type="file" accept="image/*" onChange={e => setPhoto(e.target.files?.[0] ?? null)} /></div>
           </>
         )}
       </div>
@@ -299,7 +297,10 @@ export function SupplierPayments({ role }: { role: Role }) {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ msg: string; doc: string } | null>(null)
   const [error, setError] = useState('')
-  const [editing, setEditing] = useState<{ id: number; doc_no: string } | null>(null)
+  // alloc: what this payment put on each invoice when it was saved, so the
+  // Outstanding column can show the figure before this payment while editing.
+  const [editing, setEditing] = useState<{ id: number; doc_no: string; alloc: Record<number, number> } | null>(null)
+  const owingOn = (i: Invoice) => round2(Number(i.outstanding) + (editing?.alloc[i.id] ?? 0))
   // Allocations loaded by startEdit, staged here until the invoice list (re)loads
   // for the edited supplier, since the supplier-change effect below would
   // otherwise wipe `pay` before the invoices even arrive. A ref, not state,
@@ -308,7 +309,7 @@ export function SupplierPayments({ role }: { role: Role }) {
 
   const loadHistory = () => {
     supabase.from('supplier_payments').select('id, date, amount, suppliers(name), journals(doc_no, reference)')
-      .order('date', { ascending: false }).order('id', { ascending: false }).limit(50)
+      .order('date', { ascending: false }).order('id', { ascending: false }).limit(200)
       .then(({ data }) => setHistory((data as unknown as Payment[]) ?? []))
   }
   useEffect(loadHistory, [])
@@ -323,7 +324,7 @@ export function SupplierPayments({ role }: { role: Role }) {
   }, [supplier, editing])
 
   const total = round2(Object.values(pay).reduce((s, v) => s + Number(v || 0), 0))
-  const payAll = () => setPay(Object.fromEntries(open.map(i => [i.id, String(i.outstanding)])))
+  const payAll = () => setPay(Object.fromEntries(open.map(i => [i.id, String(owingOn(i))])))
 
   function cancelEdit() {
     setEditing(null); setSupplier(''); setPay({})
@@ -343,7 +344,7 @@ export function SupplierPayments({ role }: { role: Role }) {
     // The money came out of the credit line that is not Suppliers Owed.
     const from = d.journals.journal_lines.find(l => l.account !== '2000' && Number(l.credit) > 0)?.account ?? '1100'
     pendingPay.current = Object.fromEntries(d.payment_allocations.map(a => [a.invoice_id, String(Number(a.amount))]))
-    setEditing({ id: d.id, doc_no: p.journals.doc_no })
+    setEditing({ id: d.id, doc_no: p.journals.doc_no, alloc: Object.fromEntries(d.payment_allocations.map(a => [a.invoice_id, Number(a.amount)])) })
     setSupplier(String(d.supplier_id))
     setHead({ date: d.date, from, reference: d.journals.reference ?? '' })
     window.scrollTo({ top: 0 })
@@ -416,7 +417,7 @@ export function SupplierPayments({ role }: { role: Role }) {
                   <tr key={i.id}>
                     <td className="pl-6 font-mono text-xs">{i.doc_no}</td><td>{i.invoice_no}</td>
                     <td className="text-slate-500">{dmy(i.date)}</td><td className="text-slate-500">{dmy(i.due_date)}</td>
-                    <td className="text-right">{rm(i.outstanding)}</td>
+                    <td className="text-right">{rm(owingOn(i))}</td>
                     <td className="pr-6"><input className="text-right" type="number" step="0.01" min="0" inputMode="decimal"
                       value={pay[i.id] ?? ''} onChange={e => setPay({ ...pay, [i.id]: e.target.value })} /></td>
                   </tr>

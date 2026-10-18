@@ -6,12 +6,17 @@ import fs from 'fs'
 const FILES = ['001_core.sql', '002_claims.sql', '003_accounting.sql', '004_payroll.sql', '005_sales.sql',
   '006_categories.sql', '007_fiuu.sql', '008_director.sql', '009_fiuu_brands.sql', '010_item_groups.sql',
   '011_resplit.sql', '012_stock.sql', '013_accruals.sql', '014_recurring.sql', '015_fixes.sql', '016_fixes2.sql',
-  '017_corkage.sql', '018_docedit.sql', '019_advance.sql', '020_timesheet.sql']
+  '017_corkage.sql', '018_docedit.sql', '019_advance.sql', '020_timesheet.sql', '021_entertainment.sql',
+  '022_usernames.sql', '023_disable_login.sql', '024_investor.sql', '025_prorate.sql', '026_company.sql',
+  '027_payroll_hours.sql', '028_payroll_paid.sql', '029_payroll_payment.sql', '030_accrual_first_day.sql',
+  '031_review_fixes.sql']
 
 const db = new PGlite()
 await db.exec(`
   create schema auth; create schema storage; create role anon; create role authenticated;
-  create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb);
+  create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb, banned_until timestamptz, updated_at timestamptz);
+  create table auth.identities (id uuid, user_id uuid, provider_id text, identity_data jsonb, provider text,
+    last_sign_in_at timestamptz, created_at timestamptz, updated_at timestamptz);
   create function auth.uid() returns uuid language sql as $$ select current_setting('app.uid', true)::uuid $$;
   create table storage.buckets (id text, name text, public bool);
   create table storage.objects (bucket_id text, owner uuid, name text);
@@ -107,3 +112,28 @@ r = await as(MGR, 'manager', `update item_costs set unit_cost = 1`)
 check('manager cannot change item costs', !!r.error || (await db.query(`select coalesce(max(unit_cost),0)::float m from item_costs`)).rows[0].m === 0)
 r = await as(MGR, 'manager', `select post_stock_count('2026-09-30','[{"stock_account":"1420","counted":100}]'::jsonb)`)
 check('manager cannot post a stock count', !!r.error, r.error ?? 'posted!')
+
+// ---- investor (dashboard and summary reports only) ----
+const INV = '00000000-0000-0000-0000-000000000004'
+await db.exec(`reset role; insert into auth.users (id, email, raw_user_meta_data) values ('${INV}', 'inv@x.my', '{"full_name":"Investor"}');
+  update profiles set role = 'investor' where id = '${INV}';`)
+r = await as(INV, 'investor', `select count(*)::int c from account_totals(null, '2026-12-31')`)
+check('investor can total the accounts', count(r) > 0, String(count(r)))
+r = await as(INV, 'investor', `select count(*)::int c from account_balances`)
+check('investor can see daily totals', count(r) > 0, String(count(r)))
+r = await as(INV, 'investor', `select count(*)::int c from journals`)
+check('investor cannot see journal entries', count(r) === 0, String(count(r)))
+r = await as(INV, 'investor', `select count(*)::int c from journal_lines`)
+check('investor cannot see journal lines', count(r) === 0, String(count(r)))
+r = await as(INV, 'investor', `select count(*)::int c from payslip_view`)
+check('investor cannot see payslips', count(r) === 0, String(count(r)))
+r = await as(INV, 'investor', `select count(*)::int c from suppliers`)
+check('investor cannot see suppliers', count(r) === 0, String(count(r)))
+
+// ---- disabled login: loses its role at once, even mid-session ----
+await db.exec(`reset role; set app.uid = '${OWNER}'`)
+await db.query(`select set_login_active('${MGR}', false)`)
+r = await as(MGR, 'manager', `select my_role()::text r`)
+check('disabled login has no role', Array.isArray(r) && r[0]?.r === null, JSON.stringify(r))
+r = await as(MGR, 'manager', `select count(*)::int c from journals`)
+check('disabled manager can no longer see the books', count(r) === 0, String(count(r)))

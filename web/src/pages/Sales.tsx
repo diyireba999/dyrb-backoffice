@@ -459,7 +459,7 @@ export function SalesSettings({ role }: { role: Role }) {
 
   const SETTINGS: [string, string][] = [
     ['sales_account', 'Sales'], ['service_account', 'Service charge'], ['tax_account', 'SST'],
-    ['rounding_account', 'Rounding (Adj. Amount)'], ['discount_account', 'Discount given'],
+    ['rounding_account', 'Rounding (Adj. Amount)'],
   ]
 
   return (

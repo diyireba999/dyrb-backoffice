@@ -760,3 +760,30 @@ await db.exec(`update profiles set role='owner'`)
 await db.query(`select post_accruals('2027-02-15', '[{"account":"6100","amount":8000,"name":"Rent"}]'::jsonb)`)
 const febAcc = (await db.query(`select date::text d from journals where source='accrual' and source_ref='2027-02-01'`)).rows[0].d
 console.log(febAcc === '2027-02-01' ? 'new accrual dated the 1st ok' : 'FAIL new accrual date ' + febAcc)
+
+// ---- 031: review fixes ----
+for (let i = 0; i < 2; i++)  // safe to run again
+  await db.exec(fs.readFileSync(new URL('../supabase/031_review_fixes.sql', import.meta.url), 'utf8'))
+await db.exec(`update profiles set role='owner'`)
+// A leaver marked "not working here" still gets the last, pro-rated payslip. Apr 2028 has 30 days.
+const leaver = (await db.query(`insert into employees (name, pay_type, rate, join_date, leave_date, active, epf_on, socso_on, eis_on)
+  values ('Leaver', 'monthly', 3000, '2028-01-01', '2028-04-05', false, false, false, false) returning id`)).rows[0].id
+const leaverRun = (await db.query(`select create_payroll_run('2028-04-01', '2028-04-30') id`)).rows[0].id
+const leaverSlip = (await db.query(`select basic::float b, note from payslip_view where run_id=${leaverRun} and employee_id=${leaver}`)).rows[0]
+console.log(leaverSlip?.b === 500 ? 'leaver paid for the last 5 days ok' : 'FAIL leaver ' + JSON.stringify(leaverSlip))
+const goneRun = (await db.query(`select create_payroll_run('2028-05-01', '2028-05-31') id`)).rows[0].id
+const goneNext = (await db.query(`select count(*)::int n from payslips where run_id=${goneRun} and employee_id=${leaver}`)).rows[0].n
+console.log(goneNext === 0 ? 'leaver dropped from the following month ok' : 'FAIL leaver still paid next month')
+// A paid claim can be put back to approved; the payment entry goes with it.
+const uc = (await db.query(`insert into claims (date, account, description, amount, status) values ('2028-04-02','6800','Grab',25,'approved') returning id`)).rows[0].id
+const ucJ = (await db.query(`select pay_claim(${uc}, '1010', '2028-04-03') j`)).rows[0].j
+await db.query(`select unpay_claim(${uc})`)
+const ucAfter = (await db.query(`select status, paid_journal_id, (select count(*)::int from journals where id=${ucJ}) j from claims where id=${uc}`)).rows[0]
+console.log(ucAfter.status === 'approved' && ucAfter.paid_journal_id === null && ucAfter.j === 0 ? 'undo paid claim ok' : 'FAIL unpay ' + JSON.stringify(ucAfter))
+try { await db.query(`select unpay_claim(${uc})`); console.log('FAIL: unpaid an approved claim') } catch (e) { console.log('unpay only works on a paid claim ok') }
+// Unsplit sales now land in 4090, which Re-split can still move.
+const unsplitJ = (await db.query(`select post_sales_day('2028-04-02', 300, 0, 0, 0, '[{"code":"CASH","amount":300}]'::jsonb) id`)).rows[0].id
+const unsplitAcct = (await db.query(`select account from journal_lines where journal_id=${unsplitJ} and credit > 0`)).rows[0].account
+await db.query(`select resplit_sales_day('2028-04-02', '[{"account":"4000","amount":100},{"account":"4020","amount":200}]'::jsonb)`)
+const resplitOk = (await db.query(`select coalesce(sum(credit),0)::float s from journal_lines where journal_id=${unsplitJ} and account in ('4000','4020')`)).rows[0].s
+console.log(unsplitAcct === '4090' && resplitOk === 300 ? 'unsplit sales go to 4090 and can be re-split ok' : `FAIL unsplit ${unsplitAcct} ${resplitOk}`)

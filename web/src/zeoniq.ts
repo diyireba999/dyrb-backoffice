@@ -30,13 +30,19 @@ const parts = (v: unknown) => {
 }
 
 export function dateOrderOf(values: unknown[]): DateOrder {
-  for (const v of values) {
-    const p = parts(v)
-    if (!p) continue
+  const ps = values.map(parts).filter((p): p is string[] => p !== null)
+  for (const p of ps) {
     if (Number(p[0]) > 12) return 'dmy'
     if (Number(p[1]) > 12) return 'mdy'
   }
-  return 'dmy'
+  // Nothing settles it (every day 1-12). A report covers one short range, so
+  // take the order whose dates span fewer days: 10/1..10/12 read day-first
+  // would stretch over eleven months.
+  const span = (order: DateOrder) => {
+    const d = ps.map(p => Date.parse(isoDate(p.join('/'), order)))
+    return d.length ? Math.max(...d) - Math.min(...d) : 0
+  }
+  return span('mdy') < span('dmy') ? 'mdy' : 'dmy'
 }
 
 export const isoDate = (v: unknown, order: DateOrder = 'dmy') => {

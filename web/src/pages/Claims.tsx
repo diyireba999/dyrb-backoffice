@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MONEY_ACCOUNTS, MONEY_NAMES, dmy, isDirector, isOffice, openReceipt, rm, round2, supabase, todayMY, uploadReceipt, useAccounts, type Profile } from '../lib'
+import { MONEY_ACCOUNTS, MONEY_NAMES, dmy, isCostAccount, isDirector, isOffice, openReceipt, rm, round2, supabase, todayMY, useAccounts, type Profile } from '../lib'
 import { Empty } from '../ui'
 
 type Status = 'pending' | 'approved' | 'rejected' | 'paid'
@@ -18,7 +18,6 @@ const SELECT = '*, staff:profiles!claims_staff_id_fkey(full_name), accounts(name
 function NewClaim({ onSaved }: { onSaved: () => void }) {
   const accounts = useAccounts()
   const [f, setF] = useState({ date: todayMY(), account: '', description: '', amount: '' })
-  const [photo, setPhoto] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
@@ -27,14 +26,11 @@ function NewClaim({ onSaved }: { onSaved: () => void }) {
     e.preventDefault()
     const amount = round2(Number(f.amount))
     if (!(amount > 0)) return setError('Enter an amount')
-    if (!photo) return setError('Please add a receipt photo')
     setBusy(true); setError('')
     try {
-      const receipt = await uploadReceipt(photo)
-      const { error } = await supabase.from('claims').insert({ ...f, amount, receipt })
+      const { error } = await supabase.from('claims').insert({ ...f, amount })
       if (error) throw new Error(error.message)
-      setF({ ...f, account: '', description: '', amount: '' }); setPhoto(null)
-      ;(e.target as HTMLFormElement).reset()
+      setF({ ...f, account: '', description: '', amount: '' })
       onSaved()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
@@ -49,13 +45,12 @@ function NewClaim({ onSaved }: { onSaved: () => void }) {
           <label>Type</label>
           <select value={f.account} onChange={e => set('account', e.target.value)} required>
             <option value="">— choose —</option>
-            {accounts.filter(a => a.type === 'expense' && a.code >= '5000').map(a => <option key={a.code} value={a.code}>{a.name}</option>)}
+            {accounts.filter(a => a.type === 'expense' && a.code >= '5000' && !isCostAccount(a.code)).map(a => <option key={a.code} value={a.code}>{a.name}</option>)}
           </select>
         </div>
         <div><label>What did you buy?</label><input value={f.description} onChange={e => set('description', e.target.value)} placeholder="e.g. ice from 7-Eleven" required /></div>
         <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required /></div>
       </div>
-      <div><label>Receipt photo</label><input type="file" accept="image/*" capture="environment" onChange={e => setPhoto(e.target.files?.[0] ?? null)} /></div>
       {error && <p className="alert-error">{error}</p>}
       <button className="btn w-full md:w-auto" disabled={busy}>{busy ? 'Sending…' : 'Submit claim'}</button>
     </form>
@@ -107,6 +102,13 @@ export function Claims({ profile }: { profile: Profile }) {
 
   async function pay(c: Claim) {
     const { error } = await supabase.rpc('pay_claim', { p_id: c.id, p_from: payFrom, p_date: todayMY() })
+    if (error) alert(error.message)
+    load()
+  }
+
+  async function unpay(c: Claim) {
+    if (!confirm(`Undo the payment of ${rm(c.amount)}? The claim goes back to approved and the payment entry is removed.`)) return
+    const { error } = await supabase.rpc('unpay_claim', { p_id: c.id })
     if (error) alert(error.message)
     load()
   }
@@ -166,6 +168,7 @@ export function Claims({ profile }: { profile: Profile }) {
             </div>
           )}
           {c.status === 'approved' && canPay && <button className="btn" onClick={() => pay(c)}>Mark paid</button>}
+          {c.status === 'paid' && canPay && <button className="btn-light" onClick={() => unpay(c)}>Undo paid</button>}
           {c.status === 'pending' && c.staff_id === profile.id && <button className="btn-light" onClick={() => remove(c)}>Cancel</button>}
         </>} />
       ))}

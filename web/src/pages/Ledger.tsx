@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react'
 import { MONEY_ACCOUNTS, accountTotals, addDays, dmy, downloadCsv, loadDocuments, monthStart, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, useSuppliers, type Account, type DocRow, type Role } from '../lib'
 import { AccountSelect, Done, Empty, ReportBar, Ready } from '../ui'
@@ -95,8 +96,10 @@ export function JournalEntry() {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ msg: string; doc: string } | null>(null)
   const [error, setError] = useState('')
-  const load = () => { loadDocuments('jv').then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
-  useEffect(load, [])
+  const [params] = useSearchParams()
+  const [all, setAll] = useState(!!params.get('doc'))
+  const load = () => { loadDocuments('jv', all ? 240 : 3).then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
+  useEffect(load, [all])
 
   function startNew() {
     setEditing(null)
@@ -163,8 +166,8 @@ export function JournalEntry() {
   if (mode === 'list') return (
     <>
       {error && <p className="alert-error">{error}</p>}
-      <DocumentList rows={rows} newLabel="New journal entry"
-        emptyText="No journal entries in the last three months."
+      <DocumentList rows={rows} all={all} onShowAll={() => setAll(true)} newLabel="New journal entry"
+        emptyText={all ? 'No journal entries.' : 'No journal entries in the last three months.'}
         onNew={startNew} onEdit={startEdit} onDelete={remove} canEdit canDelete />
     </>
   )

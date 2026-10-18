@@ -81,22 +81,13 @@ export async function postJournal(date: string, description: string, lines: Line
   return data as number
 }
 
-// Shrink phone photos to ~1600px JPEG before upload to keep within free 1 GB storage.
-export async function uploadReceipt(file: File): Promise<string> {
-  const img = await createImageBitmap(file)
-  const scale = Math.min(1, 1600 / Math.max(img.width, img.height))
-  const canvas = document.createElement('canvas')
-  canvas.width = img.width * scale
-  canvas.height = img.height * scale
-  canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
-  const blob: Blob = await new Promise(r => canvas.toBlob(b => r(b!), 'image/jpeg', 0.7))
-  const { data: me } = await supabase.auth.getUser()
-  const path = `${me.user?.id ?? 'shared'}/${todayMY().slice(0, 7)}/${crypto.randomUUID()}.jpg`
-  const { error } = await supabase.storage.from('receipts').upload(path, blob, { contentType: 'image/jpeg' })
-  if (error) throw new Error(error.message)
-  return path
-}
+// Cost-of-sales accounts are written by the daily cost posting (stock sold x unit
+// cost), so a purchase or claim must go to a stock account instead, never here.
+// shortcut: mirrors category_costing (5000-5020); read that table if a cost
+// account is ever created outside 5000-5099.
+export const isCostAccount = (code: string) => code >= '5000' && code < '5100'
 
+// Photos already attached can still be viewed; nothing new is uploaded (storage is limited).
 export async function openReceipt(path: string) {
   const { data, error } = await supabase.storage.from('receipts').createSignedUrl(path, 300)
   if (error || !data) return alert('Could not open the receipt: ' + (error?.message ?? 'not found'))

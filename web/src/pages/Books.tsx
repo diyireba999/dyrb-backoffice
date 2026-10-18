@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Paperclip, Trash2 } from 'lucide-react'
-import { EDITABLE_SOURCES, MONEY_ACCOUNTS, accountTotals, dmy, downloadCsv, isDirector, loadDocuments, openReceipt, postJournal, rm, round2, supabase, todayMY, updateJournal, uploadReceipt, useAccounts, type Account, type DocRow } from '../lib'
+import { EDITABLE_SOURCES, MONEY_ACCOUNTS, accountTotals, dmy, downloadCsv, isCostAccount, isDirector, loadDocuments, openReceipt, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, type Account, type DocRow } from '../lib'
 import { AccountSelect, Done, Empty, ReportBar, MonthInput } from '../ui'
 import { DocumentList } from '../DocumentList'
 
@@ -22,13 +22,14 @@ export function PaymentVoucher() {
   const [editing, setEditing] = useState<DocRow | null>(null)
   const [rows, setRows] = useState<DocRow[]>([])
   const [f, setF] = useState(blank)
-  const [photo, setPhoto] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
   const [error, setError] = useState('')
+  const [params] = useSearchParams()
+  const [all, setAll] = useState(!!params.get('doc'))
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
-  const load = () => { loadDocuments('pv').then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
-  useEffect(load, [])
+  const load = () => { loadDocuments('pv', all ? 240 : 3).then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
+  useEffect(load, [all])
 
   // A payment voucher is always one debit (what for) and one credit (paid from).
   function startEdit(d: DocRow) {
@@ -42,11 +43,11 @@ export function PaymentVoucher() {
       what: debit.account, amount: String(Number(debit.debit)), from: credit.account,
       reference: d.reference ?? '', note: dash >= 0 ? d.description.slice(dash + 3) : '',
     })
-    setPhoto(null); setError(''); setMode('form')
+    setError(''); setMode('form')
   }
 
   function startNew() {
-    setEditing(null); setF(blank); setPhoto(null); setError(''); setMode('form')
+    setEditing(null); setF(blank); setError(''); setMode('form')
   }
 
   async function remove(d: DocRow) {
@@ -62,20 +63,19 @@ export function PaymentVoucher() {
     if (!(amount > 0)) return setError('Enter an amount')
     setBusy(true); setError('')
     try {
-      const attachment = photo ? await uploadReceipt(photo) : undefined
       const desc = [f.payee, f.note].filter(Boolean).join(' – ') || 'Payment'
       const lines = [
         { account: f.what, debit: amount, memo: f.note },
         { account: f.from, credit: amount },
       ]
       if (editing) {
-        await updateJournal(editing.id, f.date, desc, lines, { reference: f.reference, attachment })
+        await updateJournal(editing.id, f.date, desc, lines, { reference: f.reference })
         setDone({ msg: `${editing.doc_no} changed to ${rm(amount)}`, doc: editing.doc_no })
       } else {
-        const id = await postJournal(f.date, desc, lines, { source: 'pv', attachment, reference: f.reference })
+        const id = await postJournal(f.date, desc, lines, { source: 'pv', reference: f.reference })
         setDone({ msg: `Payment of ${rm(amount)} saved`, doc: await docNo(id) })
       }
-      setF({ ...blank, date: f.date, from: f.from }); setPhoto(null); setEditing(null)
+      setF({ ...blank, date: f.date, from: f.from }); setEditing(null)
       load()
     } catch (err) { setError((err as Error).message) }
     setBusy(false)
@@ -87,8 +87,8 @@ export function PaymentVoucher() {
   if (mode === 'list') return (
     <>
       {error && <p className="alert-error">{error}</p>}
-      <DocumentList rows={rows} newLabel="New payment voucher"
-        emptyText="No payment vouchers in the last three months."
+      <DocumentList rows={rows} all={all} onShowAll={() => setAll(true)} newLabel="New payment voucher"
+        emptyText={all ? 'No payment vouchers.' : 'No payment vouchers in the last three months.'}
         onNew={startNew} onEdit={startEdit} onDelete={remove} canEdit canDelete />
     </>
   )
@@ -105,8 +105,8 @@ export function PaymentVoucher() {
         <div className="sm:col-span-2"><label>Pay to</label><input value={f.payee} onChange={e => set('payee', e.target.value)} placeholder="Shop, TNB, landlord…" required /></div>
         <div><label>Account (what for)</label>
           <AccountSelect accounts={accounts} value={f.what} onChange={v => set('what', v)}
-            filter={a => a.type === 'expense' || a.code === '3100' || (a.type === 'asset' && a.code >= '1300')
-              || ['2300', '2310', '2320', '2330', '2340', '2600'].includes(a.code) || isDirector(a.code)} />
+            filter={a => (a.type === 'expense' && !isCostAccount(a.code)) || a.code === '3100' || (a.type === 'asset' && a.code >= '1300')
+              || ['2100', '2300', '2310', '2320', '2330', '2340', '2600'].includes(a.code) || isDirector(a.code)} />
         </div>
         <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required /></div>
         <div><label>Paid from</label>
@@ -117,10 +117,6 @@ export function PaymentVoucher() {
           </select>
         </div>
         <div><label>Description</label><input value={f.note} onChange={e => set('note', e.target.value)} placeholder="Optional" /></div>
-        <div className="sm:col-span-2"><label>Receipt / bill photo</label>
-          <input type="file" accept="image/*" capture="environment" onChange={e => setPhoto(e.target.files?.[0] ?? null)} />
-          {editing?.attachment && !photo && <p className="muted mt-1">A photo is already attached. Choosing a new one replaces it.</p>}
-        </div>
       </div>
       {error && <p className="alert-error">{error}</p>}
       <div className="flex justify-end">
@@ -141,9 +137,11 @@ export function OfficialReceipt() {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
   const [error, setError] = useState('')
+  const [params] = useSearchParams()
+  const [all, setAll] = useState(!!params.get('doc'))
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
-  const load = () => { loadDocuments('or').then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
-  useEffect(load, [])
+  const load = () => { loadDocuments('or', all ? 240 : 3).then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
+  useEffect(load, [all])
 
   // A receipt is one debit (received into) and one credit (what kind of money).
   function startEdit(d: DocRow) {
@@ -187,8 +185,8 @@ export function OfficialReceipt() {
   if (mode === 'list') return (
     <>
       {error && <p className="alert-error">{error}</p>}
-      <DocumentList rows={rows} newLabel="New official receipt"
-        emptyText="No official receipts in the last three months."
+      <DocumentList rows={rows} all={all} onShowAll={() => setAll(true)} newLabel="New official receipt"
+        emptyText={all ? 'No official receipts.' : 'No official receipts in the last three months.'}
         onNew={() => { setEditing(null); setF(blank); setError(''); setMode('form') }}
         onEdit={startEdit} onDelete={remove} canEdit canDelete />
     </>
@@ -230,9 +228,11 @@ export function Transfer() {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<{ msg: string; doc?: string } | null>(null)
   const [error, setError] = useState('')
+  const [params] = useSearchParams()
+  const [all, setAll] = useState(!!params.get('doc'))
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
-  const load = () => { loadDocuments('transfer').then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
-  useEffect(load, [])
+  const load = () => { loadDocuments('transfer', all ? 240 : 3).then(r => { setRows(r); setError('') }).catch(err => setError(err.message)) }
+  useEffect(load, [all])
   useEffect(() => { accountTotals(null, todayMY()).then(setBalances, (e: Error) => setError(e.message)) }, [done, mode])
 
   function startEdit(d: DocRow) {
@@ -279,8 +279,8 @@ export function Transfer() {
   if (mode === 'list') return (
     <>
       {error && <p className="alert-error">{error}</p>}
-      <DocumentList rows={rows} newLabel="New transfer"
-        emptyText="No transfers in the last three months."
+      <DocumentList rows={rows} all={all} onShowAll={() => setAll(true)} newLabel="New transfer"
+        emptyText={all ? 'No transfers.' : 'No transfers in the last three months.'}
         onNew={() => { setEditing(null); setF(blank); setError(''); setMode('form') }}
         onEdit={startEdit} onDelete={remove} canEdit canDelete />
     </>
@@ -322,13 +322,14 @@ const OWNER_SCREEN: Record<string, string> = {
   pv: '/cash/payment', or: '/cash/receipt', transfer: '/cash/transfer', jv: '/gl/journal',
   pi: '/ap/invoices', sp: '/ap/payments', sales: '/sales/upload', fiuu: '/sales/fiuu',
   payroll: '/payroll/run', claim: '/claims', accrual: '/gl/accruals', stock: '/stock/count',
-  cogs: '/sales/upload',
+  cogs: '/sales/upload', advance: '/payroll/advances',
 }
 
 const TYPES: Record<string, string> = {
   '': 'All types', pv: 'Payment Voucher', or: 'Official Receipt', jv: 'Journal Entry', transfer: 'Bank Transfer',
   pi: 'Purchase Invoice', sp: 'Supplier Payment', claim: 'Claim', sales: 'Daily sales', cogs: 'Cost of sales',
-  fiuu: 'Card settlement', payroll: 'Payroll', accrual: 'Accruals', stock: 'Stock count', manual: 'Older entries',
+  fiuu: 'Card settlement', payroll: 'Payroll', accrual: 'Accruals', stock: 'Stock count', advance: 'Staff advance',
+  manual: 'Older entries',
 }
 
 export function JournalListing({ isOwner }: { isOwner: boolean }) {
@@ -395,7 +396,7 @@ export function JournalListing({ isOwner }: { isOwner: boolean }) {
                   <td className="text-right">{r.journal_lines.map((l, i) => <div key={i}>{l.credit ? rm(l.credit) : ' '}</div>)}</td>
                   <td className="no-print whitespace-nowrap text-right">
                     {r.attachment && <button title="View receipt" className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-brand" onClick={() => openReceipt(r.attachment!)}><Paperclip className="size-4" /></button>}
-                    {OWNER_SCREEN[r.source] && <Link to={OWNER_SCREEN[r.source]} className="link mr-2"
+                    {OWNER_SCREEN[r.source] && <Link to={EDITABLE_SOURCES.includes(r.source) ? `${OWNER_SCREEN[r.source]}?doc=${r.doc_no}` : OWNER_SCREEN[r.source]} className="link mr-2"
                       title={EDITABLE_SOURCES.includes(r.source) ? 'Open this document' : 'Change this on the screen that made it'}>
                       {EDITABLE_SOURCES.includes(r.source) ? 'Open' : 'Fix here'}</Link>}
                     {(['manual', 'pv', 'or', 'jv', 'transfer'].includes(r.source) || (isOwner && !['pi', 'sp'].includes(r.source))) &&
