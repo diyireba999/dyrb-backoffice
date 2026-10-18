@@ -4,6 +4,7 @@ import { CheckCircle2, Plus, Trash2 } from 'lucide-react'
 import { MONEY_ACCOUNTS, accountTotals, addDays, dmy, downloadCsv, loadDocuments, monthStart, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, useSuppliers, type Account, type DocRow, type Role } from '../lib'
 import { AccountSelect, Done, Empty, ReportBar, Ready } from '../ui'
 import { DocumentList } from '../DocumentList'
+import { toast } from '../feedback'
 
 const TYPE_LABEL: Record<Account['type'], string> = { asset: 'Asset', liability: 'Liability', equity: 'Equity', income: 'Income', expense: 'Expense' }
 // Assets and expenses grow on the debit side; the rest grow on the credit side.
@@ -331,7 +332,7 @@ export function BankReconciliation() {
 
   async function toggle(l: LedgerLine) {
     const { error } = await supabase.rpc('set_cleared', { p_line_ids: [l.id], p_date: l.cleared_on ? null : date })
-    if (error) return alert(error.message)
+    if (error) return toast(error.message, { kind: 'error' })
     load()
   }
 

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react'
 import { accountTotals, dmy, rm, round2, supabase, todayMY, useAccounts, type Role } from '../lib'
 import { AccountSelect, Empty, MonthInput } from '../ui'
+import { confirmDialog, toast } from '../feedback'
+import { PageActions } from '../page'
 
 type Item = { id: number; name: string; account: string; amount: number; active: boolean; sort: number }
 
@@ -19,7 +21,6 @@ export function Accruals({ role }: { role: Role }) {
   const [add, setAdd] = useState({ name: '', account: '6900', amount: '' })
   const [busy, setBusy] = useState(false)
   const [version, setVersion] = useState(0)
-  const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
   const canEdit = role === 'owner' || role === 'accountant'
 
@@ -54,7 +55,8 @@ export function Accruals({ role }: { role: Role }) {
     setAdd({ name: '', account: '6900', amount: '' }); load()
   }
   async function remove(id: number) {
-    if (!confirm('Remove this line from the monthly list?')) return
+    const i = items.find(i => i.id === id)
+    if (!await confirmDialog({ title: `Remove ${i?.name ?? 'this line'} from the monthly list?`, confirmLabel: 'Remove', danger: true })) return
     await supabase.from('recurring_accruals').update({ active: false }).eq('id', id); load()
   }
 
@@ -62,7 +64,7 @@ export function Accruals({ role }: { role: Role }) {
   const total = round2(chosen.reduce((s, i) => s + Number(i.amount), 0))
 
   async function post() {
-    if (posted && !confirm(`${monthLabel(month)} already has an accrual (${posted.doc_no}). Replace it?`)) return
+    if (posted && !await confirmDialog({ title: `Replace ${monthLabel(month)}?`, body: `${posted.doc_no} already holds this month's accrual.`, confirmLabel: 'Replace' })) return
     setBusy(true); setError('')
     const { data, error } = await supabase.rpc('post_accruals', {
       p_month: `${month}-01`,
@@ -70,7 +72,7 @@ export function Accruals({ role }: { role: Role }) {
     })
     setBusy(false)
     if (error) return setError(error.message)
-    setMsg(data ? `Posted for ${monthLabel(month)}` : 'Nothing to post')
+    toast(data ? `Posted for ${monthLabel(month)}` : 'Nothing to post')
     setVersion(v => v + 1); load()
   }
 
@@ -100,7 +102,7 @@ export function Accruals({ role }: { role: Role }) {
                 <td className="w-72"><AccountSelect accounts={accounts} value={i.account} onChange={v => save(i.id, { account: v })} filter={a => a.type === 'expense'} disabled={!canEdit} /></td>
                 <td><input className="text-right" type="number" step="0.01" min="0" inputMode="decimal" disabled={!canEdit}
                   defaultValue={Number(i.amount)} onBlur={e => Number(e.target.value) !== Number(i.amount) && save(i.id, { amount: round2(Number(e.target.value)) })} /></td>
-                <td className="text-right">{canEdit && <button title="Remove" className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" onClick={() => remove(i.id)}><Trash2 className="size-4" /></button>}</td>
+                <td className="text-right">{canEdit && <button title="Remove" className="btn-ghost px-1.5 hover:bg-red-50 hover:text-red-600" onClick={() => remove(i.id)}><Trash2 className="size-4" /></button>}</td>
               </tr>
             ))}
             <tr className="bg-slate-50 font-semibold">
@@ -112,13 +114,12 @@ export function Accruals({ role }: { role: Role }) {
       </div>
 
       {error && <p className="alert-error">{error}</p>}
-      {msg && <p className="text-sm text-emerald-700">{msg}</p>}
-      <div className="flex flex-wrap items-center gap-3">
-        <p className="muted">Posted on the 1st of the month: each cost is charged to its account, with the total owed sitting in 2600 Accrued Expenses.</p>
-        {canEdit && <button className="btn ml-auto" disabled={busy || total <= 0} onClick={post}>
+      <p className="muted">Posted on the 1st of the month: each cost is charged to its account, with the total owed sitting in 2600 Accrued Expenses.</p>
+      {canEdit && <PageActions>
+        <button className="btn" disabled={busy || total <= 0} onClick={post}>
           {busy ? 'Posting…' : posted ? `Replace ${monthLabel(month)}` : `Post ${monthLabel(month)}`}
-        </button>}
-      </div>
+        </button>
+      </PageActions>}
 
       {canEdit && (
         <form onSubmit={addItem} className="card grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_16rem_10rem_auto]">
