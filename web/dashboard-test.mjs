@@ -111,7 +111,7 @@ assert.equal(todoItems([oct, { ...sep, card_unsettled: 99 }], T).length, 0, 'car
 items = todoItems([{ ...oct, payroll: { status: 'draft', run_id: 9 } }, sep], T)
 assert.deepEqual([items[0].text, items[0].action], ['October payroll is a draft', 'Open'])
 items = todoItems([oct, { ...sep, payroll: { status: 'approved', run_id: 8 }, closed_at: null }], T)
-assert.deepEqual([items[0].text, items[0].action], ['September payroll approved, not paid', 'Pay'])
+assert.deepEqual([items[0].text, items[0].to, items[0].action], ['September payroll approved, not paid', '/payroll/run', 'Pay'])
 assert.equal(items.length, 1, 'payroll approved but everything else done: no "not closed" row')
 items = todoItems([oct, { ...sep, closed_at: null, accruals_posted: false, bank_uncleared: 3 }], T)
 assert.deepEqual([items[0].text, items[0].to, items[0].action], ['September not closed: accruals, bank', '/month-end', 'Month-end'])
