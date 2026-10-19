@@ -426,11 +426,13 @@ export function SupplierPayments({ role }: { role: Role }) {
         {supplier && (
           <div className="-mx-6 overflow-x-auto">
             <table>
-              <thead><tr><th className="pl-6">Doc No</th><th>Inv no.</th><th>Date</th><th>Due</th><th className="text-right">Outstanding</th><th className="w-40 pr-6 text-right">Pay now</th></tr></thead>
+              <thead><tr><th className="w-10 pl-6"></th><th>Doc No</th><th>Inv no.</th><th>Date</th><th>Due</th><th className="text-right">Outstanding</th><th className="w-40 pr-6 text-right">Pay now</th></tr></thead>
               <tbody>
                 {open.map(i => (
                   <tr key={i.id}>
-                    <td className="pl-6 font-mono text-xs">{i.doc_no}</td><td>{i.invoice_no}</td>
+                    <td className="pl-6"><input type="checkbox" checked={Number(pay[i.id] ?? 0) > 0} disabled={owingOn(i) <= 0}
+                      aria-label={`Pay ${i.doc_no} in full`} onChange={e => setPay({ ...pay, [i.id]: e.target.checked ? String(owingOn(i)) : '' })} /></td>
+                    <td className="font-mono text-xs">{i.doc_no}</td><td>{i.invoice_no}</td>
                     <td className="text-slate-500">{dmy(i.date)}</td><td className="text-slate-500">{dmy(i.due_date)}</td>
                     <td className="text-right">{rm(owingOn(i))}</td>
                     <td className="pr-6"><input className="text-right" type="number" step="0.01" min="0" inputMode="decimal"
@@ -438,7 +440,7 @@ export function SupplierPayments({ role }: { role: Role }) {
                   </tr>
                 ))}
                 <tr className="bg-slate-50 font-semibold">
-                  <td className="pl-6" colSpan={4}><button type="button" className="link" onClick={payAll}>Pay all in full</button></td>
+                  <td className="pl-6" colSpan={5}><button type="button" className="link" onClick={payAll}>Pay all in full</button></td>
                   <td className="text-right text-slate-500">Total payment</td>
                   <td className="pr-6 text-right">{rm(total)}</td>
                 </tr>

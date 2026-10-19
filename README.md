@@ -82,6 +82,8 @@ Turn on two-step login for each account once created — this system holds salar
 - The dashboard's sales figures compare against the same day of the week a week ago (Tuesday vs Tuesday, not Tuesday vs Monday), because trade swings by day of week. Its break-even figure is worked out from the last two or three complete months of records, whichever there is, so it settles down and becomes more reliable once there is a few months of history.
 - The side menu is grouped by task: **Today**, **Money in**, **Money out**, **Month-end**, **Books**, **Setup**. On a phone the bottom bar has Today, Search, New and Menu. Every screen keeps its old web address, so bookmarks still work.
 - After saving a voucher, receipt, transfer, invoice or journal, the list comes back with the new row highlighted; press **Save & add another** to stay on the form. Esc closes a form.
+- **Daily close:** on Sales › Upload, drop the Zeoniq Bill Summary, the Zeoniq Product Sales file and the Fiuu listing together (or one at a time). The screen works out which is which, shows every day and payout, and one **Post** button posts them all. Remove a file with the × on its chip.
+- **Paying suppliers:** tick the invoices to pay and the full amount fills in; type a smaller figure for a part payment.
 
 ## Run on this computer (optional, for testing changes)
 
