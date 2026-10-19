@@ -117,4 +117,16 @@ items = todoItems([oct, { ...sep, closed_at: null, accruals_posted: false, bank_
 assert.deepEqual([items[0].text, items[0].to, items[0].action], ['September not closed: accruals, bank', '/month-end', 'Month-end'])
 assert.equal(todoItems([oct, { ...sep, closed_at: null, payroll: { status: 'none', run_id: null }, stock_count_posted: false }], T)[0].text, 'September not closed: stock count, payroll')
 assert.equal(todoItems([{ ...oct, month: '2026-11-01', payroll: { status: 'draft', run_id: 1 } }, sep], T).length, 0, 'a month not started is quiet')
+
+// Boundaries and gates a regression could slip past.
+assert.equal(todoItems([oct, { ...sep, accruals_posted: false }], T).length, 0, 'a closed month never reports "not closed"')
+assert.equal(listDays(['2026-10-10', '2026-10-11', '2026-10-12', '2026-10-13']), '10 Oct, 11 Oct, 12 Oct, 13 Oct', 'four days are listed in full')
+items = todoItems([{ ...oct, card_unsettled: 10, card_since: null }, sep], T)
+assert.deepEqual([items[0].to, items[0].action], ['/sales/fiuu', 'Settle'])
+items = todoItems([{ ...oct, payroll: { status: 'draft', run_id: 9 } }, sep], T)
+assert.deepEqual([items[0].to, items[0].action], ['/payroll/run', 'Open'])
+assert.equal(todoItems([oct, { ...sep, closed_at: null, accruals_posted: false, stock_count_posted: false, bank_uncleared: 1, payroll: { status: 'none', run_id: null } }], T)[0].text,
+  'September not closed: accruals, stock count, bank, payroll', 'full close list in order')
+items = todoItems([oct, { ...sep, days_missing: ['2026-09-29'] }], T)
+assert.deepEqual([items[0].text, items[0].to], ['Sales not uploaded: 29 Sept', '/sales/upload'], 'last month\'s missing days are listed too')
 console.log('todo items ok')
