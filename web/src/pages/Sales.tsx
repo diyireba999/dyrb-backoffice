@@ -1,23 +1,143 @@
 import { Fragment, useEffect, useState } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
-import { CheckCircle2, CloudUpload, Plus, Trash2, TriangleAlert } from 'lucide-react'
+import { CheckCircle2, CloudUpload, Plus, Trash2, TriangleAlert, X } from 'lucide-react'
 import { MONEY_ACCOUNTS, dmy, rm, round2, supabase, useAccounts, type Account, type Role } from '../lib'
-import { cogsLinesFor, dayTotal, daySuspect, parseBillSummary, parseFiuu, parseProductSales, paymentTotal, salesLinesFor, type Day, type ItemSale, type Settlement } from '../zeoniq'
+import { cogsLinesFor, dayTotal, daySuspect, detectFile, parseBillSummary, parseFiuu, parseProductSales, paymentTotal, salesLinesFor, type Day, type FileKind, type ItemSale, type Settlement } from '../zeoniq'
 import { AccountSelect, Empty } from '../ui'
 import { confirmDialog } from '../feedback'
 
+// Reads a Fiuu listing: settlements with their posted flag, takings per sale day, and
+// what the POS already booked to 1200 on those days. Shared by the daily close and the
+// stand-alone Card settlement screen.
+async function loadFiuuFile(rows: unknown) {
+  const parsed = parseFiuu(rows)
+  const { data } = await supabase.from('journals').select('source_ref').eq('source', 'fiuu')
+    .in('source_ref', parsed.settlements.map(s => s.settleDate))
+  const already = new Set((data ?? []).map(r => r.source_ref))
+  const list: Settlement[] = parsed.settlements.map(s => ({ ...s, posted: already.has(s.settleDate) }))
+  const inBooks: Record<string, number> = {}
+  const dates = parsed.takings.map(t => t.date)
+  if (dates.length) {
+    const { data: lines } = await supabase.from('journal_lines')
+      .select('debit, journals!inner(date, source)')
+      .eq('account', '1200').eq('journals.source', 'sales')
+      .gte('journals.date', dates[0]).lte('journals.date', dates[dates.length - 1])
+    for (const l of (lines ?? []) as unknown as { debit: number; journals: { date: string } }[]) {
+      inBooks[l.journals.date] = round2((inBooks[l.journals.date] ?? 0) + Number(l.debit))
+    }
+  }
+  return { list, takings: parsed.takings, inBooks, info: { pending: parsed.pending, skipped: parsed.skipped } }
+}
+
+// Posts the ticked payouts that are not in yet; every row comes back with its result.
+async function postSettlements(rows: Settlement[], pick: Record<string, boolean>, bank: string) {
+  const out: Settlement[] = []
+  for (const s of rows) {
+    if (!pick[s.settleDate] || s.posted) { out.push(s); continue }
+    const { error } = await supabase.rpc('post_fiuu_settlement', {
+      p_settle_date: s.settleDate, p_gross: s.gross, p_fee: s.fee, p_net: s.net, p_bank: bank,
+      p_note: `Fiuu settlement ${s.count} card payment${s.count === 1 ? '' : 's'}`,
+      p_brands: s.brands.map(b => ({ brand: b.brand, gross: b.gross, fee: b.fee })),
+    })
+    if (error) console.error('post_fiuu_settlement', s.settleDate, error)
+    out.push({ ...s, posted: !error, result: error ? error.message : 'ok' })
+  }
+  return out
+}
+
+// Fiuu takings per day of sale against what the POS upload booked. Check only.
+function FiuuCheck({ takings, inBooks }: { takings: { date: string; gross: number }[]; inBooks: Record<string, number> }) {
+  if (takings.length === 0) return null
+  return (
+    <div className="card">
+      <h3 className="font-semibold">Check only — nothing here is posted</h3>
+      <p className="muted">
+        Card sales reach your books from the Zeoniq Bill Summary, not from Fiuu. This compares the two.
+        A card paid after midnight may sit on the day before on the POS, so a difference that cancels out between
+        two days is normal.
+      </p>
+      <table className="mt-3">
+        <thead><tr><th>Day of sale</th><th className="text-right">Fiuu says</th><th className="text-right">In your books (POS)</th><th className="text-right">Difference</th></tr></thead>
+        <tbody>{takings.map(t => {
+          const booked = inBooks[t.date]
+          const diff = booked === undefined ? null : round2(booked - t.gross)
+          return (
+            <tr key={t.date}>
+              <td>{dmy(t.date)}</td>
+              <td className="text-right">{rm(t.gross)}</td>
+              <td className="text-right">{booked === undefined ? <span className="text-amber-600">Sales not uploaded</span> : rm(booked)}</td>
+              <td className={`text-right ${diff ? 'text-amber-600' : 'text-slate-400'}`}>{diff === null ? '—' : diff === 0 ? 'Matches' : rm(diff)}</td>
+            </tr>
+          )
+        })}</tbody>
+      </table>
+    </div>
+  )
+}
+
+// Payout rows with their per-card-type breakdown. Shared by both screens.
+function PayoutRows({ rows, pick, onPick }: { rows: Settlement[]; pick: Record<string, boolean>; onPick: (date: string, on: boolean) => void }) {
+  return (
+    <table>
+      <thead><tr>
+        <th className="w-10"></th><th>Paid into bank on</th><th className="text-right">Card payments</th>
+        <th className="text-right">Customers paid</th><th className="text-right">Fiuu fee</th><th className="text-right">Rate</th>
+        <th className="text-right">Into bank</th><th></th>
+      </tr></thead>
+      <tbody>
+        {rows.map(s => (
+          <Fragment key={s.settleDate}>
+          <tr className={s.posted ? 'text-slate-400' : ''}>
+            <td><input type="checkbox" disabled={s.posted} checked={!!pick[s.settleDate] && !s.posted} onChange={e => onPick(s.settleDate, e.target.checked)} /></td>
+            <td className="font-medium">{dmy(s.settleDate)}</td>
+            <td className="text-right">{s.count}</td>
+            <td className="text-right">{rm(s.gross)}</td>
+            <td className="text-right text-rose-600">{rm(s.fee)}</td>
+            <td className="text-right text-xs text-slate-500">{s.gross ? (s.fee / s.gross * 100).toFixed(2) + '%' : ''}</td>
+            <td className="text-right font-semibold">{rm(s.net)}</td>
+            <td className="whitespace-nowrap text-right text-xs">
+              {s.posted && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />{s.result === 'ok' ? 'Posted' : 'Already in'}</span>}
+              {!s.posted && s.result && s.result !== 'ok' && <span className="text-red-600">{s.result}</span>}
+            </td>
+          </tr>
+          {s.brands.map(b => (
+            <tr key={s.settleDate + b.brand} className="text-xs text-slate-500">
+              <td></td><td className="pl-6">{b.brand}</td><td className="text-right">{b.count}</td>
+              <td className="text-right">{rm(b.gross)}</td><td className="text-right">{rm(b.fee)}</td>
+              <td className="text-right">{b.gross ? (b.fee / b.gross * 100).toFixed(2) + '%' : ''}</td>
+              <td className="text-right">{rm(round2(b.gross - b.fee))}</td><td></td>
+            </tr>
+          ))}
+          </Fragment>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+const FILE_LABEL: Record<FileKind, string> = { bill: 'Bill Summary', items: 'Product Sales', fiuu: 'Fiuu listing' }
+
+// The daily close: drop the Bill Summary, the Product Sales file and the Fiuu listing
+// together, review one table, press Post once. Posting is exactly what the three
+// separate screens did: sales (or replace) then cost of sales per day, then payouts.
 export function UploadSales({ role }: { role: Role }) {
   const [days, setDays] = useState<Day[]>([])
+  const [items, setItems] = useState<ItemSale[]>([])
+  const [rows, setRows] = useState<Settlement[]>([])
+  const [takings, setTakings] = useState<{ date: string; gross: number }[]>([])
+  const [inBooks, setInBooks] = useState<Record<string, number>>({})
+  const [info, setInfo] = useState({ pending: 0, skipped: 0 })
+  const [files, setFiles] = useState<Partial<Record<FileKind, string>>>({})
   const [pick, setPick] = useState<Record<string, boolean>>({})
+  const [pickPay, setPickPay] = useState<Record<string, boolean>>({})
   const [replace, setReplace] = useState<Record<string, boolean>>({})
+  const [bank, setBank] = useState('1100')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [fileName, setFileName] = useState('')
-  const [items, setItems] = useState<ItemSale[]>([])
-  const [itemFile, setItemFile] = useState('')
   const [categories, setCategories] = useState<Record<string, string>>({})
   const [costs, setCosts] = useState<Record<string, number>>({})
   const [accountNames, setAccountNames] = useState<Record<string, string>>({})
+  const accounts = useAccounts()
 
   useEffect(() => {
     supabase.from('item_category_map').select('prefix, account')
@@ -42,30 +162,55 @@ export function UploadSales({ role }: { role: Role }) {
     return cogsLinesFor(dayItems, categories, costs)
   }
 
-  async function onItemFile(file: File) {
-    setError(''); setItemFile(file.name)
-    try {
-      const parsed = parseProductSales(await readXlsxFile(file))
-      setItems(parsed)
-      // Remember the items, so their cost can be filled in on the Item Costs screen.
-      const seen = new Map<string, { code: string; name: string; date: string }>()
-      for (const i of parsed) seen.set(i.code.toUpperCase(), { code: i.code, name: i.name, date: i.date })
-      const { error } = await supabase.rpc('note_items', { p_items: [...seen.values()] })
-      if (error) console.error('note_items', error)
-    } catch (err) { setError((err as Error).message); setItems([]) }
+  async function loadBill(sheet: unknown) {
+    const parsed = parseBillSummary(sheet)
+    const { data } = await supabase.from('journals').select('source_ref').eq('source', 'sales')
+      .in('source_ref', parsed.map(d => d.date))
+    const already = new Set((data ?? []).map(r => r.source_ref))
+    const withStatus = parsed.map(d => ({ ...d, posted: already.has(d.date) }))
+    setDays(withStatus); setReplace({})
+    setPick(Object.fromEntries(withStatus.filter(d => !d.posted && !daySuspect(d)).map(d => [d.date, true])))
   }
 
-  async function onFile(file: File) {
-    setError(''); setDays([]); setFileName(file.name)
-    try {
-      const parsed = parseBillSummary(await readXlsxFile(file))
-      const { data } = await supabase.from('journals').select('source_ref').eq('source', 'sales')
-        .in('source_ref', parsed.map(d => d.date))
-      const already = new Set((data ?? []).map(r => r.source_ref))
-      const withStatus = parsed.map(d => ({ ...d, posted: already.has(d.date) }))
-      setDays(withStatus)
-      setPick(Object.fromEntries(withStatus.filter(d => !d.posted && !daySuspect(d)).map(d => [d.date, true])))
-    } catch (err) { setError((err as Error).message) }
+  async function loadItems(sheet: unknown) {
+    const parsed = parseProductSales(sheet)
+    setItems(parsed)
+    // Remember the items, so their cost can be filled in on the Item Costs screen.
+    const seen = new Map<string, { code: string; name: string; date: string }>()
+    for (const i of parsed) seen.set(i.code.toUpperCase(), { code: i.code, name: i.name, date: i.date })
+    const { error } = await supabase.rpc('note_items', { p_items: [...seen.values()] })
+    if (error) console.error('note_items', error)
+  }
+
+  async function loadFiuu(sheet: unknown) {
+    const r = await loadFiuuFile(sheet)
+    setRows(r.list); setTakings(r.takings); setInBooks(r.inBooks); setInfo(r.info)
+    setPickPay(Object.fromEntries(r.list.filter(s => !s.posted).map(s => [s.settleDate, true])))
+  }
+
+  // Any mix of the three exports, in any order. A kind dropped twice is replaced.
+  async function onFiles(list: FileList | null) {
+    if (!list || list.length === 0) return
+    const problems: string[] = []
+    for (const file of Array.from(list)) {
+      try {
+        const sheet = await readXlsxFile(file)
+        const kind = detectFile(sheet)
+        if (kind === 'bill') await loadBill(sheet)
+        else if (kind === 'items') await loadItems(sheet)
+        else if (kind === 'fiuu') await loadFiuu(sheet)
+        else { problems.push(`${file.name}: not a Zeoniq Bill Summary, Product Sales or Fiuu listing`); continue }
+        setFiles(f => ({ ...f, [kind]: file.name }))
+      } catch (err) { problems.push(`${file.name}: ${(err as Error).message}`) }
+    }
+    setError(problems.join(' — '))
+  }
+
+  function removeFile(kind: FileKind) {
+    setFiles(f => { const next = { ...f }; delete next[kind]; return next })
+    if (kind === 'bill') { setDays([]); setPick({}); setReplace({}) }
+    if (kind === 'items') setItems([])
+    if (kind === 'fiuu') { setRows([]); setTakings([]); setInBooks({}); setInfo({ pending: 0, skipped: 0 }); setPickPay({}) }
   }
 
   // Cost of sales for a day, posted (or posted again) alongside it.
@@ -115,8 +260,9 @@ export function UploadSales({ role }: { role: Role }) {
     setError(failed.length ? failed.map(d => `${dmy(d.date)}: ${d.result}`).join(' — ') : '')
   }
 
-  async function post() {
-    setBusy(true)
+  // One button: ticked days (sales then cost of sales), then ticked payouts.
+  async function postAll() {
+    setBusy(true); setError('')
     const out: Day[] = []
     for (const d of days) {
       const willReplace = d.posted && role === 'owner' && replace[d.date]
@@ -133,15 +279,19 @@ export function UploadSales({ role }: { role: Role }) {
       const costError = error ? null : await postCogs(d)
       out.push({ ...d, posted: !error, result: error ? error.message : costError ?? 'ok' })
     }
-    setDays(out); setBusy(false)
-    const failed = out.filter(d => d.result && d.result !== 'ok')
-    setError(failed.length ? failed.map(d => `${dmy(d.date)}: ${d.result}`).join(' — ') : '')
+    setDays(out); setReplace({})
+    const payOut = await postSettlements(rows, pickPay, bank)
+    setRows(payOut); setBusy(false)
+    const failed = [
+      ...out.filter(d => d.result && d.result !== 'ok').map(d => `${dmy(d.date)}: ${d.result}`),
+      ...payOut.filter(s => s.result && s.result !== 'ok').map(s => `Payout ${dmy(s.settleDate)}: ${s.result}`),
+    ]
+    setError(failed.join(' — '))
   }
 
   const chosen = days.filter(d => pick[d.date] && !d.posted)
   const replacing = role === 'owner' ? days.filter(d => d.posted && replace[d.date]) : []
-  // Posted days whose split is ready to be applied.
-  // Posted days whose items have costs, so cost of sales can be written.
+  const chosenPay = rows.filter(s => pickPay[s.settleDate] && !s.posted)
   const costable = days.filter(d => {
     if (!d.posted || !pick[d.date]) return false
     const cogs = cogsFor(d)
@@ -152,23 +302,31 @@ export function UploadSales({ role }: { role: Role }) {
     const split = splitFor(d)
     return !!split && split.unknown.length === 0 && Math.abs(split.diff) <= 0.05 && split.lines.length > 0
   })
+  const dayCount = chosen.length + replacing.length
+  const postLabel = [dayCount > 0 && `${dayCount} day${dayCount === 1 ? '' : 's'}`, chosenPay.length > 0 && `${chosenPay.length} payout${chosenPay.length === 1 ? '' : 's'}`]
+    .filter(Boolean).join(' and ')
+  const loadedKinds = (Object.keys(FILE_LABEL) as FileKind[]).filter(k => files[k])
 
   return (
     <div className="space-y-4">
       <div className="card">
-        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-slate-300 py-10 text-center hover:border-brand">
+        <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-slate-300 py-10 text-center hover:border-brand"
+          onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); onFiles(e.dataTransfer.files) }}>
           <CloudUpload className="size-8 text-slate-400" />
-          <span className="font-medium">Choose the Zeoniq Bill Summary file</span>
-          <span className="muted">Zeoniq → Reports → Bill Summary Listing → Export to Excel (.xlsx)</span>
-          {fileName && <span className="badge mt-1">{fileName}</span>}
-          <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} />
+          <span className="font-medium">Drop the day's files here, or click to choose</span>
+          <span className="muted">Zeoniq Bill Summary, Zeoniq Product Sales and the Fiuu transaction listing — any of them, together or one at a time (.xlsx)</span>
+          <input type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={e => { onFiles(e.target.files); e.target.value = '' }} />
         </label>
-        <label className="mt-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 py-4 text-center text-[13px] hover:border-brand">
-          <span className="font-medium">Optional: Product Sales export, to split food / beverage / liquor</span>
-          {itemFile && <span className="badge">{itemFile}</span>}
-          <input type="file" accept=".xlsx,.xls" className="hidden" onChange={e => e.target.files?.[0] && onItemFile(e.target.files[0])} />
-        </label>
-        <p className="muted mt-2 text-center">Export both reports with the same date range and the same status filter, or the split will not match.</p>
+        {loadedKinds.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {loadedKinds.map(k => (
+              <span key={k} className="badge gap-1">{FILE_LABEL[k]}: {files[k]}
+                <button type="button" title="Remove this file" className="ml-1 rounded hover:text-red-600" onClick={() => removeFile(k)}><X className="size-3" /></button>
+              </span>
+            ))}
+          </div>
+        )}
+        <p className="muted mt-2 text-center">Export the two Zeoniq reports with the same date range and the same status filter, or the split will not match.</p>
       </div>
       {error && <p className="alert-error">{error}</p>}
 
@@ -238,8 +396,32 @@ export function UploadSales({ role }: { role: Role }) {
               will show sales with no cost against it until you re-split.
             </p>
           )}
+        </>
+      )}
+
+      {rows.length > 0 && (
+        <div className="card p-0">
+          <div className="flex flex-wrap items-end gap-3 p-4">
+            <h3 className="font-semibold">Card payouts</h3>
+            <div className="w-56"><label>Money paid into</label>
+              <AccountSelect accounts={accounts} value={bank} onChange={setBank} filter={a => MONEY_ACCOUNTS.includes(a.code)} />
+            </div>
+            <p className="muted">{info.pending > 0 && `${info.pending} payment(s) not settled yet. `}{info.skipped > 0 && `${info.skipped} row(s) not in "settled" status were skipped.`}</p>
+          </div>
+          <div className="overflow-x-auto">
+            <PayoutRows rows={rows} pick={pickPay} onPick={(date, on) => setPickPay({ ...pickPay, [date]: on })} />
+          </div>
+        </div>
+      )}
+
+      {(days.length > 0 || rows.length > 0) && (
+        <>
           <div className="flex flex-wrap items-center gap-3">
-            <p className="muted">{chosen.length} day{chosen.length === 1 ? '' : 's'} ready · {rm(chosen.reduce((s, d) => s + d.netTotal, 0))}{replacing.length > 0 && ` · ${replacing.length} to replace`}</p>
+            <p className="muted">
+              {dayCount > 0 && `${dayCount} day${dayCount === 1 ? '' : 's'} ready · ${rm([...chosen, ...replacing].reduce((s, d) => s + d.netTotal, 0))}`}
+              {dayCount > 0 && chosenPay.length > 0 && ' · '}
+              {chosenPay.length > 0 && `${chosenPay.length} payout${chosenPay.length === 1 ? '' : 's'} · ${rm(chosenPay.reduce((s, r) => s + r.net, 0))} into the bank`}
+            </p>
             <div className="ml-auto flex gap-2">
               {costable.length > 0 && (
                 <button className="btn-light" disabled={busy} onClick={postCogsOnly} title="Write the cost of sales for these days from the item costs">
@@ -251,15 +433,15 @@ export function UploadSales({ role }: { role: Role }) {
                   {busy ? 'Working…' : `Re-split ${splittable.length} posted day${splittable.length === 1 ? '' : 's'}`}
                 </button>
               )}
-              <button className="btn" disabled={busy || chosen.length + replacing.length === 0} onClick={post}>
-                {busy ? 'Posting…' : `Post ${chosen.length + replacing.length} day${chosen.length + replacing.length === 1 ? '' : 's'}`}
+              <button className="btn" disabled={busy || !postLabel} onClick={postAll}>
+                {busy ? 'Posting…' : postLabel ? `Post ${postLabel}` : 'Nothing to post'}
               </button>
             </div>
           </div>
           {splittable.length > 0 && <p className="muted">Days already posted can take the split now — tick them and press <b>Re-split</b>. Only the sales lines change; payments, service charge and rounding stay as they are.</p>}
-          <p className="muted">Cost of sales is posted as its own entry per day, from quantity sold times cost per unit. Fill in the costs on the <b>Item Costs</b> screen.</p>
-          <p className="muted">Each day becomes one entry: money in by payment type, sales and service charge as income. A day already posted cannot go in twice.</p>
-          <p className="muted">A day already posted can be replaced — tick <b>Replace</b> and the old entry is swapped for the new one. Only the owner can do this.</p>
+          <FiuuCheck takings={takings} inBooks={inBooks} />
+          <p className="muted">Each day becomes one entry: money in by payment type, sales and service charge as income. Cost of sales is posted as its own entry per day, from quantity sold times cost per unit (fill in costs on <b>Item Costs</b>). Each payout moves money out of 1200 Fiuu Card into the bank and books the fee to 6200.</p>
+          <p className="muted">A day already posted cannot go in twice. The owner can tick <b>Replace</b> to swap the old entry for the new one.</p>
         </>
       )}
     </div>
@@ -283,44 +465,15 @@ export function CardSettlement() {
   async function onFile(file: File) {
     setError(''); setRows([]); setFileName(file.name)
     try {
-      const parsed = parseFiuu(await readXlsxFile(file))
-      const { data } = await supabase.from('journals').select('source_ref').eq('source', 'fiuu')
-        .in('source_ref', parsed.settlements.map(s => s.settleDate))
-      const already = new Set((data ?? []).map(r => r.source_ref))
-      const list = parsed.settlements.map(s => ({ ...s, posted: already.has(s.settleDate) }))
-      setRows(list)
-      setTakings(parsed.takings)
-      // What the POS already booked to 1200 on each of those days.
-      const dates = parsed.takings.map(t => t.date)
-      if (dates.length) {
-        const { data: lines } = await supabase.from('journal_lines')
-          .select('debit, journals!inner(date, source)')
-          .eq('account', '1200').eq('journals.source', 'sales')
-          .gte('journals.date', dates[0]).lte('journals.date', dates[dates.length - 1])
-        const totals: Record<string, number> = {}
-        for (const l of (lines ?? []) as unknown as { debit: number; journals: { date: string } }[]) {
-          totals[l.journals.date] = round2((totals[l.journals.date] ?? 0) + Number(l.debit))
-        }
-        setInBooks(totals)
-      }
-      setInfo({ pending: parsed.pending, skipped: parsed.skipped })
-      setPick(Object.fromEntries(list.filter(s => !s.posted).map(s => [s.settleDate, true])))
+      const r = await loadFiuuFile(await readXlsxFile(file))
+      setRows(r.list); setTakings(r.takings); setInBooks(r.inBooks); setInfo(r.info)
+      setPick(Object.fromEntries(r.list.filter(s => !s.posted).map(s => [s.settleDate, true])))
     } catch (err) { setError((err as Error).message) }
   }
 
   async function post() {
     setBusy(true)
-    const out: Settlement[] = []
-    for (const s of rows) {
-      if (!pick[s.settleDate] || s.posted) { out.push(s); continue }
-      const { error } = await supabase.rpc('post_fiuu_settlement', {
-        p_settle_date: s.settleDate, p_gross: s.gross, p_fee: s.fee, p_net: s.net, p_bank: bank,
-        p_note: `Fiuu settlement ${s.count} card payment${s.count === 1 ? '' : 's'}`,
-        p_brands: s.brands.map(b => ({ brand: b.brand, gross: b.gross, fee: b.fee })),
-      })
-      if (error) console.error('post_fiuu_settlement', s.settleDate, error)
-      out.push({ ...s, posted: !error, result: error ? error.message : 'ok' })
-    }
+    const out = await postSettlements(rows, pick, bank)
     setRows(out); setBusy(false)
     const failed = out.filter(s => s.result && s.result !== 'ok')
     setError(failed.length ? failed.map(s => `${dmy(s.settleDate)}: ${s.result}`).join(' — ') : '')
@@ -349,41 +502,7 @@ export function CardSettlement() {
             <p className="muted">{info.pending > 0 && `${info.pending} payment(s) not settled yet. `}{info.skipped > 0 && `${info.skipped} row(s) not in "settled" status were skipped.`}</p>
           </div>
           <div className="card overflow-x-auto p-0">
-            <table>
-              <thead><tr>
-                <th className="w-10"></th><th>Paid into bank on</th><th className="text-right">Card payments</th>
-                <th className="text-right">Customers paid</th><th className="text-right">Fiuu fee</th><th className="text-right">Rate</th>
-                <th className="text-right">Into bank</th><th></th>
-              </tr></thead>
-              <tbody>
-                {rows.map(s => (
-                  <Fragment key={s.settleDate}>
-                  <tr className={s.posted ? 'text-slate-400' : ''}>
-                    <td><input type="checkbox" disabled={s.posted} checked={!!pick[s.settleDate] && !s.posted}
-                      onChange={e => setPick({ ...pick, [s.settleDate]: e.target.checked })} /></td>
-                    <td className="font-medium">{dmy(s.settleDate)}</td>
-                    <td className="text-right">{s.count}</td>
-                    <td className="text-right">{rm(s.gross)}</td>
-                    <td className="text-right text-rose-600">{rm(s.fee)}</td>
-                    <td className="text-right text-xs text-slate-500">{s.gross ? (s.fee / s.gross * 100).toFixed(2) + '%' : ''}</td>
-                    <td className="text-right font-semibold">{rm(s.net)}</td>
-                    <td className="whitespace-nowrap text-right text-xs">
-                      {s.posted && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />{s.result === 'ok' ? 'Posted' : 'Already in'}</span>}
-                      {!s.posted && s.result && s.result !== 'ok' && <span className="text-red-600">{s.result}</span>}
-                    </td>
-                  </tr>
-                  {s.brands.map(b => (
-                    <tr key={s.settleDate + b.brand} className="text-xs text-slate-500">
-                      <td></td><td className="pl-6">{b.brand}</td><td className="text-right">{b.count}</td>
-                      <td className="text-right">{rm(b.gross)}</td><td className="text-right">{rm(b.fee)}</td>
-                      <td className="text-right">{b.gross ? (b.fee / b.gross * 100).toFixed(2) + '%' : ''}</td>
-                      <td className="text-right">{rm(round2(b.gross - b.fee))}</td><td></td>
-                    </tr>
-                  ))}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
+            <PayoutRows rows={rows} pick={pick} onPick={(date, on) => setPick({ ...pick, [date]: on })} />
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <p className="muted">{chosen.length} payout{chosen.length === 1 ? '' : 's'} ready · {rm(chosen.reduce((s, r) => s + r.net, 0))} into the bank</p>
@@ -391,31 +510,7 @@ export function CardSettlement() {
               {busy ? 'Posting…' : `Post ${chosen.length} payout${chosen.length === 1 ? '' : 's'}`}
             </button>
           </div>
-          {takings.length > 0 && (
-            <div className="card">
-              <h3 className="font-semibold">Check only — nothing here is posted</h3>
-              <p className="muted">
-                Card sales reach your books from the Zeoniq Bill Summary, not from Fiuu. This compares the two.
-                A card paid after midnight may sit on the day before on the POS, so a difference that cancels out between
-                two days is normal.
-              </p>
-              <table className="mt-3">
-                <thead><tr><th>Day of sale</th><th className="text-right">Fiuu says</th><th className="text-right">In your books (POS)</th><th className="text-right">Difference</th></tr></thead>
-                <tbody>{takings.map(t => {
-                  const booked = inBooks[t.date]
-                  const diff = booked === undefined ? null : round2(booked - t.gross)
-                  return (
-                    <tr key={t.date}>
-                      <td>{dmy(t.date)}</td>
-                      <td className="text-right">{rm(t.gross)}</td>
-                      <td className="text-right">{booked === undefined ? <span className="text-amber-600">Sales not uploaded</span> : rm(booked)}</td>
-                      <td className={`text-right ${diff ? 'text-amber-600' : 'text-slate-400'}`}>{diff === null ? '—' : diff === 0 ? 'Matches' : rm(diff)}</td>
-                    </tr>
-                  )
-                })}</tbody>
-              </table>
-            </div>
-          )}
+          <FiuuCheck takings={takings} inBooks={inBooks} />
           <p className="muted">Each payout moves money out of 1200 Fiuu Card into the bank and books the fee to 6200. When everything is settled, 1200 goes back to zero.</p>
         </>
       )}
