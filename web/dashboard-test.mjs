@@ -91,3 +91,30 @@ assert.deepEqual(dueLabel('2026-10-20', '2026-10-18'), { text: 'Due Tue', tone: 
 assert.deepEqual(dueLabel('2026-10-24', '2026-10-18'), { text: 'Due Sat', tone: 'warn' }, 'six days out still a weekday')
 assert.deepEqual(dueLabel('2026-10-25', '2026-10-18'), { text: 'Due 25/10', tone: 'none' }, 'a week or more: date')
 console.log('due label ok')
+
+// --- to-do sentences from month statuses ---
+const { todoItems, listDays } = await import('./src/dashboard-math.ts')
+const done = { days_missing: [], days_closed: [], card_unsettled: 0, card_since: null, timesheet_rows: 0, active_staff: 2,
+  payroll: { status: 'paid', run_id: 1 }, accruals_posted: true, stock_count_posted: true, bank_uncleared: 0,
+  invoices_entered: true, closed_at: '2026-10-03T00:00:00Z' }
+const oct = { ...done, month: '2026-10-01' }, sep = { ...done, month: '2026-09-01' }
+const T = '2026-10-19'
+assert.deepEqual(todoItems([oct, sep], T), [], 'all done: nothing waiting')
+assert.equal(listDays(['2026-10-16', '2026-10-17']), '16 Oct, 17 Oct')
+assert.equal(listDays(['2026-10-10', '2026-10-11', '2026-10-12', '2026-10-13', '2026-10-14']), '10 Oct, 11 Oct, 12 Oct and 2 more')
+let items = todoItems([{ ...oct, days_missing: ['2026-10-16', '2026-10-17'] }, sep], T)
+assert.equal(items[0].text, 'Sales not uploaded: 16 Oct, 17 Oct')
+assert.deepEqual([items[0].to, items[0].action, items[0].days], ['/sales/upload', 'Upload', ['2026-10-16', '2026-10-17']])
+assert.equal(todoItems([{ ...oct, card_unsettled: 1234, card_since: '2026-10-14' }, sep], T)[0].text, 'Card takings RM 1,234.00 waiting since 14 Oct')
+assert.equal(todoItems([{ ...oct, card_unsettled: 50.5, card_since: null }, sep], T)[0].text, 'Card takings RM 50.50 waiting')
+assert.equal(todoItems([oct, { ...sep, card_unsettled: 99 }], T).length, 0, 'card check is for this month only')
+items = todoItems([{ ...oct, payroll: { status: 'draft', run_id: 9 } }, sep], T)
+assert.deepEqual([items[0].text, items[0].action], ['October payroll is a draft', 'Open'])
+items = todoItems([oct, { ...sep, payroll: { status: 'approved', run_id: 8 }, closed_at: null }], T)
+assert.deepEqual([items[0].text, items[0].action], ['September payroll approved, not paid', 'Pay'])
+assert.equal(items.length, 1, 'payroll approved but everything else done: no "not closed" row')
+items = todoItems([oct, { ...sep, closed_at: null, accruals_posted: false, bank_uncleared: 3 }], T)
+assert.deepEqual([items[0].text, items[0].to, items[0].action], ['September not closed: accruals, bank', '/month-end', 'Month-end'])
+assert.equal(todoItems([oct, { ...sep, closed_at: null, payroll: { status: 'none', run_id: null }, stock_count_posted: false }], T)[0].text, 'September not closed: stock count, payroll')
+assert.equal(todoItems([{ ...oct, month: '2026-11-01', payroll: { status: 'draft', run_id: 1 } }, sep], T).length, 0, 'a month not started is quiet')
+console.log('todo items ok')

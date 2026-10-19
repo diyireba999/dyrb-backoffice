@@ -103,3 +103,58 @@ export function dueLabel(due: string, today: string): { text: string; tone: 'dan
   }
   return { text: `Due ${due.slice(8, 10)}/${due.slice(5, 7)}`, tone: 'none' }
 }
+
+// ---- Today to-do list, built from month_status() (032_month_status.sql) ----
+export type MonthStatus = {
+  month: string                     // YYYY-MM-01
+  days_missing: string[]
+  days_closed: string[]
+  card_unsettled: number
+  card_since: string | null
+  timesheet_rows: number
+  active_staff: number
+  payroll: { status: 'none' | 'draft' | 'approved' | 'paid'; run_id: number | null }
+  accruals_posted: boolean
+  stock_count_posted: boolean
+  bank_uncleared: number
+  invoices_entered: boolean
+  closed_at: string | null
+}
+export type TodoItem = { key: string; text: string; to: string; action: string; days?: string[] }
+
+// No `rm` here: lib.ts pulls in Supabase, and this file must stay testable in plain Node.
+const money = (v: number) => 'RM ' + n(v).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const dMon = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+const monthOf = (iso: string) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-MY', { month: 'long', timeZone: 'UTC' })
+
+// "16 Oct, 17 Oct" or, past four days, "10 Oct, 11 Oct, 12 Oct and 2 more".
+export const listDays = (days: string[]) =>
+  days.length <= 4 ? days.map(dMon).join(', ') : `${days.slice(0, 3).map(dMon).join(', ')} and ${days.length - 3} more`
+
+// statuses[0] is this month, statuses[1] last month. Order of the output is the order
+// the owner should deal with things: sales first, then card, payroll, then last month's close.
+export function todoItems(statuses: MonthStatus[], today: string): TodoItem[] {
+  const out: TodoItem[] = []
+  statuses.forEach((s, i) => {
+    if (s.days_missing.length > 0) {
+      out.push({ key: `sales-${s.month}`, text: `Sales not uploaded: ${listDays(s.days_missing)}`, to: '/sales/upload', action: 'Upload', days: s.days_missing })
+    }
+    if (i === 0 && s.card_unsettled > 0) {
+      out.push({ key: 'card', text: `Card takings ${money(s.card_unsettled)} waiting${s.card_since ? ` since ${dMon(s.card_since)}` : ''}`, to: '/sales/fiuu', action: 'Settle' })
+    }
+    if (s.month <= today) {
+      if (s.payroll.status === 'draft') out.push({ key: `payroll-${s.month}`, text: `${monthOf(s.month)} payroll is a draft`, to: '/payroll/run', action: 'Open' })
+      if (s.payroll.status === 'approved') out.push({ key: `payroll-${s.month}`, text: `${monthOf(s.month)} payroll approved, not paid`, to: '/payroll/run', action: 'Pay' })
+    }
+    if (i === 1 && !s.closed_at) {
+      const open = [
+        !s.accruals_posted && 'accruals',
+        !s.stock_count_posted && 'stock count',
+        s.bank_uncleared > 0 && 'bank',
+        s.payroll.status === 'none' && 'payroll',
+      ].filter((x): x is string => typeof x === 'string')
+      if (open.length > 0) out.push({ key: `close-${s.month}`, text: `${monthOf(s.month)} not closed: ${open.join(', ')}`, to: '/month-end', action: 'Month-end' })
+    }
+  })
+  return out
+}

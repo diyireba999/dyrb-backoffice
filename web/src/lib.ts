@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import type { DayAmount } from './dashboard-math'
+import type { DayAmount, MonthStatus } from './dashboard-math'
+export type { MonthStatus }
 import { supplierInvoiceCategory } from './dashboard-math'
 import { toast } from './feedback'
 
@@ -209,4 +210,12 @@ export async function supplierDue(today: string) {
     else if (cat === 'dueSoon') dueSoon += amt
   }
   return { dueSoon: round2(dueSoon), overdue: round2(overdue) }
+}
+
+// Everything the Today to-do list and the Month-end checklist need for one month,
+// from month_status() in 032_month_status.sql. Thrown, not swallowed, like accountTotals.
+export async function monthStatus(month: string): Promise<MonthStatus> {
+  const { data, error } = await supabase.rpc('month_status', { p_month: month })
+  if (error) throw new Error('Could not check the month: ' + error.message)
+  return data as MonthStatus
 }
