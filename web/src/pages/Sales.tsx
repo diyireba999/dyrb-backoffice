@@ -6,6 +6,20 @@ import { cogsLinesFor, dayTotal, daySuspect, detectFile, parseBillSummary, parse
 import { AccountSelect, Empty } from '../ui'
 import { confirmDialog } from '../feedback'
 
+// What the POS booked to 1200 (card takings) per sale day, for ascending dates.
+async function bookedCard(dates: string[]): Promise<Record<string, number>> {
+  const booked: Record<string, number> = {}
+  if (!dates.length) return booked
+  const { data: lines } = await supabase.from('journal_lines')
+    .select('debit, journals!inner(date, source)')
+    .eq('account', '1200').eq('journals.source', 'sales')
+    .gte('journals.date', dates[0]).lte('journals.date', dates[dates.length - 1])
+  for (const l of (lines ?? []) as unknown as { debit: number; journals: { date: string } }[]) {
+    booked[l.journals.date] = round2((booked[l.journals.date] ?? 0) + Number(l.debit))
+  }
+  return booked
+}
+
 // Reads a Fiuu listing: settlements with their posted flag, takings per sale day, and
 // what the POS already booked to 1200 on those days. Shared by the daily close and the
 // stand-alone Card settlement screen.
@@ -15,17 +29,7 @@ async function loadFiuuFile(rows: unknown) {
     .in('source_ref', parsed.settlements.map(s => s.settleDate))
   const already = new Set((data ?? []).map(r => r.source_ref))
   const list: Settlement[] = parsed.settlements.map(s => ({ ...s, posted: already.has(s.settleDate) }))
-  const inBooks: Record<string, number> = {}
-  const dates = parsed.takings.map(t => t.date)
-  if (dates.length) {
-    const { data: lines } = await supabase.from('journal_lines')
-      .select('debit, journals!inner(date, source)')
-      .eq('account', '1200').eq('journals.source', 'sales')
-      .gte('journals.date', dates[0]).lte('journals.date', dates[dates.length - 1])
-    for (const l of (lines ?? []) as unknown as { debit: number; journals: { date: string } }[]) {
-      inBooks[l.journals.date] = round2((inBooks[l.journals.date] ?? 0) + Number(l.debit))
-    }
-  }
+  const inBooks = await bookedCard(parsed.takings.map(t => t.date))
   return { list, takings: parsed.takings, inBooks, info: { pending: parsed.pending, skipped: parsed.skipped } }
 }
 
@@ -192,21 +196,25 @@ export function UploadSales({ role }: { role: Role }) {
   async function onFiles(list: FileList | null) {
     if (!list || list.length === 0) return
     const problems: string[] = []
-    for (const file of Array.from(list)) {
-      try {
-        const sheet = await readXlsxFile(file)
-        const kind = detectFile(sheet)
-        if (kind === 'bill') await loadBill(sheet)
-        else if (kind === 'items') await loadItems(sheet)
-        else if (kind === 'fiuu') await loadFiuu(sheet)
-        else { problems.push(`${file.name}: not a Zeoniq Bill Summary, Product Sales or Fiuu listing`); continue }
-        setFiles(f => ({ ...f, [kind]: file.name }))
-      } catch (err) { problems.push(`${file.name}: ${(err as Error).message}`) }
-    }
-    setError(problems.join(' — '))
+    setBusy(true)
+    try {
+      for (const file of Array.from(list)) {
+        try {
+          const sheet = await readXlsxFile(file)
+          const kind = detectFile(sheet)
+          if (kind === 'bill') await loadBill(sheet)
+          else if (kind === 'items') await loadItems(sheet)
+          else if (kind === 'fiuu') await loadFiuu(sheet)
+          else { problems.push(`${file.name}: not a Zeoniq Bill Summary, Product Sales or Fiuu listing`); continue }
+          setFiles(f => ({ ...f, [kind]: file.name }))
+        } catch (err) { problems.push(`${file.name}: ${(err as Error).message}`) }
+      }
+      setError(problems.join(' — '))
+    } finally { setBusy(false) }
   }
 
   function removeFile(kind: FileKind) {
+    setError('')
     setFiles(f => { const next = { ...f }; delete next[kind]; return next })
     if (kind === 'bill') { setDays([]); setPick({}); setReplace({}) }
     if (kind === 'items') setItems([])
@@ -281,7 +289,9 @@ export function UploadSales({ role }: { role: Role }) {
     }
     setDays(out); setReplace({})
     const payOut = await postSettlements(rows, pickPay, bank)
-    setRows(payOut); setBusy(false)
+    setRows(payOut)
+    if (takings.length) setInBooks(await bookedCard(takings.map(t => t.date)))
+    setBusy(false)
     const failed = [
       ...out.filter(d => d.result && d.result !== 'ok').map(d => `${dmy(d.date)}: ${d.result}`),
       ...payOut.filter(s => s.result && s.result !== 'ok').map(s => `Payout ${dmy(s.settleDate)}: ${s.result}`),
@@ -306,6 +316,12 @@ export function UploadSales({ role }: { role: Role }) {
   const postLabel = [dayCount > 0 && `${dayCount} day${dayCount === 1 ? '' : 's'}`, chosenPay.length > 0 && `${chosenPay.length} payout${chosenPay.length === 1 ? '' : 's'}`]
     .filter(Boolean).join(' and ')
   const loadedKinds = (Object.keys(FILE_LABEL) as FileKind[]).filter(k => files[k])
+  const fiuuParts = [
+    info.pending > 0 && `${info.pending} payment(s) not settled yet`,
+    info.skipped > 0 && `${info.skipped} row(s) not in "settled" status skipped`,
+    rows.length > 0 && `${rows.length} payout(s)`,
+  ].filter(Boolean)
+  const fiuuNote = rows.length === 0 && info.pending === 0 ? ['no settled payouts in this file', ...fiuuParts] : fiuuParts
 
   return (
     <div className="space-y-4">
@@ -321,11 +337,12 @@ export function UploadSales({ role }: { role: Role }) {
           <div className="mt-3 flex flex-wrap gap-2">
             {loadedKinds.map(k => (
               <span key={k} className="badge gap-1">{FILE_LABEL[k]}: {files[k]}
-                <button type="button" title="Remove this file" className="ml-1 rounded hover:text-red-600" onClick={() => removeFile(k)}><X className="size-3" /></button>
+                <button type="button" title="Remove this file" aria-label={`Remove ${FILE_LABEL[k]}`} className="ml-1 rounded hover:text-red-600" onClick={() => removeFile(k)}><X className="size-3" /></button>
               </span>
             ))}
           </div>
         )}
+        {files.fiuu && <p className="muted mt-2">Fiuu: {fiuuNote.join(' · ')}</p>}
         <p className="muted mt-2 text-center">Export the two Zeoniq reports with the same date range and the same status filter, or the split will not match.</p>
       </div>
       {error && <p className="alert-error">{error}</p>}
@@ -406,7 +423,6 @@ export function UploadSales({ role }: { role: Role }) {
             <div className="w-56"><label>Money paid into</label>
               <AccountSelect accounts={accounts} value={bank} onChange={setBank} filter={a => MONEY_ACCOUNTS.includes(a.code)} />
             </div>
-            <p className="muted">{info.pending > 0 && `${info.pending} payment(s) not settled yet. `}{info.skipped > 0 && `${info.skipped} row(s) not in "settled" status were skipped.`}</p>
           </div>
           <div className="overflow-x-auto">
             <PayoutRows rows={rows} pick={pickPay} onPick={(date, on) => setPickPay({ ...pickPay, [date]: on })} />
