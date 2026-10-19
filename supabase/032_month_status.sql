@@ -46,19 +46,25 @@ begin
   select coalesce(jsonb_agg(to_char(day, 'YYYY-MM-DD') order by day), '[]'::jsonb) into v_closed
     from closed_days where day between first_day and last_day;
 
-  -- Card takings still sitting in 1200. Fiuu pays within a few days, so money taken in
-  -- the last three days is normal; money from before that should have landed.
+  -- Card takings still sitting in 1200: takings old enough to have landed (dated on or
+  -- before card_as_at; Fiuu pays within a few days, so the last three days are normal),
+  -- less every payout booked so far. Payouts are not cut off at card_as_at, because they
+  -- land a few days after the takings they settle.
   card_as_at := least(last_day + 7, today - 3);
   if card_as_at >= first_day then
-    select coalesce(sum(l.debit - l.credit), 0) into v_card
+    select coalesce(sum(case when j.date <= card_as_at then l.debit else 0 end) - sum(l.credit), 0) into v_card
       from journal_lines l join journals j on j.id = l.journal_id
-      where l.account = '1200' and j.date <= card_as_at;
+      where l.account = '1200';
     if v_card < 0 then v_card := 0; end if;
     if v_card > 0 then
-      select min(j.date) into v_since
-        from journals j join journal_lines l on l.journal_id = j.id
-        where j.source = 'sales' and l.account = '1200' and l.debit > 0
-          and j.date between first_day and last_day;
+      -- The earliest day whose takings are still uncovered: walking back from the cutoff,
+      -- the first day at which the cumulative takings cover the outstanding amount. This
+      -- can be a date in an earlier month.
+      select max(d) into v_since from (
+        select j.date as d, sum(l.debit) over (order by j.date desc) as tail
+          from journal_lines l join journals j on j.id = l.journal_id
+          where l.account = '1200' and l.debit > 0 and j.date <= card_as_at) t
+       where t.tail >= v_card;
     end if;
   end if;
 

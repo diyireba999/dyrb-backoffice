@@ -112,7 +112,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
   useEffect(() => { if (office && !investor) loadTodo() }, [office, investor])
 
   async function closeDay(day: string) {
-    const { error } = await supabase.from('closed_days').insert({ day })
+    const { error } = await supabase.from('closed_days').upsert({ day }, { onConflict: 'day', ignoreDuplicates: true })
     if (error) return toast(error.message, { kind: 'error' })
     toast(`${dmy(day)} marked as closed`)
     loadTodo()

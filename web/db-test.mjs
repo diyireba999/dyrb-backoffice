@@ -793,6 +793,13 @@ await db.exec(`alter table profiles add column if not exists active boolean not 
 for (let i = 0; i < 2; i++)  // safe to run again
   await db.exec(fs.readFileSync(new URL('../supabase/032_month_status.sql', import.meta.url), 'utf8'))
 await db.exec(`update profiles set role='owner'`)
+// card_unsettled nets every payout ever booked against the takings before the cutoff
+// (7 July 2025 for June). Earlier sections of this script paid Fiuu settlements with no
+// matching takings in the window, so top 1200 up on 31 May to a balance of nil first.
+const carry = Number((await db.query(`select coalesce(sum(l.credit), 0) - coalesce(sum(case when j.date <= '2025-07-07' then l.debit else 0 end), 0) c
+  from journal_lines l join journals j on j.id = l.journal_id where l.account = '1200'`)).rows[0].c)
+if (carry > 0)
+  await db.query(`select post_journal('2025-05-31','Clear earlier test card payouts','manual',null,null,'[{"account":"1200","debit":${carry}},{"account":"3000","credit":${carry}}]'::jsonb)`)
 // June 2025 is in the past for every clock, so days_missing is deterministic. Two sales
 // days with a gap, one closed day, a draft payroll, an unticked bank line.
 await db.query(`select post_sales_day('2025-06-01', 100, 0, 0, 0, '[{"code":"CASH","amount":100}]'::jsonb)`)
@@ -807,6 +814,10 @@ console.log(ms.days_missing.length === 27 && ms.days_missing.includes('2025-06-0
   ? 'missing sales days ok' : 'FAIL days_missing ' + JSON.stringify(ms.days_missing))
 console.log(JSON.stringify(ms.days_closed) === '["2025-06-04"]' ? 'closed days ok' : 'FAIL days_closed ' + JSON.stringify(ms.days_closed))
 console.log(Number(ms.card_unsettled) === 100 && ms.card_since === '2025-06-03' ? 'card unsettled ok' : `FAIL card ${ms.card_unsettled} ${ms.card_since}`)
+await db.query(`select post_sales_day('2025-06-20', 50, 0, 0, 0, '[{"code":"VISA","amount":50}]'::jsonb)`)
+await db.query(`select post_fiuu_settlement('2025-06-25', 100, 2, 98)`)   // clears the first RM 100
+ms = (await db.query(`select month_status('2025-06-01') s`)).rows[0].s
+console.log(Number(ms.card_unsettled) === 50 && ms.card_since === '2025-06-20' ? 'card since points at the uncovered day ok' : `FAIL card since ${ms.card_unsettled} ${ms.card_since}`)
 console.log(ms.payroll.status === 'draft' && ms.payroll.run_id === msRun ? 'payroll draft ok' : 'FAIL payroll ' + JSON.stringify(ms.payroll))
 await db.query(`select approve_payroll_run(${msRun})`)
 console.log((await db.query(`select month_status('2025-06-01') s`)).rows[0].s.payroll.status === 'approved' ? 'payroll approved ok' : 'FAIL payroll approved')
@@ -816,8 +827,8 @@ console.log(ms.bank_uncleared >= 1 ? 'bank uncleared ok' : 'FAIL bank_uncleared 
 console.log(ms.accruals_posted === false && ms.stock_count_posted === false && ms.invoices_entered === false && ms.closed_at === null
   ? 'nothing posted yet ok' : 'FAIL flags ' + JSON.stringify(ms))
 console.log(ms.active_staff > 0 && ms.timesheet_rows === 0 ? 'staff counts ok' : `FAIL staff ${ms.active_staff} ${ms.timesheet_rows}`)
-// Settle the card, post accruals, tick invoices, close.
-await db.query(`select post_fiuu_settlement('2025-06-05', 100, 2, 98)`)
+// Settle the rest of the card (the payout lands after the cutoff), post accruals, tick invoices, close.
+await db.query(`select post_fiuu_settlement('2025-07-10', 50, 1, 49)`)
 await db.query(`select post_accruals('2025-06-01', '[{"account":"6100","amount":1,"name":"Rent"}]'::jsonb)`)
 await db.exec(`insert into month_closes (month, invoices_entered, closed_at) values ('2025-06-01', true, now())
   on conflict (month) do update set invoices_entered = excluded.invoices_entered, closed_at = excluded.closed_at`)

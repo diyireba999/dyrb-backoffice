@@ -32,7 +32,7 @@ Turn on two-step login for each account once created — this system holds salar
    - Plan: Free → **Create new project**. Wait about 2 minutes.
 3. Left menu **SQL Editor** → **New query**. Open `supabase/001_core.sql` in Notepad, copy everything, paste, click **Run**. It should say "Success. No rows returned".
 4. **New query** again → paste `supabase/002_claims.sql` → **Run**.
-   Then the same for every other file in the `supabase` folder, in number order: `003_accounting.sql`, `004_payroll.sql` … up to the highest number there is (`031_review_fixes.sql` at the time of writing). Skip `003b_repair.sql` unless a paste was cut short.
+   Then the same for every other file in the `supabase` folder, in number order: `003_accounting.sql`, `004_payroll.sql` … up to the highest number there is (`032_month_status.sql` at the time of writing). Skip `003b_repair.sql` unless a paste was cut short.
 5. Left menu **Authentication** → **Sign In / Providers**: turn **off** "Allow new users to sign up", **Save**. Only you can add people.
 6. Still in Authentication → **Users** → **Add user** → **Create new user**: your email + a strong password, tick **Auto Confirm User** → **Create user**.
 7. Back to **SQL Editor** → New query → paste (with your name and email) → **Run**:
