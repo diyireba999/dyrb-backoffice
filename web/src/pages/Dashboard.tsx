@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDownLeft, ArrowUpRight, Banknote, FileText, HandCoins, Landmark, Receipt, Truck, type LucideIcon } from 'lucide-react'
-import { accountTotals, dailyNet, isDirector, monthStart, rm, round2, rowsOf, supabase, supplierDue, todayMY, type Account, type Profile } from '../lib'
-import { addDaysISO, breakEven, daysInMonth, pctChange, sameWeekdayLastWeek, sumRange, variableRate, type DayAmount } from '../dashboard-math'
+import { ArrowDownLeft, ArrowUpRight, ClipboardList, FileText, HandCoins, Receipt, TrendingUp, Truck, Wallet, type LucideIcon } from 'lucide-react'
+import { accountTotals, dailyNet, dmy, isDirector, monthStart, monthStatus, rm, round2, rowsOf, supabase, supplierDue, todayMY, type Account, type MonthStatus, type Profile } from '../lib'
+import { addDaysISO, breakEven, daysInMonth, pctChange, sameWeekdayLastWeek, sumRange, todoItems, variableRate, type DayAmount } from '../dashboard-math'
 import { DailyBars, RankedBars } from '../charts'
+import { toast } from '../feedback'
 
-function Kpi({ icon: Icon, label, value, note, tone }: { icon: LucideIcon; label: string; value: string; note?: ReactNode; tone: string }) {
+function Kpi({ icon: Icon, label, value, note, tone }: { icon: LucideIcon; label: string; value: ReactNode; note?: ReactNode; tone: string }) {
   return (
     <div className="card p-4 sm:p-5">
       <div className="flex items-center justify-between">
@@ -100,6 +101,22 @@ export function Dashboard({ profile }: { profile: Profile }) {
   // Guards the top KPI band and the month card against flashing a confident RM0.00
   // before the balances have actually loaded.
   const [loaded, setLoaded] = useState(false)
+  // To-do list: this month and last month from month_status(). undefined = loading,
+  // null = the RPC failed (shown as text), [] = nothing waiting.
+  const [todo, setTodo] = useState<MonthStatus[] | null | undefined>(undefined)
+  const [todoError, setTodoError] = useState('')
+  const loadTodo = () => {
+    Promise.all([monthStatus(monthStart()), monthStatus(monthStartOffset(todayMY(), 1))])
+      .then(setTodo, (e: Error) => { setTodo(null); setTodoError(e.message) })
+  }
+  useEffect(() => { if (office && !investor) loadTodo() }, [office, investor])
+
+  async function closeDay(day: string) {
+    const { error } = await supabase.from('closed_days').insert({ day })
+    if (error) return toast(error.message, { kind: 'error' })
+    toast(`${dmy(day)} marked as closed`)
+    loadTodo()
+  }
 
   useEffect(() => {
     // Swallowed here (not just at supplierDue's own call site) so a genuine network
@@ -214,6 +231,14 @@ export function Dashboard({ profile }: { profile: Profile }) {
   const expense = sumCodes(accounts, month, '6000', '7000')
   const grossProfit = sales - costOfSales
   const income = sales + service + otherIncome
+  // Profit this month (to month end, like the month card) against the same days last month.
+  const profit = income - costOfSales - expense
+  const lastIncome = -sumCodes(accounts, lastMonth, '4000', '5000')
+  const lastProfit = lastIncome - sumCodes(accounts, lastMonth, '5000', '6000') - sumCodes(accounts, lastMonth, '6000', '7000')
+  const profitChange = pctChange(profit, lastProfit)
+  const bank = bal(['1100'])
+  const cashOnHand = bal(['1000', '1010'])
+  const billsDue = due ? round2(due.dueSoon + due.overdue) : 0
   // Margin change vs last month in percentage POINTS (60% -> 63% is "+3 points", not "+5%").
   const marginPct = sales > 0 ? (grossProfit / sales) * 100 : null
   const lastSales = -sumCodes(accounts, lastMonth, '4000', '4100')
@@ -273,13 +298,46 @@ export function Dashboard({ profile }: { profile: Profile }) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
-        <Kpi icon={Landmark} label="Bank balance" value={kpiValue(bal(['1100']))} tone="bg-blue-50 text-blue-600" />
-        <Kpi icon={Banknote} label="Cash on hand" value={kpiValue(bal(['1000', '1010']))} note="Drawer + petty cash" tone="bg-emerald-50 text-emerald-600" />
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <Kpi icon={TrendingUp} label="Profit this month"
+          value={loaded && !accountsError ? <span className={profit < 0 ? 'text-rose-600' : ''}>{rm(profit)}</span> : '—'}
+          note={loaded ? (profitChange === null ? 'no figure to compare' : `${profitChange > 0 ? '+' : ''}${profitChange}% vs last month`) : undefined}
+          tone="bg-emerald-50 text-emerald-600" />
+        <Kpi icon={Wallet} label="Cash" value={kpiValue(bank + cashOnHand)}
+          note={!loaded ? undefined : billsDue > 0 ? <span className="text-amber-700">{rm(billsDue)} bills due this week</span> : `Bank ${rm(bank)} · Cash ${rm(cashOnHand)}`}
+          tone="bg-blue-50 text-blue-600" />
         <Kpi icon={Truck} label="Owed to suppliers" value={kpiValue(bal(['2000'], -1))} note={investor ? undefined : supplierDueNote(due)} tone="bg-rose-50 text-rose-600" />
-        {!investor && <Kpi icon={Receipt} label="Claims to settle" value={kpiValue(claimsTotal)} note={loaded ? `${openClaims.length} pending or approved` : undefined} tone="bg-amber-50 text-amber-600" />}
         <Kpi icon={HandCoins} label="Owed to director" value={accountsError ? '—' : kpiValue(directorOwed)} note={accountsError ? 'Could not be loaded' : 'Paid from their own pocket'} tone="bg-violet-50 text-violet-600" />
+        {!investor && openClaims.length > 0 && <Kpi icon={Receipt} label="Claims to settle" value={kpiValue(claimsTotal)} note={`${openClaims.length} pending or approved`} tone="bg-amber-50 text-amber-600" />}
       </div>
+
+      {!investor && (
+        <div className="card">
+          <div className="flex items-center gap-2"><ClipboardList className="size-4 text-slate-400" /><h3 className="font-semibold">To do</h3></div>
+          {todo === undefined ? <p className="muted mt-3">Checking…</p>
+            : todo === null ? <p className="alert-error mt-3">Could not check what is waiting: {todoError}</p>
+            : (() => {
+              const items = todoItems(todo, todayMY())
+              if (items.length === 0) return <p className="muted mt-3">Nothing waiting. Up to date.</p>
+              return (
+                <ul className="mt-3 divide-y divide-slate-100">
+                  {items.map(it => (
+                    <li key={it.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+                      <span className="min-w-0 flex-1">{it.text}</span>
+                      <Link to={it.to} className="btn-light">{it.action}</Link>
+                      {it.days && (
+                        <div className="basis-full text-xs text-slate-500">
+                          Bar closed that day?{' '}
+                          {it.days.slice(0, 8).map(d => <button key={d} type="button" className="link mr-2" onClick={() => closeDay(d)}>{dmy(d)}</button>)}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )
+            })()}
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="card lg:col-span-2">
