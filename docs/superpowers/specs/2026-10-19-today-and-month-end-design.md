@@ -56,8 +56,8 @@ Security definer, `search_path = public, pg_temp`, raises `Not allowed` unless
 | `month` | `YYYY-MM-01` | echo of the month |
 | `days_missing` | date[] | every day from `first_day` to `least(last_day, today - 1)` with no journal `source = 'sales'` whose `source_ref` is that date, and not in `closed_days`; empty when the month has not started |
 | `days_closed` | date[] | `closed_days` rows inside the month |
-| `card_unsettled` | number | net debit balance of account 1200 for journals dated on or before `least(last_day + 7, today - 3)`; 0 when negative or when that date is before `first_day` |
-| `card_since` | date or null | earliest `source = 'sales'` journal date in the month with a debit to 1200, only when `card_unsettled > 0` |
+| `card_unsettled` | number | debits to 1200 dated on or before `least(last_day + 7, today - 3)`, less every credit to 1200 booked at any date; 0 when negative or when that cutoff is before `first_day` |
+| `card_since` | date or null | the earliest day whose card takings are still not covered by payouts, or null |
 | `timesheet_rows` | int | `timesheets` rows with `work_date` in the month |
 | `active_staff` | int | `employees` with `active` true |
 | `payroll` | `{ status, run_id }` | `status` is `none`, `draft`, `approved` (not paid) or `paid`, from `payroll_runs` where `month = first_day` |

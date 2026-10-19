@@ -787,3 +787,59 @@ const unsplitAcct = (await db.query(`select account from journal_lines where jou
 await db.query(`select resplit_sales_day('2028-04-02', '[{"account":"4000","amount":100},{"account":"4020","amount":200}]'::jsonb)`)
 const resplitOk = (await db.query(`select coalesce(sum(credit),0)::float s from journal_lines where journal_id=${unsplitJ} and account in ('4000','4020')`)).rows[0].s
 console.log(unsplitAcct === '4090' && resplitOk === 300 ? 'unsplit sales go to 4090 and can be re-split ok' : `FAIL unsplit ${unsplitAcct} ${resplitOk}`)
+// ---- 032: month status for the to-do list and the Month-end checklist ----
+// This script skips 021-024; 032's my_role() reads profiles.active, which 023 adds in production.
+await db.exec(`alter table profiles add column if not exists active boolean not null default true`)
+for (let i = 0; i < 2; i++)  // safe to run again
+  await db.exec(fs.readFileSync(new URL('../supabase/032_month_status.sql', import.meta.url), 'utf8'))
+await db.exec(`update profiles set role='owner'`)
+// card_unsettled nets every payout ever booked against the takings before the cutoff
+// (7 July 2025 for June). Earlier sections of this script paid Fiuu settlements with no
+// matching takings in the window, so top 1200 up on 31 May to a balance of nil first.
+const carry = Number((await db.query(`select coalesce(sum(l.credit), 0) - coalesce(sum(case when j.date <= '2025-07-07' then l.debit else 0 end), 0) c
+  from journal_lines l join journals j on j.id = l.journal_id where l.account = '1200'`)).rows[0].c)
+if (carry > 0)
+  await db.query(`select post_journal('2025-05-31','Clear earlier test card payouts','manual',null,null,'[{"account":"1200","debit":${carry}},{"account":"3000","credit":${carry}}]'::jsonb)`)
+// June 2025 is in the past for every clock, so days_missing is deterministic. Two sales
+// days with a gap, one closed day, a draft payroll, an unticked bank line.
+await db.query(`select post_sales_day('2025-06-01', 100, 0, 0, 0, '[{"code":"CASH","amount":100}]'::jsonb)`)
+await db.query(`select post_sales_day('2025-06-03', 100, 0, 0, 0, '[{"code":"VISA","amount":100}]'::jsonb)`)
+await db.exec(`insert into closed_days (day) values ('2025-06-04')`)
+await db.query(`select post_journal('2025-06-10','Rent June','pv',null,null,'[{"account":"6100","debit":500},{"account":"1100","credit":500}]'::jsonb)`)
+const msRun = (await db.query(`select create_payroll_run('2025-06-01', '2025-06-30') id`)).rows[0].id
+let ms = (await db.query(`select month_status('2025-06-15') s`)).rows[0].s
+console.log(ms.month === '2025-06-01' ? 'month_status month ok' : 'FAIL month ' + ms.month)
+console.log(ms.days_missing.length === 27 && ms.days_missing.includes('2025-06-02') && !ms.days_missing.includes('2025-06-01')
+  && !ms.days_missing.includes('2025-06-03') && !ms.days_missing.includes('2025-06-04')
+  ? 'missing sales days ok' : 'FAIL days_missing ' + JSON.stringify(ms.days_missing))
+console.log(JSON.stringify(ms.days_closed) === '["2025-06-04"]' ? 'closed days ok' : 'FAIL days_closed ' + JSON.stringify(ms.days_closed))
+console.log(Number(ms.card_unsettled) === 100 && ms.card_since === '2025-06-03' ? 'card unsettled ok' : `FAIL card ${ms.card_unsettled} ${ms.card_since}`)
+await db.query(`select post_sales_day('2025-06-20', 50, 0, 0, 0, '[{"code":"VISA","amount":50}]'::jsonb)`)
+await db.query(`select post_fiuu_settlement('2025-06-25', 100, 2, 98)`)   // clears the first RM 100
+ms = (await db.query(`select month_status('2025-06-01') s`)).rows[0].s
+console.log(Number(ms.card_unsettled) === 50 && ms.card_since === '2025-06-20' ? 'card since points at the uncovered day ok' : `FAIL card since ${ms.card_unsettled} ${ms.card_since}`)
+console.log(ms.payroll.status === 'draft' && ms.payroll.run_id === msRun ? 'payroll draft ok' : 'FAIL payroll ' + JSON.stringify(ms.payroll))
+await db.query(`select approve_payroll_run(${msRun})`)
+console.log((await db.query(`select month_status('2025-06-01') s`)).rows[0].s.payroll.status === 'approved' ? 'payroll approved ok' : 'FAIL payroll approved')
+await db.query(`select mark_payroll_paid(${msRun}, '2025-06-30', '1100')`)
+console.log((await db.query(`select month_status('2025-06-01') s`)).rows[0].s.payroll.status === 'paid' ? 'payroll paid ok' : 'FAIL payroll paid')
+console.log(ms.bank_uncleared >= 1 ? 'bank uncleared ok' : 'FAIL bank_uncleared ' + ms.bank_uncleared)
+console.log(ms.accruals_posted === false && ms.stock_count_posted === false && ms.invoices_entered === false && ms.closed_at === null
+  ? 'nothing posted yet ok' : 'FAIL flags ' + JSON.stringify(ms))
+console.log(ms.active_staff > 0 && ms.timesheet_rows === 0 ? 'staff counts ok' : `FAIL staff ${ms.active_staff} ${ms.timesheet_rows}`)
+// Settle the rest of the card (the payout lands after the cutoff), post accruals, tick invoices, close.
+await db.query(`select post_fiuu_settlement('2025-07-10', 50, 1, 49)`)
+await db.query(`select post_accruals('2025-06-01', '[{"account":"6100","amount":1,"name":"Rent"}]'::jsonb)`)
+await db.exec(`insert into month_closes (month, invoices_entered, closed_at) values ('2025-06-01', true, now())
+  on conflict (month) do update set invoices_entered = excluded.invoices_entered, closed_at = excluded.closed_at`)
+ms = (await db.query(`select month_status('2025-06-01') s`)).rows[0].s
+console.log(Number(ms.card_unsettled) === 0 && ms.card_since === null ? 'card settled ok' : `FAIL card after settle ${ms.card_unsettled}`)
+console.log(ms.accruals_posted === true && ms.invoices_entered === true && ms.closed_at !== null ? 'accruals, tick and close ok' : 'FAIL after close ' + JSON.stringify(ms))
+// A month that has not started has no missing days.
+const future = (await db.query(`select month_status('2099-01-01') s`)).rows[0].s
+console.log(future.days_missing.length === 0 && future.payroll.status === 'none' ? 'future month quiet ok' : 'FAIL future ' + JSON.stringify(future))
+// Staff get nothing.
+await db.exec(`update profiles set role='staff'`)
+try { await db.query(`select month_status('2025-06-01')`); console.log('FAIL: staff read month_status') }
+catch (e) { console.log(e.message.includes('Not allowed') ? 'staff blocked from month_status ok' : 'FAIL wrong error ' + e.message) }
+await db.exec(`update profiles set role='owner'`)

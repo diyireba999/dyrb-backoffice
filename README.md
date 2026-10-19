@@ -32,7 +32,7 @@ Turn on two-step login for each account once created — this system holds salar
    - Plan: Free → **Create new project**. Wait about 2 minutes.
 3. Left menu **SQL Editor** → **New query**. Open `supabase/001_core.sql` in Notepad, copy everything, paste, click **Run**. It should say "Success. No rows returned".
 4. **New query** again → paste `supabase/002_claims.sql` → **Run**.
-   Then the same for every other file in the `supabase` folder, in number order: `003_accounting.sql`, `004_payroll.sql` … up to the highest number there is (`031_review_fixes.sql` at the time of writing). Skip `003b_repair.sql` unless a paste was cut short.
+   Then the same for every other file in the `supabase` folder, in number order: `003_accounting.sql`, `004_payroll.sql` … up to the highest number there is (`032_month_status.sql` at the time of writing). Skip `003b_repair.sql` unless a paste was cut short.
 5. Left menu **Authentication** → **Sign In / Providers**: turn **off** "Allow new users to sign up", **Save**. Only you can add people.
 6. Still in Authentication → **Users** → **Add user** → **Create new user**: your email + a strong password, tick **Auto Confirm User** → **Create user**.
 7. Back to **SQL Editor** → New query → paste (with your name and email) → **Run**:
@@ -77,6 +77,8 @@ Turn on two-step login for each account once created — this system holds salar
 - Cash drawer short or over after banking, and monthly depreciation, are typed as a Journal Entry: **6910 Cash Over / Short** against the cash account, and **6950 Depreciation** against **1590 Accumulated Depreciation**.
 - A salary advance is recorded on the Staff Advance screen; the money leaves the till straight away and comes off the next payslip by itself, and if it is more than one month's pay the rest carries to the month after.
 - Hours go on the Timesheet before the monthly payroll is created; creating the run picks them up, and anything can still be corrected on the payslip before approving.
+- **Today** lists what is waiting: sales days not uploaded (press the date if the bar was closed), card money not yet settled, payroll to approve or pay, and last month's close. **Month-end › Checklist** walks the nine steps of closing a month and lets you mark it closed; closing is a note for you, it does not lock anything.
+- After pulling this update run `supabase/032_month_status.sql` in Supabase → SQL Editor, or Today and the Checklist will show "Could not check the month".
 - The dashboard's sales figures compare against the same day of the week a week ago (Tuesday vs Tuesday, not Tuesday vs Monday), because trade swings by day of week. Its break-even figure is worked out from the last two or three complete months of records, whichever there is, so it settles down and becomes more reliable once there is a few months of history.
 - The side menu is grouped by task: **Today**, **Money in**, **Money out**, **Month-end**, **Books**, **Setup**. On a phone the bottom bar has Today, Search, New and Menu. Every screen keeps its old web address, so bookmarks still work.
 - After saving a voucher, receipt, transfer, invoice or journal, the list comes back with the new row highlighted; press **Save & add another** to stay on the form. Esc closes a form.

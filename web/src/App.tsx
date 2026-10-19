@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BookOpen, BookText, CalendarClock, ChevronDown, ChevronRight, FileText, HandCoins, KeyRound, LayoutDashboard,
-  Building2, ListTree, LogOut, Menu, NotebookPen, Plus, Repeat, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, CreditCard, IdCard, Package, Tags, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
+  Building2, ListChecks, ListTree, LogOut, Menu, NotebookPen, Plus, Repeat, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, CreditCard, IdCard, Package, Tags, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
   type LucideIcon,
 } from 'lucide-react'
 import { isOffice, loginEmail, supabase, type Profile, type Role } from './lib'
@@ -13,6 +13,7 @@ import { BalanceSheet, ProfitAndLoss, TrialBalance } from './pages/Reports'
 import { Users, CompanyDetails } from './pages/Admin'
 import { Claims } from './pages/Claims'
 import { Dashboard } from './pages/Dashboard'
+import { MonthEnd } from './pages/MonthEnd'
 import { SearchDialog } from './Search'
 import { ActionSlot } from './page'
 import { ConfirmHost, Toasts } from './feedback'
@@ -46,6 +47,7 @@ const PAGES: Page[] = [
   { to: '/cash/payment', label: 'Payment voucher', subtitle: 'Pay out from cash or bank (PV)', icon: ArrowUpRight, group: 'Money out', roles: OFFICE },
   { to: '/claims', label: 'Claims', subtitle: 'Expenses paid from someone\'s own pocket', icon: Receipt, group: 'Money out', roles: EVERYONE },
 
+  { to: '/month-end', label: 'Checklist', subtitle: 'Close the month, step by step', icon: ListChecks, group: 'Month-end', roles: OFFICE },
   { to: '/payroll/timesheet', label: 'Timesheet', subtitle: 'Hours worked each day, feeding the monthly payroll', icon: CalendarClock, group: 'Month-end', section: 'Payroll', roles: OFFICE },
   { to: '/payroll/advances', label: 'Advances', subtitle: 'Money lent before payday, taken back on the payslip', icon: HandCoins, group: 'Month-end', section: 'Payroll', roles: OFFICE },
   { to: '/payroll/run', label: 'Monthly run', subtitle: 'Work out pay, approve and print payslips', icon: CalendarDays, group: 'Month-end', section: 'Payroll', roles: OFFICE },
@@ -318,6 +320,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
                 <Route path="/reports/bs" element={<BalanceSheet />} />
               </>}
               {office && <>
+                <Route path="/month-end" element={<MonthEnd />} />
                 <Route path="/gl/accounts" element={<ChartOfAccounts role={profile.role} />} />
                 <Route path="/gl/journal" element={<JournalEntry />} />
                 <Route path="/gl/listing" element={<JournalListing isOwner={profile.role === 'owner'} />} />
@@ -391,7 +394,7 @@ export default function App() {
       if (!data.user) return setLoadFailed(disabled)
       supabase.from('profiles').select('*').eq('id', data.user.id).single()
         .then(({ data, error }) => {
-          if (data?.active === false) return setLoadFailed(disabled)
+          if (data?.active === false || error?.message?.includes('Not allowed')) return setLoadFailed(disabled)
           setProfile(data); if (error) setLoadFailed(error.message)
         })
     })
