@@ -65,6 +65,24 @@ export function toRows(input: unknown): unknown[][] {
   return arr as unknown[][]
 }
 
+// ---- Which export is this? The daily close takes all three in one drop. ----
+export type FileKind = 'bill' | 'items' | 'fiuu'
+
+// Fiuu listings carry Settlement Date and Bill Amt on the first row. Both Zeoniq
+// exports have a Business Date header; the Product Sales one is told apart by its
+// "Item:" group rows (it also has a Net Total column, so that test comes last).
+export function detectFile(input: unknown): FileKind | null {
+  const rows = toRows(input)
+  const cell = (v: unknown) => String(v ?? '').trim()
+  const first = (rows[0] ?? []).map(cell)
+  if (first.includes('Settlement Date') && first.includes('Bill Amt')) return 'fiuu'
+  const headIndex = rows.findIndex(r => r.some(c => cell(c) === 'Business Date'))
+  if (headIndex < 0) return null
+  if (rows.slice(headIndex + 1).some(r => cell(r[1]).startsWith('Item:'))) return 'items'
+  if (rows[headIndex].map(cell).includes('Net Total')) return 'bill'
+  return null
+}
+
 export function parseBillSummary(input: unknown): Day[] {
   const rows = toRows(input)
   const headIndex = rows.findIndex(r => r.some(c => String(c ?? '').trim() === 'Business Date'))

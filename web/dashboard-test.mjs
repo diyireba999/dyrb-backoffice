@@ -130,3 +130,16 @@ assert.equal(todoItems([oct, { ...sep, closed_at: null, accruals_posted: false, 
 items = todoItems([oct, { ...sep, days_missing: ['2026-09-29'] }], T)
 assert.deepEqual([items[0].text, items[0].to], ['Sales not uploaded: 29 Sept', '/sales/upload'], 'last month\'s missing days are listed too')
 console.log('todo items ok')
+
+// --- which export is this file? ---
+const { detectFile } = await import('./src/zeoniq.ts')
+const billRows = [['Bill Summary Listing'], [], ['Business Date', 'Net Sales', 'Charges', 'Tax', 'Adj. Amount', 'Net Total', 'CASH', 'VISA'], ['21/9/2026', 1000, 100, 0, 0, 1100, 500, 600]]
+const itemRows = [['Product Sales Listing'], ['Business Date', 'Net Sales', 'Item Qty', 'Net Total'], ['', 'Item: AC01-CARLSBERG'], ['21/9/2026', 120, 6, 120]]
+const fiuuRows = [['Date', 'Settlement Date', 'Bill Amt', 'Transaction Fee', 'Net Amount', 'Status', 'Channel'], ['21-09-2026 20:10:00', '23-09-2026 09:00:00', 100, 1.5, 98.5, 'settled', 'VISA']]
+assert.equal(detectFile(billRows), 'bill')
+assert.equal(detectFile(itemRows), 'items', 'Item: rows win even with a Net Total column')
+assert.equal(detectFile(fiuuRows), 'fiuu')
+assert.equal(detectFile([['Something'], ['else', 1]]), null, 'no Business Date, no Settlement Date')
+assert.equal(detectFile([['Business Date', 'Net Sales'], ['21/9/2026', 5]]), null, 'Business Date alone is not enough')
+assert.equal(detectFile([{ data: billRows }]), 'bill', 'per-sheet wrapper shape')
+console.log('detect file ok')
