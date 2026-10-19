@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { accountTotals, addDays, dmy, downloadCsv, round2, rm, todayMY, useAccounts, type Account } from '../lib'
 import { Empty, ReportBar, Ready } from '../ui'
 import { comparePeriod, shiftMonths, type CompareMode } from '../dashboard-math'
@@ -159,8 +160,9 @@ const monthEnd = () => addDays(shiftMonths(todayMY().slice(0, 8) + '01', 1), -1)
 
 export function ProfitAndLoss() {
   const accounts = useAccounts(true)
-  const [from, setFrom] = useState(todayMY().slice(0, 8) + '01')
-  const [to, setTo] = useState(monthEnd())
+  const [params] = useSearchParams()
+  const [from, setFrom] = useState(params.get('from') ?? todayMY().slice(0, 8) + '01')
+  const [to, setTo] = useState(params.get('to') ?? monthEnd())
   const [mode, setMode] = useState<CompareMode>('prev')
   const cmp = comparePeriod(from, to, mode)
   const [cur, curState] = useNet(from, to)
