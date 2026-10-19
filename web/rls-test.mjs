@@ -9,7 +9,7 @@ const FILES = ['001_core.sql', '002_claims.sql', '003_accounting.sql', '004_payr
   '017_corkage.sql', '018_docedit.sql', '019_advance.sql', '020_timesheet.sql', '021_entertainment.sql',
   '022_usernames.sql', '023_disable_login.sql', '024_investor.sql', '025_prorate.sql', '026_company.sql',
   '027_payroll_hours.sql', '028_payroll_paid.sql', '029_payroll_payment.sql', '030_accrual_first_day.sql',
-  '031_review_fixes.sql']
+  '031_review_fixes.sql', '032_month_status.sql']
 
 const db = new PGlite()
 await db.exec(`
@@ -17,7 +17,7 @@ await db.exec(`
   create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb, banned_until timestamptz, updated_at timestamptz);
   create table auth.identities (id uuid, user_id uuid, provider_id text, identity_data jsonb, provider text,
     last_sign_in_at timestamptz, created_at timestamptz, updated_at timestamptz);
-  create function auth.uid() returns uuid language sql as $$ select current_setting('app.uid', true)::uuid $$;
+  create function auth.uid() returns uuid language sql as $$ select nullif(current_setting('app.uid', true), '')::uuid $$;
   create table storage.buckets (id text, name text, public bool);
   create table storage.objects (bucket_id text, owner uuid, name text);
 create function storage.foldername(p text) returns text[] language sql immutable as $$ select string_to_array(p, '/') $$;
@@ -49,7 +49,7 @@ const run = (await db.query(`select create_payroll_run('2026-09-01','2026-09-30'
 await db.query(`select approve_payroll_run(${run})`)
 
 const as = async (uid, label, sql) => {
-  await db.exec(`set role authenticated; set app.uid = '${uid}';`)
+  await db.exec(`set role ${uid ? 'authenticated' : 'anon'}; set app.uid = '${uid ?? ''}';`)
   try { const r = await db.query(sql); await db.exec('reset role'); return r.rows }
   catch (e) { await db.exec('reset role'); return { error: e.message } }
 }
@@ -99,6 +99,10 @@ r = await as(null, 'anon', `select count(*)::int c from journals`)
 check('anonymous sees no entries', count(r) === 0 || typeof count(r) === 'string')
 r = await as(null, 'anon', `select count(*)::int c from profiles`)
 check('anonymous sees no people', count(r) === 0 || typeof count(r) === 'string')
+r = await as(null, 'anon', `select post_journal('2026-09-21','x','manual',null,null,'[{"account":"6900","debit":5},{"account":"1000","credit":5}]'::jsonb)`)
+check('anonymous cannot post entries', !!r.error, r.error ?? 'posted!')
+r = await as(null, 'anon', `select month_status('2026-09-01')`)
+check('anonymous cannot read month_status', !!r.error, r.error ?? 'read!')
 
 // ---- manager (office, but not owner) ----
 const MGR = '00000000-0000-0000-0000-000000000003'
@@ -134,6 +138,8 @@ check('investor cannot see suppliers', count(r) === 0, String(count(r)))
 await db.exec(`reset role; set app.uid = '${OWNER}'`)
 await db.query(`select set_login_active('${MGR}', false)`)
 r = await as(MGR, 'manager', `select my_role()::text r`)
-check('disabled login has no role', Array.isArray(r) && r[0]?.r === null, JSON.stringify(r))
+check('disabled login has no role', !Array.isArray(r) || r[0]?.r === null, JSON.stringify(r))
 r = await as(MGR, 'manager', `select count(*)::int c from journals`)
-check('disabled manager can no longer see the books', count(r) === 0, String(count(r)))
+check('disabled manager can no longer see the books', count(r) === 0 || typeof count(r) === 'string', String(count(r)))
+r = await as(MGR, 'manager', `select post_journal('2026-09-21','x','manual',null,null,'[{"account":"6900","debit":5},{"account":"1000","credit":5}]'::jsonb)`)
+check('disabled manager cannot post entries', !!r.error, r.error ?? 'posted!')

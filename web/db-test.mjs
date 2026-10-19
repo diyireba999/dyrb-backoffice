@@ -788,6 +788,8 @@ await db.query(`select resplit_sales_day('2028-04-02', '[{"account":"4000","amou
 const resplitOk = (await db.query(`select coalesce(sum(credit),0)::float s from journal_lines where journal_id=${unsplitJ} and account in ('4000','4020')`)).rows[0].s
 console.log(unsplitAcct === '4090' && resplitOk === 300 ? 'unsplit sales go to 4090 and can be re-split ok' : `FAIL unsplit ${unsplitAcct} ${resplitOk}`)
 // ---- 032: month status for the to-do list and the Month-end checklist ----
+// This script skips 021-024; 032's my_role() reads profiles.active, which 023 adds in production.
+await db.exec(`alter table profiles add column if not exists active boolean not null default true`)
 for (let i = 0; i < 2; i++)  // safe to run again
   await db.exec(fs.readFileSync(new URL('../supabase/032_month_status.sql', import.meta.url), 'utf8'))
 await db.exec(`update profiles set role='owner'`)
@@ -806,6 +808,10 @@ console.log(ms.days_missing.length === 27 && ms.days_missing.includes('2025-06-0
 console.log(JSON.stringify(ms.days_closed) === '["2025-06-04"]' ? 'closed days ok' : 'FAIL days_closed ' + JSON.stringify(ms.days_closed))
 console.log(Number(ms.card_unsettled) === 100 && ms.card_since === '2025-06-03' ? 'card unsettled ok' : `FAIL card ${ms.card_unsettled} ${ms.card_since}`)
 console.log(ms.payroll.status === 'draft' && ms.payroll.run_id === msRun ? 'payroll draft ok' : 'FAIL payroll ' + JSON.stringify(ms.payroll))
+await db.query(`select approve_payroll_run(${msRun})`)
+console.log((await db.query(`select month_status('2025-06-01') s`)).rows[0].s.payroll.status === 'approved' ? 'payroll approved ok' : 'FAIL payroll approved')
+await db.query(`select mark_payroll_paid(${msRun}, '2025-06-30', '1100')`)
+console.log((await db.query(`select month_status('2025-06-01') s`)).rows[0].s.payroll.status === 'paid' ? 'payroll paid ok' : 'FAIL payroll paid')
 console.log(ms.bank_uncleared >= 1 ? 'bank uncleared ok' : 'FAIL bank_uncleared ' + ms.bank_uncleared)
 console.log(ms.accruals_posted === false && ms.stock_count_posted === false && ms.invoices_entered === false && ms.closed_at === null
   ? 'nothing posted yet ok' : 'FAIL flags ' + JSON.stringify(ms))

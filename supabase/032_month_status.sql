@@ -90,3 +90,18 @@ begin
     'invoices_entered', coalesce(v_close.invoices_entered, false),
     'closed_at', v_close.closed_at);
 end $$;
+
+-- ---------- Nobody without an active profile gets a role ----------
+-- my_role() used to return NULL for the anon key or a disabled login. NULL slips past
+-- every "if not is_office()" and "if my_role() <> 'owner'" guard in the posting
+-- functions, because IF NULL is treated as false. Raising here closes all of them at
+-- once; row policies that call my_role() now error for such a caller instead of
+-- returning nothing, which the app never relies on (nothing is read before sign-in).
+create or replace function my_role() returns app_role
+language plpgsql stable security definer set search_path = public as $$
+declare r app_role;
+begin
+  select role into r from profiles where id = auth.uid() and active;
+  if r is null then raise exception 'Not allowed'; end if;
+  return r;
+end $$;
