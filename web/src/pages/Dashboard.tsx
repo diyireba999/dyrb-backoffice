@@ -301,10 +301,10 @@ export function Dashboard({ profile }: { profile: Profile }) {
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <Kpi icon={TrendingUp} label="Profit this month"
           value={loaded && !accountsError ? <span className={profit < 0 ? 'text-rose-600' : ''}>{rm(profit)}</span> : '—'}
-          note={loaded ? (profitChange === null ? 'no figure to compare' : `${profitChange > 0 ? '+' : ''}${profitChange}% vs last month`) : undefined}
+          note={!loaded || accountsError ? undefined : (profitChange === null ? 'no figure to compare' : `${profitChange > 0 ? '+' : ''}${profitChange}% vs last month`)}
           tone="bg-emerald-50 text-emerald-600" />
         <Kpi icon={Wallet} label="Cash" value={kpiValue(bank + cashOnHand)}
-          note={!loaded ? undefined : billsDue > 0 ? <span className="text-amber-700">{rm(billsDue)} bills due this week</span> : `Bank ${rm(bank)} · Cash ${rm(cashOnHand)}`}
+          note={!loaded || accountsError ? undefined : billsDue > 0 ? <span className="text-amber-700">{rm(billsDue)} bills due this week</span> : `Bank ${rm(bank)} · Cash ${rm(cashOnHand)}`}
           tone="bg-blue-50 text-blue-600" />
         <Kpi icon={Truck} label="Owed to suppliers" value={kpiValue(bal(['2000'], -1))} note={investor ? undefined : supplierDueNote(due)} tone="bg-rose-50 text-rose-600" />
         <Kpi icon={HandCoins} label="Owed to director" value={accountsError ? '—' : kpiValue(directorOwed)} note={accountsError ? 'Could not be loaded' : 'Paid from their own pocket'} tone="bg-violet-50 text-violet-600" />
@@ -315,7 +315,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
         <div className="card">
           <div className="flex items-center gap-2"><ClipboardList className="size-4 text-slate-400" /><h3 className="font-semibold">To do</h3></div>
           {todo === undefined ? <p className="muted mt-3">Checking…</p>
-            : todo === null ? <p className="alert-error mt-3">Could not check what is waiting: {todoError}</p>
+            : todo === null ? <p className="alert-error mt-3">{todoError}</p>
             : (() => {
               const items = todoItems(todo, todayMY())
               if (items.length === 0) return <p className="muted mt-3">Nothing waiting. Up to date.</p>
