@@ -10,10 +10,11 @@ import { confirmDialog } from '../feedback'
 async function bookedCard(dates: string[]): Promise<Record<string, number>> {
   const booked: Record<string, number> = {}
   if (!dates.length) return booked
-  const { data: lines } = await supabase.from('journal_lines')
+  const { data: lines, error } = await supabase.from('journal_lines')
     .select('debit, journals!inner(date, source)')
     .eq('account', '1200').eq('journals.source', 'sales')
     .gte('journals.date', dates[0]).lte('journals.date', dates[dates.length - 1])
+  if (error) console.error('bookedCard', error)
   for (const l of (lines ?? []) as unknown as { debit: number; journals: { date: string } }[]) {
     booked[l.journals.date] = round2((booked[l.journals.date] ?? 0) + Number(l.debit))
   }
@@ -194,7 +195,7 @@ export function UploadSales({ role }: { role: Role }) {
 
   // Any mix of the three exports, in any order. A kind dropped twice is replaced.
   async function onFiles(list: FileList | null) {
-    if (!list || list.length === 0) return
+    if (!list || list.length === 0 || busy) return
     const problems: string[] = []
     setBusy(true)
     try {
@@ -293,8 +294,8 @@ export function UploadSales({ role }: { role: Role }) {
     if (takings.length) setInBooks(await bookedCard(takings.map(t => t.date)))
     setBusy(false)
     const failed = [
-      ...out.filter(d => d.result && d.result !== 'ok').map(d => `${dmy(d.date)}: ${d.result}`),
-      ...payOut.filter(s => s.result && s.result !== 'ok').map(s => `Payout ${dmy(s.settleDate)}: ${s.result}`),
+      ...out.filter(d => d.result && !['ok', 'split', 'cost'].includes(d.result)).map(d => `${dmy(d.date)}: ${d.result}`),
+      ...payOut.filter(s => pickPay[s.settleDate] && s.result && s.result !== 'ok').map(s => `Payout ${dmy(s.settleDate)}: ${s.result}`),
     ]
     setError(failed.join(' — '))
   }
@@ -337,7 +338,7 @@ export function UploadSales({ role }: { role: Role }) {
           <div className="mt-3 flex flex-wrap gap-2">
             {loadedKinds.map(k => (
               <span key={k} className="badge gap-1">{FILE_LABEL[k]}: {files[k]}
-                <button type="button" title="Remove this file" aria-label={`Remove ${FILE_LABEL[k]}`} className="ml-1 rounded hover:text-red-600" onClick={() => removeFile(k)}><X className="size-3" /></button>
+                <button type="button" title="Remove this file" aria-label={`Remove ${FILE_LABEL[k]}`} className="ml-1 rounded hover:text-red-600 disabled:opacity-50" disabled={busy} onClick={() => removeFile(k)}><X className="size-3" /></button>
               </span>
             ))}
           </div>

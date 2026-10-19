@@ -29,7 +29,8 @@ Post, and makes paying invoices a tick.
 
 1. If the first row contains both `Settlement Date` and `Bill Amt` → `fiuu`.
 2. Else find the row containing `Business Date`; none → `null`.
-3. If any later row's second cell starts with `Item:` → `items` (Product Sales Listing).
+3. If any later row's second cell starts with `Item:`, or the header row contains
+   `Item Qty` → `items` (Product Sales Listing).
 4. Else if that header row contains `Net Total` → `bill` (Bill Summary Listing).
 5. Else `null`.
 

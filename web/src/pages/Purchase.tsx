@@ -430,8 +430,8 @@ export function SupplierPayments({ role }: { role: Role }) {
               <tbody>
                 {open.map(i => (
                   <tr key={i.id}>
-                    <td className="pl-6"><input type="checkbox" checked={Number(pay[i.id] ?? 0) > 0}
-                      onChange={e => setPay({ ...pay, [i.id]: e.target.checked ? String(owingOn(i)) : '' })} /></td>
+                    <td className="pl-6"><input type="checkbox" checked={Number(pay[i.id] ?? 0) > 0} disabled={owingOn(i) <= 0}
+                      aria-label={`Pay ${i.doc_no} in full`} onChange={e => setPay({ ...pay, [i.id]: e.target.checked ? String(owingOn(i)) : '' })} /></td>
                     <td className="font-mono text-xs">{i.doc_no}</td><td>{i.invoice_no}</td>
                     <td className="text-slate-500">{dmy(i.date)}</td><td className="text-slate-500">{dmy(i.due_date)}</td>
                     <td className="text-right">{rm(owingOn(i))}</td>

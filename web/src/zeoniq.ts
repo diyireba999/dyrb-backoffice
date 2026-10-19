@@ -70,7 +70,8 @@ export type FileKind = 'bill' | 'items' | 'fiuu'
 
 // Fiuu listings carry Settlement Date and Bill Amt on the first row. Both Zeoniq
 // exports have a Business Date header; the Product Sales one is told apart by its
-// "Item:" group rows (it also has a Net Total column, so that test comes last).
+// "Item:" group rows or its Item Qty column (it also has a Net Total column, so that
+// test comes last).
 export function detectFile(input: unknown): FileKind | null {
   const rows = toRows(input)
   const cell = (v: unknown) => String(v ?? '').trim()
@@ -78,8 +79,10 @@ export function detectFile(input: unknown): FileKind | null {
   if (first.includes('Settlement Date') && first.includes('Bill Amt')) return 'fiuu'
   const headIndex = rows.findIndex(r => r.some(c => cell(c) === 'Business Date'))
   if (headIndex < 0) return null
+  const head = rows[headIndex].map(cell)
   if (rows.slice(headIndex + 1).some(r => cell(r[1]).startsWith('Item:'))) return 'items'
-  if (rows[headIndex].map(cell).includes('Net Total')) return 'bill'
+  if (head.includes('Item Qty')) return 'items' // an export with no items still names the file
+  if (head.includes('Net Total')) return 'bill'
   return null
 }
 
