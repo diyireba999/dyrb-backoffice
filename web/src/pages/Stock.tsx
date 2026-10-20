@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Search } from 'lucide-react'
-import { accountTotals, dmy, downloadCsv, rm, round2, supabase, todayMY, type Role } from '../lib'
+import { accountTotals, dmy, downloadExcel, rm, round2, supabase, todayMY, type Role } from '../lib'
 import { Empty, ReportBar } from '../ui'
 import { toast } from '../feedback'
 import { codePrefix } from '../zeoniq'
@@ -38,7 +38,7 @@ export function ItemCosts({ role }: { role: Role }) {
     (!term || r.code.toLowerCase().includes(term) || r.name.toLowerCase().includes(term)) &&
     (!onlyMissing || Number(r.unit_cost) === 0))
   const missing = rows.filter(r => Number(r.unit_cost) === 0).length
-  const csv = () => downloadCsv('item-costs.csv', [['Code', 'Name', 'Cost per unit', 'Last seen'],
+  const csv = () => downloadExcel('item-costs.xlsx', [['Code', 'Name', 'Cost per unit', 'Last seen'],
     ...rows.map(r => [r.code, r.name, Number(r.unit_cost), r.last_seen ?? ''])])
 
   return (

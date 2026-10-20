@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { accountTotals, addDays, dmy, downloadCsv, round2, rm, todayMY, useAccounts, type Account } from '../lib'
+import { accountTotals, addDays, dmy, downloadExcel, round2, rm, todayMY, useAccounts, type Account } from '../lib'
 import { Empty, ReportBar, Ready } from '../ui'
 import { comparePeriod, shiftMonths, type CompareMode } from '../dashboard-math'
 import { change, fig, plSection } from '../report-math'
@@ -29,7 +29,7 @@ export function TrialBalance() {
   const rows = accounts.map(a => [a, round2(net.get(a.code) ?? 0)] as const).filter(([, v]) => v !== 0)
   const dr = rows.reduce((s, [, v]) => s + (v > 0 ? v : 0), 0)
   const cr = rows.reduce((s, [, v]) => s + (v < 0 ? -v : 0), 0)
-  const csv = () => downloadCsv(`trial-balance-${asAt}.csv`, [['Code', 'Account', 'Debit', 'Credit'],
+  const csv = () => downloadExcel(`trial-balance-${asAt}.xlsx`, [['Code', 'Account', 'Debit', 'Credit'],
     ...rows.map(([a, v]) => [a.code, a.name, v > 0 ? v : '', v < 0 ? -v : '']), ['', 'Total', round2(dr), round2(cr)]])
 
   return (
@@ -180,7 +180,7 @@ export function ProfitAndLoss() {
   ]
   const curLabel = `${dmy(from)} – ${dmy(to)}`
   const prevLabel = cmp ? `${dmy(cmp[0])} – ${dmy(cmp[1])}` : null
-  const csv = () => downloadCsv(`profit-and-loss-${from}-${to}.csv`, linesCsv(lines, curLabel, prevLabel))
+  const csv = () => downloadExcel(`profit-and-loss-${from}-${to}.xlsx`, linesCsv(lines, curLabel, prevLabel))
   const monthStart = todayMY().slice(0, 8) + '01'
   const setRange = (f: string, t: string) => { setFrom(f); setTo(t) }
 
@@ -261,7 +261,7 @@ export function BalanceSheet() {
   ]
   const curLabel = dmy(asAt)
   const prevLabel = compare ? dmy(prevAt) : null
-  const csv = () => downloadCsv(`balance-sheet-${asAt}.csv`, linesCsv(lines, curLabel, prevLabel))
+  const csv = () => downloadExcel(`balance-sheet-${asAt}.xlsx`, linesCsv(lines, curLabel, prevLabel))
 
   return (
     <div className="space-y-4">

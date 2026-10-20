@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Download, FileText, Pencil, Plus, Printer, RefreshCw, Trash2, XCircle } from 'lucide-react'
-import { dmy, downloadCsv, isDirector, isOffice, MONEY_ACCOUNTS, MONEY_NAMES, rm, round2, supabase, todayMY, useAccounts, type Profile, type Role } from '../lib'
+import { dmy, downloadExcel, isDirector, isOffice, MONEY_ACCOUNTS, MONEY_NAMES, rm, round2, supabase, todayMY, useAccounts, type Profile, type Role } from '../lib'
 import { Empty, ReportBar, MonthInput, useCompany } from '../ui'
 import { confirmDialog, toast } from '../feedback'
 import { PageActions, submittedAgain, useEscape } from '../page'
@@ -628,7 +628,7 @@ export function PayrollRun({ role }: { role: Role }) {
   }
 
   const total = (k: keyof Payslip) => slips.reduce((s, p) => s + n(p[k] as number), 0)
-  const csv = () => downloadCsv(`payroll-${run?.month}.csv`, [
+  const csv = () => downloadExcel(`payroll-${run?.month}.xlsx`, [
     ['Staff', 'Bank', 'Account', 'Basic', 'OT', 'Allowance', 'Service charge', 'Gross', 'EPF (staff)', 'SOCSO (staff)', 'EIS (staff)', 'PCB', 'Other', 'Advance recovery', 'Net pay', 'EPF (employer)', 'SOCSO (employer)', 'EIS (employer)'],
     ...slips.map(p => [p.name, p.bank_name ?? '', p.bank_account ?? '', n(p.basic), n(p.ot_amount), n(p.allowance), n(p.service_charge), n(p.gross),
       n(p.epf_employee), n(p.socso_employee), n(p.eis_employee), n(p.pcb), n(p.other_deduction), n(p.advance_recovery), n(p.net_pay), n(p.epf_employer), n(p.socso_employer), n(p.eis_employer)]),
@@ -825,7 +825,7 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
     window.addEventListener('afterprint', () => document.body.classList.remove('printing-slips'), { once: true })
     setTimeout(() => window.print())  // let the payslips render first
   }
-  const csv = () => downloadCsv(`payslips${slips.length === 1 ? '-' + slips[0].name : ''}-${slips[0]?.month.slice(0, 7)}.csv`, [
+  const csv = () => downloadExcel(`payslips${slips.length === 1 ? '-' + slips[0].name : ''}-${slips[0]?.month.slice(0, 7)}.xlsx`, [
     ['Month', 'Staff', 'Staff no.', 'IC / passport', 'Position', 'Bank', 'Account', 'Basic', 'OT hours', 'OT', 'Allowance', 'Service charge', 'Unpaid leave',
       'Gross', 'EPF (staff)', 'SOCSO (staff)', 'EIS (staff)', 'PCB', 'Advance recovery', 'Other', 'Net pay', 'EPF (employer)', 'SOCSO (employer)', 'EIS (employer)', 'Status'],
     ...slips.map(p => [p.month.slice(0, 7), p.name, p.employee_no ?? '', p.id_no ?? '', p.position ?? '', p.bank_name ?? '', p.bank_account ?? '',
@@ -963,7 +963,7 @@ export function PayrollYear() {
     net: list.reduce((s, p) => s + n(p.net_pay), 0),
   })).sort((a, b) => a.name.localeCompare(b.name))
 
-  const csv = () => downloadCsv(`payroll-year-${year}.csv`, [
+  const csv = () => downloadExcel(`payroll-year-${year}.xlsx`, [
     ['Staff', 'IC / passport', 'Tax no.', 'EPF no.', 'Months paid', 'Gross pay', 'EPF (staff)', 'SOCSO (staff)', 'PCB', 'Net paid'],
     ...rows.map(r => [r.name, r.id_no ?? '', r.tax_no ?? '', r.epf_no ?? '', r.months, round2(r.gross), round2(r.epf), round2(r.socso), round2(r.pcb), round2(r.net)]),
   ])

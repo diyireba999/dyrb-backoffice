@@ -216,3 +216,18 @@ assert.deepEqual(rb('Net profit % of sales').values, [45])
 assert.deepEqual(rich.map(l => l.label).filter(l => l.startsWith('Total')),
   ['Total sales', 'Total cost of sales', 'Total service charge', 'Total other income', 'Total operating expenses'], 'blocks in statement order')
 console.log('report math ok')
+// --- excel cells (slice D) ---
+const { toSheet } = await import('./src/excel.ts')
+const sheet = toSheet([
+  ['Code', 'Account', 'Debit'],
+  ['1100', 'A very long account name that goes on and on and on and on and on', 1234567.5],
+  ['', 'Total', 0],
+])
+assert.deepEqual(sheet.data[0][0], { value: 'Code', type: String, fontWeight: 'bold' }, 'header is bold')
+assert.deepEqual(sheet.data[1][2], { value: 1234567.5, type: Number, format: '#,##0.00', align: 'right' }, 'money cell')
+assert.equal(sheet.data[2][0], null, 'empty string is an empty cell')
+assert.deepEqual(sheet.data[2][1], { value: 'Total', type: String }, 'body text is plain')
+assert.deepEqual(sheet.columns.map(c => c.width), [8, 48, 14], 'widths: clamped low, clamped high, "1,234,567.50" + 2')
+assert.deepEqual(toSheet([['Qty', 3]]).data[0][1], { value: 3, type: Number, format: '#,##0.00', align: 'right', fontWeight: 'bold' }, 'header numbers are bold too')
+assert.deepEqual(toSheet([]), { data: [], columns: [] })
+console.log('excel cells ok')

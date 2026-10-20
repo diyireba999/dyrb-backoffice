@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react'
-import { MONEY_ACCOUNTS, accountTotals, addDays, dmy, docTotal, downloadCsv, loadDocuments, monthStart, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, useSuppliers, type Account, type DocRow, type Role } from '../lib'
+import { MONEY_ACCOUNTS, accountTotals, addDays, dmy, docTotal, downloadExcel, loadDocuments, monthStart, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, useSuppliers, type Account, type DocRow, type Role } from '../lib'
 import { AccountSelect, Empty, ReportBar, Ready } from '../ui'
 import { DocumentList } from '../DocumentList'
 import { confirmDialog, toast } from '../feedback'
@@ -40,7 +40,7 @@ export function ChartOfAccounts({ role }: { role: Role }) {
     const net = bal?.get(a.code) ?? 0
     return debitNormal(a.type) ? net : -net
   }
-  const csv = () => downloadCsv('chart-of-accounts.csv', [['Code', 'Name', 'Type', 'Balance', 'Active'],
+  const csv = () => downloadExcel('chart-of-accounts.xlsx', [['Code', 'Name', 'Type', 'Balance', 'Active'],
     ...accounts.map(a => [a.code, a.name, TYPE_LABEL[a.type], bal ? round2(balanceOf(a)) : '', a.active ? 'Yes' : 'No'])])
 
   return (
@@ -281,7 +281,7 @@ export function AccountLedger({ moneyOnly = false }: { moneyOnly?: boolean }) {
   const totalDr = lines.reduce((s, l) => s + Number(l.debit), 0)
   const totalCr = lines.reduce((s, l) => s + Number(l.credit), 0)
   const title = moneyOnly ? 'Cash Book' : 'General Ledger'
-  const csv = () => downloadCsv(`${title.toLowerCase().replace(' ', '-')}-${code}-${from}-${to}.csv`, [
+  const csv = () => downloadExcel(`${title.toLowerCase().replace(' ', '-')}-${code}-${from}-${to}.xlsx`, [
     ['Date', 'Doc No', 'Description', 'Ref', 'Debit', 'Credit', 'Balance'],
     ['', '', 'Opening balance', '', '', '', round2(sign * opening)],
     ...rows.map(r => [dmy(r.journals.date), r.journals.doc_no, r.memo || r.journals.description, r.journals.reference ?? '', r.debit || '', r.credit || '', round2(sign * r.balance)]),
