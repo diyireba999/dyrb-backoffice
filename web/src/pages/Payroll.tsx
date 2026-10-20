@@ -185,7 +185,7 @@ export function StaffAdvances({ role, approver }: { role: Role; approver: string
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [highlight, setHighlight] = useState(0)
-  const [printing, setPrinting] = useState<{ adv: Advance; doc: string; from: string } | null>(null)
+  const [printing, setPrinting] = useState<{ adv: Advance; doc: string } | null>(null)
   const first = useRef<HTMLSelectElement>(null)
   const canEdit = role === 'owner' || role === 'accountant'
   const nameOf = (id: number) => employees.find(e => e.id === id)?.name ?? '—'
@@ -229,14 +229,12 @@ export function StaffAdvances({ role, approver }: { role: Role; approver: string
     load()
   }
 
-  // The signed paper: the advance's document number and where the money came from
-  // are on its journal, then the form prints on its own.
+  // The signed paper: the advance's document number is on its journal, then the
+  // form prints on its own.
   async function printForm(a: Advance) {
-    const { data, error } = await supabase.from('journals').select('doc_no, journal_lines(account, credit)').eq('id', a.journal_id).single()
+    const { data, error } = await supabase.from('journals').select('doc_no').eq('id', a.journal_id).single()
     if (error) return toast('Could not load the advance: ' + error.message, { kind: 'error' })
-    const j = data as unknown as { doc_no: string; journal_lines: { account: string; credit: number }[] }
-    const from = j.journal_lines.find(l => Number(l.credit) > 0)?.account ?? ''
-    setPrinting({ adv: a, doc: j.doc_no, from: MONEY_NAMES[from] ?? from })
+    setPrinting({ adv: a, doc: (data as { doc_no: string }).doc_no })
     printDocument()
   }
 
@@ -306,47 +304,42 @@ export function StaffAdvances({ role, approver }: { role: Role; approver: string
           </tbody>
         </table>}
       </div>
-      {printing && <AdvanceForm adv={printing.adv} doc={printing.doc} from={printing.from} employee={employees.find(e => e.id === printing.adv.employee_id)} approver={approver} />}
+      {printing && <AdvanceForm adv={printing.adv} doc={printing.doc} employee={employees.find(e => e.id === printing.adv.employee_id)} approver={approver} />}
     </div>
   )
 }
 
-// The paper a staff member signs for a salary advance. Print-only, A4 portrait.
-function AdvanceForm({ adv, doc, from, employee, approver }: { adv: Advance; doc: string; from: string; employee?: Employee; approver: string }) {
+// The paper a staff member signs for a salary advance. Print-only, short enough
+// to read in ten seconds.
+function AdvanceForm({ adv, doc, employee, approver }: { adv: Advance; doc: string; employee?: Employee; approver: string }) {
   const company = useCompany()
   const month = monthLabelOf(adv.date.slice(0, 7))
   const rows: [string, string][] = [
-    ['Staff name', employee?.name ?? ''],
-    ['Staff no.', employee?.employee_no ?? '—'],
-    ['IC / Passport no.', employee?.id_no ?? '—'],
-    ['Position', employee?.position ?? '—'],
-    ['Date of advance', dmy(adv.date)],
+    ['Name', employee?.name ?? ''],
+    ['IC / Passport', employee?.id_no ?? '—'],
+    ['Date', dmy(adv.date)],
     ['Amount', `${rm(adv.amount)}  (${ringgitInWords(adv.amount)})`],
-    ['Paid from', from],
-    ...(adv.note ? [['Note', adv.note] as [string, string]] : []),
   ]
   return (
     <div className="print-doc hidden print:block">
-      <Letterhead title="Salary Advance Agreement" period={`${doc} · ${dmy(adv.date)}`} />
-      <table className="mt-6 w-full text-[13px]">
+      <Letterhead title="Salary Advance" period={`${doc} · ${dmy(adv.date)}`} />
+      <table className="mt-6 w-full text-[14px]">
         <tbody>
-          {rows.map(([k, v]) => <tr key={k}><td className="w-44 py-2 font-medium text-slate-600">{k}</td><td className="py-2">{v}</td></tr>)}
+          {rows.map(([k, v]) => <tr key={k}><td className="w-36 py-2 font-medium text-slate-600">{k}</td><td className="py-2">{v}</td></tr>)}
         </tbody>
       </table>
-      <div className="mt-6 space-y-3 text-[13px] leading-relaxed">
-        <p>I, <b>{employee?.name}</b>, confirm that I have received a salary advance of <b>{rm(adv.amount)}</b> from {company.name} on {dmy(adv.date)}.</p>
-        <p>I agree that this amount will be deducted from my salary for <b>{month}</b>. If it is more than my pay for that month, the balance will be deducted from the following month(s) until it is fully repaid.</p>
-        <p>If my employment ends before the advance is fully repaid, the balance is due on my last day of work and may be deducted from my final pay.</p>
-      </div>
-      <div className="mt-14 grid grid-cols-2 gap-16 text-[13px]">
+      <p className="mt-6 text-[14px] leading-relaxed">
+        I received this salary advance. It will be deducted from my <b>{month}</b> salary, and any balance from the following month.
+      </p>
+      <div className="mt-16 grid grid-cols-2 gap-16 text-[13px]">
         <div>
-          <div className="border-t border-slate-800 pt-1 font-medium">Received by (staff)</div>
-          <div className="mt-3 text-slate-600">Name: {employee?.name}</div>
+          <div className="border-t border-slate-800 pt-1 font-medium">Staff</div>
+          <div className="mt-3 text-slate-600">{employee?.name}</div>
           <div className="mt-2 text-slate-600">Date: ____________________</div>
         </div>
         <div>
           <div className="border-t border-slate-800 pt-1 font-medium">Approved by {company.name}</div>
-          <div className="mt-3 text-slate-600">Name: {approver}</div>
+          <div className="mt-3 text-slate-600">{approver}</div>
           <div className="mt-2 text-slate-600">Date: ____________________</div>
         </div>
       </div>

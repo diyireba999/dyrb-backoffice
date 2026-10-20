@@ -14,18 +14,15 @@ for that record.
   icon, title "Print form"). Pressing it loads the advance's document number and the
   account the money came from, then prints the form on its own (the list does not
   print). Anyone who can see the list can print.
-- **The form** (A4 portrait, one page):
+- **The form** (A4 portrait, half a page; simplified 2026-10-20 at the owner's request):
   - Letterhead as on reports (logo, company name, registration no., address, phone),
-    title `Salary Advance Agreement`, period line `<doc no> · <date>`.
-  - Details: Staff name · Staff no. · IC / Passport no. · Position · Date of advance ·
-    Amount (`RM 1,250.00`, then the amount in words) · Paid from (Cash in Drawer / Petty
-    Cash / Bank) · Note (when there is one).
-  - Terms, in plain English: receipt of the amount on the date; it is deducted from the
-    salary for the month of the advance; any balance carries to the following month(s)
-    until fully repaid; if employment ends first, the balance is due on the last day and
-    may be deducted from final pay.
-  - Two signature blocks side by side: "Received by (staff)" and "Approved by (for
-    <company>)", each with a signature line, Name and Date.
+    title `Salary Advance`, period line `<doc no> · <date>`.
+  - Four lines: Name · IC / Passport · Date · Amount (`RM 1,250.00`, then the amount in
+    words).
+  - One sentence: "I received this salary advance. It will be deducted from my <Month
+    Year> salary, and any balance from the following month."
+  - Two signature blocks side by side: "Staff" (name under the line) and "Approved by
+    <company>" (the signed-in user's name under the line), each with a Date line.
 - **Amount in words**: `ringgitInWords(amount)` in `web/src/money-words.ts`, pure and
   tested: `Ringgit Malaysia one thousand two hundred and fifty and sen fifty only`.
 
