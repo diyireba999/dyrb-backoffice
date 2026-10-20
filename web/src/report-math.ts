@@ -1,5 +1,5 @@
-// Pure report logic shared by the P&L statement and the monthly P&L, so the two
-// never disagree. No imports: this file is run by the Node assert tests.
+// Pure report logic: P&L section rule and figure formatting shared with the statement, and the monthly P&L lines.
+// No imports: this file is run by the Node assert tests.
 
 type AccountLike = { code: string; name: string; type: string }
 
@@ -14,6 +14,7 @@ export function plSection(a: { code: string; type: string }): PlSection | null {
   return null
 }
 
+// Mirrors round2 in lib.ts (no imports allowed here); keep the two the same.
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 // Statement figures: no "RM" on every cell, negatives in brackets.

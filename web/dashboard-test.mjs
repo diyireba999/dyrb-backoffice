@@ -186,6 +186,8 @@ assert.equal(ml[0].kind, 'head'); assert.equal(ml[0].label, 'Sales'); assert.equ
 assert.deepEqual(by('Food sales').values, [1000, 2000, null], 'income reads positive; unloaded month null')
 assert.equal(by('Food sales').code, '4000')
 assert.deepEqual(by('Total sales').values, [1000, 2500, null]); assert.equal(by('Total sales').total, 3500)
+assert.deepEqual(by('Total cost of sales').values, [400, 1000, null], 'expenses read positive')
+assert.deepEqual(by('Total operating expenses').values, [500, 500, null])
 assert.deepEqual(by('Gross profit').values, [600, 1500, null]); assert.equal(by('Gross profit').kind, 'total')
 assert.deepEqual(by('Net profit').values, [100, 1000, null]); assert.equal(by('Net profit').total, 1100); assert.equal(by('Net profit').kind, 'grand')
 assert.deepEqual(by('Gross profit % of sales').values, [60, 60, null]); assert.equal(by('Gross profit % of sales').kind, 'pct')
@@ -197,4 +199,20 @@ assert.deepEqual(loss.find(l => l.kind === 'grand').values, [-300])
 assert.deepEqual(loss.find(l => l.label === 'Net profit % of sales').values, [null], 'no sales: % is null')
 assert.equal(loss.find(l => l.label === 'Net profit % of sales').total, null)
 assert.deepEqual(monthlyLines(accts, []).find(l => l.kind === 'grand').values, [], 'no months: empty vectors')
+// service charge and other income: shown in their own blocks, kept out of gross profit and the sales base
+const full = [
+  ...accts,
+  { code: '4900', name: 'Other income', type: 'income' },
+]
+const rich = monthlyLines(full, [m({ '4000': -1000, '4100': -100, '4900': -50, '5000': 400, '6000': 300 })])
+const rb = label => rich.find(l => l.label === label)
+assert.equal(rb('Service charge').kind, 'head'); assert.deepEqual(rb('Total service charge').values, [100])
+assert.equal(rb('Other income').kind, 'head'); assert.deepEqual(rb('Total other income').values, [50])
+assert.deepEqual(rb('Service charge 10%').values, [100]); assert.deepEqual(rb('Total sales').values, [1000], 'service charge is not sales')
+assert.deepEqual(rb('Gross profit').values, [600], 'service and other income stay out of gross profit')
+assert.deepEqual(rb('Net profit').values, [450], 'net = gross 600 + service 100 + other 50 - opex 300')
+assert.deepEqual(rb('Gross profit % of sales').values, [60], 'service is not in the sales base')
+assert.deepEqual(rb('Net profit % of sales').values, [45])
+assert.deepEqual(rich.map(l => l.label).filter(l => l.startsWith('Total')),
+  ['Total sales', 'Total cost of sales', 'Total service charge', 'Total other income', 'Total operating expenses'], 'blocks in statement order')
 console.log('report math ok')
