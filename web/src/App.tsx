@@ -343,7 +343,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
                 <Route path="/stock/costs" element={<ItemCosts role={profile.role} />} />
                 <Route path="/stock/count" element={<StockCount role={profile.role} />} />
                 <Route path="/payroll/staff" element={<Employees role={profile.role} />} />
-                <Route path="/payroll/advances" element={<StaffAdvances role={profile.role} />} />
+                <Route path="/payroll/advances" element={<StaffAdvances role={profile.role} approver={profile.full_name} />} />
                 <Route path="/payroll/timesheet" element={<Timesheet role={profile.role} />} />
                 <Route path="/payroll/run" element={<PayrollRun role={profile.role} />} />
                 <Route path="/payroll/year" element={<PayrollYear />} />

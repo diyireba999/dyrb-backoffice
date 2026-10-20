@@ -63,7 +63,7 @@ Turn on two-step login for each account once created — this system holds salar
 1. Open the link on your phone and computer, sign in with the Step 2.6 email and password.
 2. **Suppliers** → add your regular suppliers. If you already owe one, fill "Already owe them?" and the date.
 3. Opening balances (use the day before your start date):
-   - Bank / cash on hand: **Money In** → Type *Owner Capital* → Received into Bank / Cash in Drawer / Petty Cash.
+   - Bank / cash on hand: **Money In** → Type *Owner Capital* → Received into Bank / Cash / Petty Cash.
    - Deposits already paid (rent, TNB, water): **Money Out** → What for *Deposits Paid* → Paid from *Owner paid personally*.
 4. Add staff in the app: **Users** → fill in name, username, a first password and the role → **Add person**. Tell them the username and password; they can change the password from the key icon in the side menu.
 5. Backups: in GitHub, repo **Settings → Secrets and variables → Actions → New repository secret**, name `SUPABASE_DB_URL`, value = the **Session pooler** connection string from Supabase → **Connect**. Every night `.github/workflows/backup.yml` then saves a copy of the whole database under the repo's **Actions** tab (kept 30 days). Run it once by hand from **Actions → Nightly database backup → Run workflow** to check it works.
@@ -87,6 +87,7 @@ Turn on two-step login for each account once created — this system holds salar
 - **Salary advance form**: on the Staff Advance list, the printer icon on a row prints a one-page agreement (details, amount in words, terms, two signature lines) for the staff member to sign.
 - After saving a voucher, receipt, transfer, invoice or journal, the list comes back with the new row highlighted; press **Save & add another** to stay on the form. Esc closes a form.
 - **Daily close:** on Sales › Upload, drop the Zeoniq Bill Summary, the Zeoniq Product Sales file and the Fiuu listing together (or one at a time). The screen works out which is which, shows every day and payout, and one **Post** button posts them all. Remove a file with the × on its chip. Both Fiuu exports work: the transaction listing (with settlement dates) and the newer multi-sheet Settlement Report (SETTLEMENT LIST + TRANSACTION LIST); for the report the screen works out which card payments each payout covers, so gross, fee and net per payout come out the same way.
+- **E-wallet paid into bank:** the same screen lists e-wallet takings (TNG and the like, account 1210) of the last 90 days that have not reached the bank yet, one row per sale day and wallet. Tick the days that have arrived, type a fee if the wallet took one, and the one **Post** button moves them into the bank (source `ewallet`, so a day cannot go in twice).
 - **Paying suppliers:** tick the invoices to pay and the full amount fills in; type a smaller figure for a part payment.
 
 ## Run on this computer (optional, for testing changes)

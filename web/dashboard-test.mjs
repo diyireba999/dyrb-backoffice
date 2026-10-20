@@ -187,6 +187,25 @@ assert.throws(() => parseFiuu(report([pay('2026-10-02 10:21:26', '999.00', '0.00
 assert.equal(parseFiuu(report([], [])).settlements.length, 0, 'empty report')
 console.log('fiuu report ok')
 
+// --- e-wallet money waiting to reach the bank ---
+const { walletRows, walletRef } = await import('./src/ewallet.ts')
+const wl = walletRows([
+  { date: '2026-10-02', code: 'TNG', debit: 50 },
+  { date: '2026-10-01', code: 'TNG', debit: 120.5 },
+  { date: '2026-10-01', code: 'TNG', debit: 30 },
+  { date: '2026-10-01', code: 'GF', debit: 80 },
+  { date: '2026-10-01', code: '', debit: 10 },
+  { date: '2026-10-03', code: 'TNG', debit: 0 },
+], ['2026-10-01 GF'])
+assert.deepEqual(wl, [
+  { date: '2026-10-01', code: 'E-wallet', gross: 10, posted: false },
+  { date: '2026-10-01', code: 'GF', gross: 80, posted: true },
+  { date: '2026-10-01', code: 'TNG', gross: 150.5, posted: false },
+  { date: '2026-10-02', code: 'TNG', gross: 50, posted: false },
+], 'grouped by day and wallet, sorted, settled ones flagged, zero lines dropped')
+assert.equal(walletRef('2026-10-01', 'TNG'), '2026-10-01 TNG')
+console.log('ewallet rows ok')
+
 // --- report math (slice D) ---
 const { plSection, fig, change, monthlyLines } = await import('./src/report-math.ts')
 assert.equal(plSection({ code: '4000', type: 'income' }), 'sales')

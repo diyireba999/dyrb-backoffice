@@ -47,7 +47,7 @@ create table accounts (
 );
 
 insert into accounts (code, name, type) values
-  ('1000', 'Cash in Drawer', 'asset'),
+  ('1000', 'Cash', 'asset'),
   ('1010', 'Petty Cash', 'asset'),
   ('1100', 'Bank - Current Account', 'asset'),
   ('1200', 'Fiuu Card (to be settled)', 'asset'),

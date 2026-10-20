@@ -97,7 +97,7 @@ export async function openReceipt(path: string) {
   window.open(data.signedUrl, '_blank')
 }
 
-export const MONEY_NAMES: Record<string, string> = { '1000': 'Cash in Drawer', '1010': 'Petty Cash', '1100': 'Bank' }
+export const MONEY_NAMES: Record<string, string> = { '1000': 'Cash', '1010': 'Petty Cash', '1100': 'Bank' }
 
 export type Supplier = { id: number; name: string; phone: string | null; default_account: string | null; owed: number }
 

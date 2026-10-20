@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useState } from 'react'
 import readXlsxFile from 'read-excel-file/browser'
 import { CheckCircle2, CloudUpload, Plus, Trash2, TriangleAlert, X } from 'lucide-react'
-import { MONEY_ACCOUNTS, dmy, rm, round2, supabase, useAccounts, type Account, type Role } from '../lib'
+import { MONEY_ACCOUNTS, addDays, dmy, postJournal, rm, round2, supabase, todayMY, useAccounts, type Account, type Role } from '../lib'
 import { cogsLinesFor, dayTotal, daySuspect, detectFile, parseBillSummary, parseFiuu, parseProductSales, paymentTotal, salesLinesFor, type Day, type FileKind, type ItemSale, type Settlement } from '../zeoniq'
 import { AccountSelect, Empty } from '../ui'
 import { confirmDialog } from '../feedback'
+import { walletRef, walletRows, type WalletRow } from '../ewallet'
 
 // What the POS booked to 1200 (card takings) per sale day, for ascending dates.
 async function bookedCard(dates: string[]): Promise<Record<string, number>> {
@@ -155,10 +156,31 @@ export function UploadSales({ role }: { role: Role }) {
   const [bank, setBank] = useState('1100')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [wallet, setWallet] = useState<(WalletRow & { fee: string; result?: string })[]>([])
+  const [pickWallet, setPickWallet] = useState<Record<string, boolean>>({})
+  const [walletCode, setWalletCode] = useState('')   // '' = every wallet
   const [categories, setCategories] = useState<Record<string, string>>({})
   const [costs, setCosts] = useState<Record<string, number>>({})
   const [accountNames, setAccountNames] = useState<Record<string, string>>({})
   const accounts = useAccounts()
+
+  // E-wallet takings of the last 90 days that have not been moved to the bank yet.
+  useEffect(() => {
+    const since = addDays(todayMY(), -90)
+    Promise.all([
+      supabase.from('journal_lines').select('debit, memo, journals!inner(date, source)')
+        .eq('account', '1210').eq('journals.source', 'sales').gte('journals.date', since),
+      supabase.from('journals').select('source_ref').eq('source', 'ewallet').gte('date', since),
+    ]).then(([{ data: lines, error: e1 }, { data: done, error: e2 }]) => {
+      if (e1 || e2) { console.error('ewallet', e1 ?? e2); return }
+      const taken = ((lines ?? []) as unknown as { debit: number; memo: string | null; journals: { date: string } }[])
+        .map(l => ({ date: l.journals.date, code: l.memo ?? '', debit: Number(l.debit) }))
+      const open = walletRows(taken, (done ?? []).map(j => j.source_ref as string)).filter(r => !r.posted)
+      setWallet(open.map(r => ({ ...r, fee: '' })))
+      setPickWallet(Object.fromEntries(open.map(r => [walletRef(r.date, r.code), true])))
+      setWalletCode(c => c || (open.some(r => r.code === 'TNG') ? 'TNG' : ''))
+    })
+  }, [])
 
   useEffect(() => {
     supabase.from('item_category_map').select('prefix, account')
@@ -285,7 +307,30 @@ export function UploadSales({ role }: { role: Role }) {
     setError(failed.length ? failed.map(d => `${dmy(d.date)}: ${d.result}`).join(' — ') : '')
   }
 
-  // One button: ticked days (sales then cost of sales), then ticked payouts.
+  const showWallet = (w: WalletRow) => !walletCode || w.code === walletCode
+
+  // E-wallet money that reached the bank: one entry per sale day and wallet, out of 1210.
+  async function postWallet() {
+    const out: typeof wallet = []
+    for (const w of wallet) {
+      const ref = walletRef(w.date, w.code)
+      if (!pickWallet[ref] || w.posted || !showWallet(w)) { out.push(w); continue }
+      const fee = round2(Number(w.fee) || 0), net = round2(w.gross - fee)
+      if (fee < 0 || net <= 0) { out.push({ ...w, result: 'Fee must be less than the amount taken' }); continue }
+      try {
+        await postJournal(w.date, `${w.code} paid into bank`, [
+          { account: bank, debit: net, memo: `${w.code} payout` },
+          ...(fee > 0 ? [{ account: '6200', debit: fee, memo: `${w.code} fee` }] : []),
+          { account: '1210', credit: w.gross, memo: w.code },
+        ], { source: 'ewallet', ref })
+        out.push({ ...w, posted: true, result: 'ok' })
+      } catch (e) { out.push({ ...w, result: (e as Error).message }) }
+    }
+    setWallet(out)
+    return out
+  }
+
+  // One button: ticked days (sales then cost of sales), then ticked payouts, then e-wallet money.
   async function postAll() {
     setBusy(true); setError('')
     const out: Day[] = []
@@ -307,11 +352,13 @@ export function UploadSales({ role }: { role: Role }) {
     setDays(out); setReplace({})
     const payOut = await postSettlements(rows, pickPay, bank)
     setRows(payOut)
+    const walletOut = await postWallet()
     if (takings.length) setInBooks(await bookedCard(takings.map(t => t.date)))
     setBusy(false)
     const failed = [
       ...out.filter(d => d.result && !['ok', 'split', 'cost'].includes(d.result)).map(d => `${dmy(d.date)}: ${d.result}`),
       ...payOut.filter(s => pickPay[s.settleDate] && s.result && s.result !== 'ok').map(s => `Payout ${dmy(s.settleDate)}: ${s.result}`),
+      ...walletOut.filter(w => pickWallet[walletRef(w.date, w.code)] && w.result && w.result !== 'ok').map(w => `${w.code} ${dmy(w.date)}: ${w.result}`),
     ]
     setError(failed.join(' — '))
   }
@@ -319,6 +366,9 @@ export function UploadSales({ role }: { role: Role }) {
   const chosen = days.filter(d => pick[d.date] && !d.posted)
   const replacing = role === 'owner' ? days.filter(d => d.posted && replace[d.date]) : []
   const chosenPay = rows.filter(s => pickPay[s.settleDate] && !s.posted)
+  const walletCodes = [...new Set(wallet.map(w => w.code))].sort()
+  const visibleWallet = wallet.filter(showWallet)
+  const chosenWallet = visibleWallet.filter(w => pickWallet[walletRef(w.date, w.code)] && !w.posted)
   const costable = days.filter(d => {
     if (!d.posted || !pick[d.date]) return false
     const cogs = cogsFor(d)
@@ -330,7 +380,8 @@ export function UploadSales({ role }: { role: Role }) {
     return !!split && split.unknown.length === 0 && Math.abs(split.diff) <= 0.05 && split.lines.length > 0
   })
   const dayCount = chosen.length + replacing.length
-  const postLabel = [dayCount > 0 && `${dayCount} day${dayCount === 1 ? '' : 's'}`, chosenPay.length > 0 && `${chosenPay.length} payout${chosenPay.length === 1 ? '' : 's'}`]
+  const postLabel = [dayCount > 0 && `${dayCount} day${dayCount === 1 ? '' : 's'}`, chosenPay.length > 0 && `${chosenPay.length} payout${chosenPay.length === 1 ? '' : 's'}`,
+    chosenWallet.length > 0 && `${chosenWallet.length} e-wallet day${chosenWallet.length === 1 ? '' : 's'}`]
     .filter(Boolean).join(' and ')
   const loadedKinds = (Object.keys(FILE_LABEL) as FileKind[]).filter(k => files[k])
   const fiuuParts = [
@@ -447,13 +498,61 @@ export function UploadSales({ role }: { role: Role }) {
         </div>
       )}
 
-      {(days.length > 0 || rows.length > 0) && (
+      {wallet.length > 0 && (
+        <div className="card p-0">
+          <div className="flex flex-wrap items-end gap-3 p-4">
+            <h3 className="font-semibold">E-wallet paid into bank</h3>
+            <div className="w-40"><label>Wallet</label>
+              <select value={walletCode} onChange={e => setWalletCode(e.target.value)}>
+                <option value="">All wallets</option>
+                {walletCodes.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            {rows.length === 0 && <div className="w-56"><label>Money paid into</label>
+              <AccountSelect accounts={accounts} value={bank} onChange={setBank} filter={a => MONEY_ACCOUNTS.includes(a.code)} />
+            </div>}
+            <p className="muted basis-full">Money taken by e-wallet waits in 1210 until the wallet pays it to the bank, usually the next day. Tick the days that have arrived. A fee, if the wallet takes one, goes to 6200 like the card fee.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table>
+              <thead><tr>
+                <th className="w-10"></th><th>Sale day</th><th>Wallet</th><th className="text-right">Taken</th>
+                <th className="w-32 text-right">Fee</th><th className="text-right">Into bank</th><th></th>
+              </tr></thead>
+              <tbody>
+                {visibleWallet.map(w => {
+                  const ref = walletRef(w.date, w.code), fee = round2(Number(w.fee) || 0)
+                  return (
+                    <tr key={ref} className={w.posted ? 'text-slate-400' : ''}>
+                      <td><input type="checkbox" disabled={w.posted} checked={!!pickWallet[ref] && !w.posted} onChange={e => setPickWallet({ ...pickWallet, [ref]: e.target.checked })} /></td>
+                      <td className="font-medium">{dmy(w.date)}</td>
+                      <td>{w.code}</td>
+                      <td className="text-right">{rm(w.gross)}</td>
+                      <td className="text-right"><input className="text-right" type="number" step="0.01" min="0" inputMode="decimal" placeholder="0.00" value={w.fee} disabled={w.posted}
+                        onChange={e => setWallet(ws => ws.map(x => x === w ? { ...x, fee: e.target.value } : x))} /></td>
+                      <td className="text-right font-semibold">{rm(round2(w.gross - fee))}</td>
+                      <td className="whitespace-nowrap text-right text-xs">
+                        {w.posted && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />Posted</span>}
+                        {!w.posted && w.result && w.result !== 'ok' && <span className="text-red-600">{w.result}</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {(days.length > 0 || rows.length > 0 || wallet.length > 0) && (
         <>
           <div className="flex flex-wrap items-center gap-3">
             <p className="muted">
               {dayCount > 0 && `${dayCount} day${dayCount === 1 ? '' : 's'} ready · ${rm([...chosen, ...replacing].reduce((s, d) => s + d.netTotal, 0))}`}
               {dayCount > 0 && chosenPay.length > 0 && ' · '}
               {chosenPay.length > 0 && `${chosenPay.length} payout${chosenPay.length === 1 ? '' : 's'} · ${rm(chosenPay.reduce((s, r) => s + r.net, 0))} into the bank`}
+              {(dayCount > 0 || chosenPay.length > 0) && chosenWallet.length > 0 && ' · '}
+              {chosenWallet.length > 0 && `${chosenWallet.length} e-wallet day${chosenWallet.length === 1 ? '' : 's'} · ${rm(chosenWallet.reduce((s, w) => s + round2(w.gross - (round2(Number(w.fee) || 0))), 0))} into the bank`}
             </p>
             <div className="ml-auto flex gap-2">
               {costable.length > 0 && (
@@ -473,7 +572,7 @@ export function UploadSales({ role }: { role: Role }) {
           </div>
           {splittable.length > 0 && <p className="muted">Days already posted can take the split now — tick them and press <b>Re-split</b>. Only the sales lines change; payments, service charge and rounding stay as they are.</p>}
           <FiuuCheck takings={takings} inBooks={inBooks} />
-          <p className="muted">Each day becomes one entry: money in by payment type, sales and service charge as income. Cost of sales is posted as its own entry per day, from quantity sold times cost per unit (fill in costs on <b>Item Costs</b>). Each payout moves money out of 1200 Fiuu Card into the bank and books the fee to 6200.</p>
+          <p className="muted">Each day becomes one entry: money in by payment type, sales and service charge as income. Cost of sales is posted as its own entry per day, from quantity sold times cost per unit (fill in costs on <b>Item Costs</b>). Each payout moves money out of 1200 Fiuu Card into the bank and books the fee to 6200. Each e-wallet day moves that wallet's money out of 1210 E-Wallet into the bank.</p>
           <p className="muted">A day already posted cannot go in twice. The owner can tick <b>Replace</b> to swap the old entry for the new one.</p>
         </>
       )}

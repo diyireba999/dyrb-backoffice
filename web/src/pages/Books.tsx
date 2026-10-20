@@ -352,13 +352,13 @@ const OWNER_SCREEN: Record<string, string> = {
   pv: '/cash/payment', or: '/cash/receipt', transfer: '/cash/transfer', jv: '/gl/journal',
   pi: '/ap/invoices', sp: '/ap/payments', sales: '/sales/upload', fiuu: '/sales/fiuu',
   payroll: '/payroll/run', claim: '/claims', accrual: '/gl/accruals', stock: '/stock/count',
-  cogs: '/sales/upload', advance: '/payroll/advances',
+  cogs: '/sales/upload', advance: '/payroll/advances', ewallet: '/sales/upload',
 }
 
 const TYPES: Record<string, string> = {
   '': 'All types', pv: 'Payment Voucher', or: 'Official Receipt', jv: 'Journal Entry', transfer: 'Bank Transfer',
   pi: 'Purchase Invoice', sp: 'Supplier Payment', claim: 'Claim', sales: 'Daily sales', cogs: 'Cost of sales',
-  fiuu: 'Card settlement', payroll: 'Payroll', accrual: 'Accruals', stock: 'Stock count', advance: 'Staff advance',
+  fiuu: 'Card settlement', ewallet: 'E-wallet payout', payroll: 'Payroll', accrual: 'Accruals', stock: 'Stock count', advance: 'Staff advance',
   manual: 'Older entries',
 }
 

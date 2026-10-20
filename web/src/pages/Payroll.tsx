@@ -177,7 +177,7 @@ type Advance = { id: number; employee_id: number; date: string; amount: number; 
 
 const blankAdvance = { employee: '', date: todayMY(), amount: '', from: MONEY_ACCOUNTS[0], note: '' }
 
-export function StaffAdvances({ role }: { role: Role }) {
+export function StaffAdvances({ role, approver }: { role: Role; approver: string }) {
   const [rows, setRows] = useState<Advance[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [mode, setMode] = useState<'list' | 'form'>('list')
@@ -306,13 +306,13 @@ export function StaffAdvances({ role }: { role: Role }) {
           </tbody>
         </table>}
       </div>
-      {printing && <AdvanceForm adv={printing.adv} doc={printing.doc} from={printing.from} employee={employees.find(e => e.id === printing.adv.employee_id)} />}
+      {printing && <AdvanceForm adv={printing.adv} doc={printing.doc} from={printing.from} employee={employees.find(e => e.id === printing.adv.employee_id)} approver={approver} />}
     </div>
   )
 }
 
 // The paper a staff member signs for a salary advance. Print-only, A4 portrait.
-function AdvanceForm({ adv, doc, from, employee }: { adv: Advance; doc: string; from: string; employee?: Employee }) {
+function AdvanceForm({ adv, doc, from, employee, approver }: { adv: Advance; doc: string; from: string; employee?: Employee; approver: string }) {
   const company = useCompany()
   const month = monthLabelOf(adv.date.slice(0, 7))
   const rows: [string, string][] = [
@@ -345,8 +345,8 @@ function AdvanceForm({ adv, doc, from, employee }: { adv: Advance; doc: string; 
           <div className="mt-2 text-slate-600">Date: ____________________</div>
         </div>
         <div>
-          <div className="border-t border-slate-800 pt-1 font-medium">Approved by (for {company.name})</div>
-          <div className="mt-3 text-slate-600">Name: ____________________</div>
+          <div className="border-t border-slate-800 pt-1 font-medium">Approved by {company.name}</div>
+          <div className="mt-3 text-slate-600">Name: {approver}</div>
           <div className="mt-2 text-slate-600">Date: ____________________</div>
         </div>
       </div>
