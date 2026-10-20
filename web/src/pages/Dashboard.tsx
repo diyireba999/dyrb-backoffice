@@ -31,7 +31,7 @@ function supplierDueNote(due: { dueSoon: number; overdue: number } | null | unde
 }
 
 function QuickButton({ to, icon: Icon, label }: { to: string; icon: LucideIcon; label: string }) {
-  return <Link to={to} className="btn-light h-8"><Icon className="size-4 text-brand" />{label}</Link>
+  return <Link to={to} className="btn-light h-8"><Icon className="size-4 text-slate-500" />{label}</Link>
 }
 
 // Monday (UTC weekday) of the week containing this date.

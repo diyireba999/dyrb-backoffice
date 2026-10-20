@@ -503,7 +503,7 @@ export function ApAging() {
     ['Total', ...totals.map(round2), round2(grand)]])
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 print-landscape">
       <ReportBar title="Supplier Aging (AP)" period={`As at ${dmy(asAt)}`} onCsv={csv}>
         <div className="w-40"><label>As at</label><input type="date" value={asAt} onChange={e => setAsAt(e.target.value)} /></div>
       </ReportBar>

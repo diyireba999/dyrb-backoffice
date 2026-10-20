@@ -687,7 +687,7 @@ export function PayrollRun({ role }: { role: Role }) {
 
   return (
     <div className="space-y-4">
-      <div className="summary-only space-y-4">
+      <div className="summary-only print-landscape space-y-4">
       <div className="no-print card flex flex-wrap items-end gap-3">
         <div className="w-56"><label>Payroll month</label>
           <select value={runId ?? ''} onChange={e => setRunId(Number(e.target.value))}>
@@ -857,8 +857,8 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
       </div>
       {show && (
         <div className="mt-4 space-y-4">
-          {slips.map(p => (
-            <div key={p.id} className="card break-inside-avoid print:break-after-page">
+          {slips.map((p, i) => (
+            <div key={p.id} className={`card break-inside-avoid ${i % 2 ? 'print:break-after-page' : 'cut-line'}`}>
               <div className="flex items-start justify-between border-b border-slate-200 pb-3">
                 <div className="flex items-center gap-3">
                   <img src="/logo.png" alt="" className="size-10 rounded-lg object-contain" />
@@ -894,9 +894,9 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
                   </dl>
                 </div>
               </div>
-              <div className="mt-4 flex items-center justify-between rounded-xl bg-brand-soft px-4 py-3">
-                <span className="font-semibold text-brand-dark">Net pay</span>
-                <span className="text-lg font-bold text-brand-dark tabular-nums">{rm(p.net_pay)}</span>
+              <div className="mt-4 flex items-center justify-between rounded-xl bg-slate-100 px-4 py-3">
+                <span className="font-semibold text-slate-900">Net pay</span>
+                <span className="text-lg font-bold text-slate-900 tabular-nums">{rm(p.net_pay)}</span>
               </div>
               {p.note && <p className="mt-3 text-xs text-slate-500"><span className="font-medium">Attendance:</span> {p.note.replace('Pro-rated', 'Employed')}</p>}
               {stillOwed(p) > 0 &&
@@ -969,7 +969,7 @@ export function PayrollYear() {
   ])
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 print-landscape">
       <ReportBar title="Payroll Yearly Summary" period={year} onCsv={csv}>
         <div className="w-32"><label>Year</label><input type="number" min="2020" max="2100" value={year} onChange={e => setYear(e.target.value)} /></div>
       </ReportBar>

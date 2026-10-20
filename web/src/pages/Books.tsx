@@ -399,7 +399,7 @@ export function JournalListing({ isOwner }: { isOwner: boolean }) {
   return (
     <div className="space-y-4">
       <ReportBar title="Journal Listing" period={doc ?? month} onCsv={csv}>
-        {doc && <div className="flex h-8 items-center gap-2 rounded-lg bg-brand-soft px-3 text-[13px] text-brand-dark">
+        {doc && <div className="flex h-8 items-center gap-2 rounded-lg bg-slate-100 px-3 text-[13px] text-slate-700">
           Showing <b className="font-mono">{doc}</b>
           <button className="link" onClick={() => setParams({})}>Show all</button>
         </div>}

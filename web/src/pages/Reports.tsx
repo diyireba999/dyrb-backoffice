@@ -65,11 +65,11 @@ type Figures = { cur: number; prev: number }
 type Line = { kind: 'head'; label: string } | ({ kind: 'item' | 'sub' | 'total' | 'grand'; label: string; code?: string } & Figures)
 
 const ROW_STYLE = {
-  item: 'bg-white',
-  sub: 'bg-white font-semibold [&>td]:border-t [&>td]:border-slate-300',
+  item: 'bg-white hover:bg-slate-50',
+  sub: 'bg-white hover:bg-slate-50 font-semibold [&>td]:border-t [&>td]:border-slate-300',
   total: 'bg-slate-50 font-semibold',
-  grand: 'bg-white font-bold [&>td]:border-t-2 [&>td]:!border-b-4 [&>td]:border-double [&>td]:border-slate-800',
-  pct: 'bg-white text-xs text-slate-500',
+  grand: 'bg-white hover:bg-slate-50 font-bold [&>td]:border-t-2 [&>td]:!border-b-4 [&>td]:border-double [&>td]:border-slate-800',
+  pct: 'bg-white hover:bg-slate-50 text-xs text-slate-500',
 }
 
 function StatementTable({ lines, curLabel, prevLabel, pctOf }: {
@@ -79,8 +79,8 @@ function StatementTable({ lines, curLabel, prevLabel, pctOf }: {
   const pct = (v: number, base: number) => base ? `${((v / base) * 100).toFixed(1)}%` : ''
   const cols = 2 + (prevLabel ? 2 : 0) + (pctOf ? (prevLabel ? 2 : 1) : 0)
   return (
-    <div className="card overflow-x-auto p-0 print:overflow-visible print:rounded-none print:border-0 print:shadow-none">
-      <table className="print:text-[10.5px] print:[&_td]:py-1 print:[&_th]:py-1.5">
+    <div className="card overflow-x-auto p-0">
+      <table>
         <thead>
           <tr>
             <th>RM</th>
@@ -187,7 +187,7 @@ export function ProfitAndLoss() {
 
   return (
     <div className="space-y-4">
-      <ReportBar title="Profit & Loss Statement" period={`For the period ${dmy(from)} to ${dmy(to)}`} onCsv={csv}>
+      <ReportBar title="Profit & Loss Statement" period={`For the period ${dmy(from)} to ${dmy(to)}`} onCsv={curState === null && (!cmp || prevState === null) ? csv : undefined}>
         <div className="w-40"><label>From</label><input type="date" value={from} onChange={e => setFrom(e.target.value)} /></div>
         <div className="w-40"><label>To</label><input type="date" value={to} onChange={e => setTo(e.target.value)} /></div>
         <div className="w-52"><label>Compare with</label>
@@ -203,9 +203,9 @@ export function ProfitAndLoss() {
       </ReportBar>
       <Ready states={[curState, cmp ? prevState : null]}>
       <Tiles compare={!!cmp} tiles={[['Sales', sales], ['Gross profit', gross], ['Operating expenses', opex], [round2(profit.cur) < 0 ? 'Net loss' : 'Net profit', profit]]} />
-      <div className="max-w-4xl print:max-w-none">
+      <div className="max-w-4xl">
         <StatementTable lines={lines} curLabel={curLabel} prevLabel={prevLabel} pctOf={sales} />
-        <p className="muted mt-2 print:text-[9px]">% is of food and drink sales. Service charge is passed on to staff, so it is left out of the margins.</p>
+        <p className="muted mt-2">% is of food and drink sales. Service charge is passed on to staff, so it is left out of the margins.</p>
       </div>
       </Ready>
     </div>
@@ -266,7 +266,7 @@ export function BalanceSheet() {
 
   return (
     <div className="space-y-4">
-      <ReportBar title="Balance Sheet" period={`As at ${dmy(asAt)}`} onCsv={csv}>
+      <ReportBar title="Balance Sheet" period={`As at ${dmy(asAt)}`} onCsv={[s1, s3, ...(compare ? [s2, s4] : [])].every(s => s === null) ? csv : undefined}>
         <div className="w-44"><label>As at</label><input type="date" value={asAt} onChange={e => setAsAt(e.target.value)} /></div>
         <label className="flex items-center gap-2 pb-2.5 text-[13px] font-normal text-slate-700">
           <input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} />
@@ -275,9 +275,9 @@ export function BalanceSheet() {
       </ReportBar>
       <Ready states={[s1, s3, ...(compare ? [s2, s4] : [])]}>
       <Tiles compare={compare} tiles={[['Total assets', totalAssets], ['Total liabilities', totalLiab], ['Equity', totalEquity], ['Working capital', working]]} />
-      <div className="max-w-4xl print:max-w-none">
+      <div className="max-w-4xl">
         <StatementTable lines={lines} curLabel={curLabel} prevLabel={prevLabel} />
-        <p className="muted mt-2 print:text-[9px]">Working capital is current assets less current liabilities: what is left to run the business day to day.</p>
+        <p className="muted mt-2">Working capital is current assets less current liabilities: what is left to run the business day to day.</p>
       </div>
       {!balanced && <p className="alert-error">Assets do not equal liabilities + equity. Please tell the developer.</p>}
       </Ready>
@@ -311,7 +311,7 @@ export function MonthlyPl() {
 
   const lines = monthlyLines(accounts, months)
   const years = Array.from({ length: 5 }, (_, i) => String(Number(thisYear) - i))
-  const cell = (v: number | null, isPct: boolean) => v === null ? '' : isPct ? `${v.toFixed(1)}%` : fig(v)
+  const cell = (v: number | null, isPct: boolean) => v === null ? '' : isPct ? `${v.toFixed(1).replace(/^-0.0$/, '0.0')}%` : fig(v)
   const excel = () => downloadExcel(`monthly-pl-${year}.xlsx`, [
     ['Code', 'Account', ...MONTHS, 'Total'],
     ...lines.map(l => l.kind === 'head' ? ['', l.label.toUpperCase()]
@@ -320,7 +320,7 @@ export function MonthlyPl() {
 
   return (
     <div className="space-y-4 print-landscape">
-      <ReportBar title="Monthly Profit & Loss" period={`Year ${year}`} onCsv={excel}>
+      <ReportBar title="Monthly Profit & Loss" period={`Year ${year}`} onCsv={state === null ? excel : undefined}>
         <div className="w-32"><label>Year</label>
           <select value={year} onChange={e => setYear(e.target.value)}>
             {years.map(y => <option key={y} value={y}>{y}</option>)}
