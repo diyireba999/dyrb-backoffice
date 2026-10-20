@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { accountTotals, addDays, dmy, downloadExcel, round2, rm, todayMY, useAccounts, type Account } from '../lib'
 import { Empty, ReportBar, Ready } from '../ui'
 import { comparePeriod, shiftMonths, type CompareMode } from '../dashboard-math'
-import { change, fig, plSection } from '../report-math'
+import { change, fig, monthlyLines, plSection } from '../report-math'
 
 // Net debit (debit minus credit) per account for entries dated within [from, to].
 // Second value: null once loaded, 'loading', or the error message.
@@ -65,10 +65,11 @@ type Figures = { cur: number; prev: number }
 type Line = { kind: 'head'; label: string } | ({ kind: 'item' | 'sub' | 'total' | 'grand'; label: string; code?: string } & Figures)
 
 const ROW_STYLE = {
-  item: '',
-  sub: 'font-semibold [&>td]:border-t [&>td]:border-slate-300',
-  total: 'font-semibold bg-slate-50',
-  grand: 'font-bold [&>td]:border-t-2 [&>td]:!border-b-4 [&>td]:border-double [&>td]:border-slate-800',
+  item: 'bg-white',
+  sub: 'bg-white font-semibold [&>td]:border-t [&>td]:border-slate-300',
+  total: 'bg-slate-50 font-semibold',
+  grand: 'bg-white font-bold [&>td]:border-t-2 [&>td]:!border-b-4 [&>td]:border-double [&>td]:border-slate-800',
+  pct: 'bg-white text-xs text-slate-500',
 }
 
 function StatementTable({ lines, curLabel, prevLabel, pctOf }: {
@@ -92,7 +93,7 @@ function StatementTable({ lines, curLabel, prevLabel, pctOf }: {
         </thead>
         <tbody>
           {lines.map((l, i) => l.kind === 'head'
-            ? <tr key={i}><td colSpan={cols} className="pt-5 text-xs font-bold uppercase tracking-wide text-slate-600 print:pt-3">{l.label}</td></tr>
+            ? <tr key={i}><td colSpan={cols} className="group-head pt-5 text-xs font-bold uppercase tracking-wide text-slate-600">{l.label}</td></tr>
             : (
               <tr key={i} className={`${ROW_STYLE[l.kind]} ${l.kind === 'grand' && round2(l.cur) < 0 ? 'text-rose-700' : ''}`}>
                 <td className={l.kind === 'item' ? 'pl-6' : ''}>
@@ -279,6 +280,79 @@ export function BalanceSheet() {
         <p className="muted mt-2 print:text-[9px]">Working capital is current assets less current liabilities: what is left to run the business day to day.</p>
       </div>
       {!balanced && <p className="alert-error">Assets do not equal liabilities + equity. Please tell the developer.</p>}
+      </Ready>
+    </div>
+  )
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const lastDayOf = (ym: string) => addDays(shiftMonths(ym + '-01', 1), -1)
+
+// Every month of one year side by side. Twelve account_totals calls in parallel;
+// months after today stay blank.
+export function MonthlyPl() {
+  const accounts = useAccounts(true)
+  const thisYear = todayMY().slice(0, 4)
+  const [year, setYear] = useState(thisYear)
+  const [months, setMonths] = useState<(Map<string, number> | null)[]>([])
+  const [state, setState] = useState<string | null>('loading')
+  useEffect(() => {
+    let stale = false
+    setState('loading')
+    const loaded = year === thisYear ? Number(todayMY().slice(5, 7)) : year < thisYear ? 12 : 0
+    Promise.all(MONTHS.map((_, i) => {
+      if (i >= loaded) return null
+      const ym = `${year}-${String(i + 1).padStart(2, '0')}`
+      return accountTotals(`${ym}-01`, lastDayOf(ym))
+    })).then(ms => { if (!stale) { setMonths(ms); setState(null) } },
+      (e: Error) => { if (!stale) setState(e.message) })
+    return () => { stale = true }
+  }, [year, thisYear])
+
+  const lines = monthlyLines(accounts, months)
+  const years = Array.from({ length: 5 }, (_, i) => String(Number(thisYear) - i))
+  const cell = (v: number | null, isPct: boolean) => v === null ? '' : isPct ? `${v.toFixed(1)}%` : fig(v)
+  const excel = () => downloadExcel(`monthly-pl-${year}.xlsx`, [
+    ['Code', 'Account', ...MONTHS, 'Total'],
+    ...lines.map(l => l.kind === 'head' ? ['', l.label.toUpperCase()]
+      : [l.code ?? '', l.label, ...l.values.map(v => v ?? ''), l.total ?? '']),
+  ])
+
+  return (
+    <div className="space-y-4 print-landscape">
+      <ReportBar title="Monthly Profit & Loss" period={`Year ${year}`} onCsv={excel}>
+        <div className="w-32"><label>Year</label>
+          <select value={year} onChange={e => setYear(e.target.value)}>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+      </ReportBar>
+      <Ready states={[state]}>
+        <div className="card overflow-x-auto p-0">
+          <table className="min-w-[1100px] print:min-w-0">
+            <thead>
+              <tr>
+                <th className="sticky left-0 z-10">RM</th>
+                {MONTHS.map(m => <th key={m} className="text-right">{m}</th>)}
+                <th className="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l, i) => l.kind === 'head'
+                ? <tr key={i} className="bg-white"><td colSpan={14} className="group-head pt-5 text-xs font-bold uppercase tracking-wide text-slate-600">{l.label}</td></tr>
+                : (
+                  <tr key={i} className={`${ROW_STYLE[l.kind]} ${l.kind === 'grand' && l.total !== null && l.total < 0 ? 'text-rose-700' : ''}`}>
+                    <td className={`sticky left-0 z-10 bg-inherit ${l.kind === 'item' ? 'pl-6' : ''}`}>
+                      {l.code && <span className="mr-2 font-mono text-xs text-slate-400">{l.code}</span>}{l.label}
+                    </td>
+                    {l.values.map((v, j) => <td key={j} className="text-right">{cell(v, l.kind === 'pct')}</td>)}
+                    <td className="text-right">{cell(l.total, l.kind === 'pct')}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="muted mt-2">% is of food and drink sales. Service charge is passed on to staff, so it is left out of the margins.</p>
       </Ready>
     </div>
   )
