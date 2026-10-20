@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { accountTotals, addDays, dmy, downloadCsv, round2, rm, todayMY, useAccounts, type Account } from '../lib'
 import { Empty, ReportBar, Ready } from '../ui'
 import { comparePeriod, shiftMonths, type CompareMode } from '../dashboard-math'
+import { change, fig, plSection } from '../report-math'
 
 // Net debit (debit minus credit) per account for entries dated within [from, to].
 // Second value: null once loaded, 'loading', or the error message.
@@ -59,17 +60,6 @@ export function TrialBalance() {
 const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v)
 
 const COMPARE_LABEL: Record<CompareMode, string> = { prev: 'Previous period', year: 'Same period last year', none: 'No comparison' }
-
-// Statement figures: no "RM" on every cell, negatives in brackets.
-const fig = (v: number) => {
-  const s = Math.abs(v).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  return round2(v) < 0 ? `(${s})` : s
-}
-const change = (cur: number, prev: number) => {
-  if (round2(prev) === 0) return round2(cur) === 0 ? '' : 'new'
-  const p = ((cur - prev) / Math.abs(prev)) * 100
-  return `${p > 0 ? '+' : ''}${p.toFixed(1)}%`
-}
 
 type Figures = { cur: number; prev: number }
 type Line = { kind: 'head'; label: string } | ({ kind: 'item' | 'sub' | 'total' | 'grand'; label: string; code?: string } & Figures)
@@ -171,11 +161,11 @@ export function ProfitAndLoss() {
 
   const by = (f: (a: Account) => boolean, sign: number) => group(accounts.filter(f), cur, prev, sign)
   // Service charge is shown on its own, so the margins are measured on food and drink only.
-  const sales = by(a => a.type === 'income' && a.code < '4100', -1)
-  const service = by(a => a.type === 'income' && a.code >= '4100' && a.code < '4900', -1)
-  const other = by(a => a.type === 'income' && a.code >= '4900', -1)
-  const cost = by(a => a.type === 'expense' && a.code < '6000', 1)
-  const opex = by(a => a.type === 'expense' && a.code >= '6000', 1)
+  const sales = by(a => plSection(a) === 'sales', -1)
+  const service = by(a => plSection(a) === 'service', -1)
+  const other = by(a => plSection(a) === 'other', -1)
+  const cost = by(a => plSection(a) === 'cost', 1)
+  const opex = by(a => plSection(a) === 'opex', 1)
   const gross = { cur: sales.cur - cost.cur, prev: sales.prev - cost.prev }
   const profit = { cur: gross.cur + service.cur + other.cur - opex.cur, prev: gross.prev + service.prev + other.prev - opex.prev }
 
