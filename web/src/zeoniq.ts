@@ -200,6 +200,7 @@ export type Settlement = {
   net: number                 // what lands in the bank
   brands: Brand[]             // Visa, Mastercard, MyDebit... each has its own rate
   posted?: boolean
+  booked?: { gross: number; fee: number; net: number }   // what an earlier posting put in the books
   result?: string
 }
 

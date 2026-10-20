@@ -26,10 +26,20 @@ async function bookedCard(dates: string[]): Promise<Record<string, number>> {
 // stand-alone Card settlement screen.
 async function loadFiuuFile(rows: unknown) {
   const parsed = parseFiuu(rows)
-  const { data } = await supabase.from('journals').select('source_ref').eq('source', 'fiuu')
+  const { data } = await supabase.from('journals').select('source_ref, journal_lines(account, debit, credit)').eq('source', 'fiuu')
     .in('source_ref', parsed.settlements.map(s => s.settleDate))
-  const already = new Set((data ?? []).map(r => r.source_ref))
-  const list: Settlement[] = parsed.settlements.map(s => ({ ...s, posted: already.has(s.settleDate) }))
+  // A payout already in the books: its figures, so a second file for the same day can be compared.
+  type Booked = { source_ref: string; journal_lines: { account: string; debit: number; credit: number }[] }
+  const already = new Map<string, Settlement['booked']>()
+  for (const j of (data ?? []) as unknown as Booked[]) {
+    const sum = (f: (l: Booked['journal_lines'][number]) => number) => round2(j.journal_lines.reduce((s, l) => s + f(l), 0))
+    already.set(j.source_ref, {
+      gross: sum(l => l.account === '1200' ? Number(l.credit) : 0),
+      fee: sum(l => l.account === '6200' ? Number(l.debit) : 0),
+      net: sum(l => MONEY_ACCOUNTS.includes(l.account) ? Number(l.debit) : 0),
+    })
+  }
+  const list: Settlement[] = parsed.settlements.map(s => ({ ...s, posted: already.has(s.settleDate), booked: already.get(s.settleDate) }))
   const inBooks = await bookedCard(parsed.takings.map(t => t.date))
   return { list, takings: parsed.takings, inBooks, info: { pending: parsed.pending, skipped: parsed.skipped } }
 }
@@ -81,6 +91,10 @@ function FiuuCheck({ takings, inBooks }: { takings: { date: string; gross: numbe
 }
 
 // Payout rows with their per-card-type breakdown. Shared by both screens.
+// True when the file's figures for a posted day differ from what is in the books.
+const bookedDiffers = (s: Settlement) =>
+  !!s.booked && (Math.abs(s.booked.gross - s.gross) > 0.005 || Math.abs(s.booked.net - s.net) > 0.005)
+
 function PayoutRows({ rows, pick, onPick }: { rows: Settlement[]; pick: Record<string, boolean>; onPick: (date: string, on: boolean) => void }) {
   return (
     <table>
@@ -101,7 +115,9 @@ function PayoutRows({ rows, pick, onPick }: { rows: Settlement[]; pick: Record<s
             <td className="text-right text-xs text-slate-500">{s.gross ? (s.fee / s.gross * 100).toFixed(2) + '%' : ''}</td>
             <td className="text-right font-semibold">{rm(s.net)}</td>
             <td className="whitespace-nowrap text-right text-xs">
-              {s.posted && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />{s.result === 'ok' ? 'Posted' : 'Already in'}</span>}
+              {s.posted && !bookedDiffers(s) && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="size-4" />{s.result === 'ok' ? 'Posted' : 'Already in'}</span>}
+              {s.posted && bookedDiffers(s) && <span className="text-amber-700" title="The entry already in the books for this day has different figures">
+                Already in as {rm(s.booked!.gross)} / fee {rm(s.booked!.fee)} / bank {rm(s.booked!.net)}</span>}
               {!s.posted && s.result && s.result !== 'ok' && <span className="text-red-600">{s.result}</span>}
             </td>
           </tr>
