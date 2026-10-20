@@ -85,6 +85,7 @@
   table { font-size: 10.5px; }
   th, td { padding: 3px 6px; }
   td.group-head { padding-top: 10px; }
+  td.print-indent { padding-left: 20px; }
   thead { display: table-header-group; }
   tr { break-inside: avoid; }
   .card { border: 0; box-shadow: none; border-radius: 0; overflow: visible; }

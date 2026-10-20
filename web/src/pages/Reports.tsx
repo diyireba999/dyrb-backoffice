@@ -96,7 +96,7 @@ function StatementTable({ lines, curLabel, prevLabel, pctOf }: {
             ? <tr key={i}><td colSpan={cols} className="group-head pt-5 text-xs font-bold uppercase tracking-wide text-slate-600">{l.label}</td></tr>
             : (
               <tr key={i} className={`${ROW_STYLE[l.kind]} ${l.kind === 'grand' && round2(l.cur) < 0 ? 'text-rose-700' : ''}`}>
-                <td className={l.kind === 'item' ? 'pl-6' : ''}>
+                <td className={l.kind === 'item' ? 'pl-6 print-indent' : ''}>
                   {l.code && <span className="mr-2 font-mono text-xs text-slate-400">{l.code}</span>}{l.label}
                 </td>
                 <td className="text-right">{fig(l.cur)}</td>
@@ -342,7 +342,7 @@ export function MonthlyPl() {
                 ? <tr key={i} className="bg-white"><td colSpan={14} className="group-head pt-5 text-xs font-bold uppercase tracking-wide text-slate-600">{l.label}</td></tr>
                 : (
                   <tr key={i} className={`${ROW_STYLE[l.kind]} ${l.kind === 'grand' && l.total !== null && l.total < 0 ? 'text-rose-700' : ''}`}>
-                    <td className={`sticky left-0 z-10 bg-inherit ${l.kind === 'item' ? 'pl-6' : ''}`}>
+                    <td className={`sticky left-0 z-10 bg-inherit ${l.kind === 'item' ? 'pl-6 print-indent' : ''}`}>
                       {l.code && <span className="mr-2 font-mono text-xs text-slate-400">{l.code}</span>}{l.label}
                     </td>
                     {l.values.map((v, j) => <td key={j} className="text-right">{cell(v, l.kind === 'pct')}</td>)}
