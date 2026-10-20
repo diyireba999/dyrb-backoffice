@@ -196,8 +196,14 @@ export function StaffAdvances({ role, approver }: { role: Role; approver: string
   useEffect(() => { supabase.from('employees').select('*').order('name').then(({ data }) => setEmployees((data as Employee[]) ?? [])) }, [])
   useEscape(() => { if (mode === 'form' && !busy) { setMode('list'); setError('') } })
 
-  // Newest first within each staff member, staff grouped alphabetically.
-  const sorted = [...rows].sort((a, b) => nameOf(a.employee_id).localeCompare(nameOf(b.employee_id)) || b.date.localeCompare(a.date))
+  // Newest first; the search box matches the staff name or the note.
+  const [q, setQ] = useState('')
+  const [openOnly, setOpenOnly] = useState(false)
+  const needle = q.trim().toLowerCase()
+  const sorted = rows
+    .filter(a => !openOnly || Number(a.outstanding) > 0)
+    .filter(a => !needle || nameOf(a.employee_id).toLowerCase().includes(needle) || (a.note ?? '').toLowerCase().includes(needle))
+    .sort((a, b) => b.date.localeCompare(a.date) || nameOf(a.employee_id).localeCompare(nameOf(b.employee_id)))
 
   function startNew() { setF(blankAdvance); setHighlight(0); setError(''); setMode('form') }
 
@@ -282,8 +288,15 @@ export function StaffAdvances({ role, approver }: { role: Role; approver: string
   return (
     <div className="space-y-4">
       {canEdit && <PageActions><button className="btn" onClick={startNew}><Plus className="size-4" />New advance</button></PageActions>}
+      <div className="print-page flex flex-wrap items-end gap-3">
+        <div className="w-64"><label>Search</label><input type="search" placeholder="Staff name or note" value={q} onChange={e => setQ(e.target.value)} /></div>
+        <label className="flex h-8 items-center gap-2 text-[13px] font-normal text-slate-700">
+          <input type="checkbox" checked={openOnly} onChange={e => setOpenOnly(e.target.checked)} />Still owing only
+        </label>
+        <span className="muted pb-1.5">{sorted.length} of {rows.length}</span>
+      </div>
       <div className="print-page card overflow-x-auto p-0">
-        {sorted.length === 0 && <Empty text="No salary advances yet." />}
+        {sorted.length === 0 && <Empty text={rows.length ? 'Nothing matches.' : 'No salary advances yet.'} />}
         {sorted.length > 0 && <table>
           <thead><tr><th>Date</th><th>Staff</th><th className="text-right">Amount</th><th className="text-right">Outstanding</th><th>Note</th><th></th></tr></thead>
           <tbody>
