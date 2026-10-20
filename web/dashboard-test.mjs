@@ -144,3 +144,92 @@ assert.equal(detectFile([['Business Date', 'Net Sales'], ['21/9/2026', 5]]), nul
 assert.equal(detectFile([{ data: billRows }]), 'bill', 'per-sheet wrapper shape')
 assert.equal(detectFile(itemRows.slice(0, 2)), 'items', 'empty Product Sales export is still Product Sales')
 console.log('detect file ok')
+
+// --- report math (slice D) ---
+const { plSection, fig, change, monthlyLines } = await import('./src/report-math.ts')
+assert.equal(plSection({ code: '4000', type: 'income' }), 'sales')
+assert.equal(plSection({ code: '4099', type: 'income' }), 'sales')
+assert.equal(plSection({ code: '4100', type: 'income' }), 'service')
+assert.equal(plSection({ code: '4899', type: 'income' }), 'service')
+assert.equal(plSection({ code: '4900', type: 'income' }), 'other')
+assert.equal(plSection({ code: '5000', type: 'expense' }), 'cost')
+assert.equal(plSection({ code: '5999', type: 'expense' }), 'cost')
+assert.equal(plSection({ code: '6000', type: 'expense' }), 'opex')
+assert.equal(plSection({ code: '1100', type: 'asset' }), null)
+assert.equal(fig(-1234.5), '(1,234.50)')
+assert.equal(fig(1234567.891), '1,234,567.89')
+assert.equal(fig(0), '0.00')
+assert.equal(fig(-0.001), '0.00', 'rounds to zero, no brackets')
+assert.equal(change(110, 100), '+10.0%')
+assert.equal(change(90, 100), '-10.0%')
+assert.equal(change(50, -100), '+150.0%', 'change measured against |prev|')
+assert.equal(change(5, 0), 'new')
+assert.equal(change(0, 0), '')
+
+const accts = [
+  { code: '4000', name: 'Food sales', type: 'income' },
+  { code: '4010', name: 'Drink sales', type: 'income' },
+  { code: '4100', name: 'Service charge 10%', type: 'income' },
+  { code: '5000', name: 'Cost of food', type: 'expense' },
+  { code: '6000', name: 'Rent', type: 'expense' },
+  { code: '6010', name: 'Unused', type: 'expense' },
+  { code: '1100', name: 'Bank', type: 'asset' },
+]
+const m = o => new Map(Object.entries(o))
+const months = [m({ '4000': -1000, '5000': 400, '6000': 500, '1100': 999 }), m({ '4000': -2000, '4010': -500, '5000': 1000, '6000': 500 }), null]
+const ml = monthlyLines(accts, months)
+const by = label => ml.find(l => l.label === label)
+assert.equal(by('Unused'), undefined, 'account zero in every loaded month is hidden')
+assert.equal(by('Bank'), undefined, 'balance sheet accounts never appear')
+assert.equal(by('Service charge'), undefined, 'group with no items is omitted')
+assert.equal(ml[0].kind, 'head'); assert.equal(ml[0].label, 'Sales'); assert.equal(ml[0].total, null)
+assert.deepEqual(by('Food sales').values, [1000, 2000, null], 'income reads positive; unloaded month null')
+assert.equal(by('Food sales').code, '4000')
+assert.deepEqual(by('Total sales').values, [1000, 2500, null]); assert.equal(by('Total sales').total, 3500)
+assert.deepEqual(by('Total cost of sales').values, [400, 1000, null], 'expenses read positive')
+assert.deepEqual(by('Total operating expenses').values, [500, 500, null])
+assert.deepEqual(by('Gross profit').values, [600, 1500, null]); assert.equal(by('Gross profit').kind, 'total')
+assert.deepEqual(by('Net profit').values, [100, 1000, null]); assert.equal(by('Net profit').total, 1100); assert.equal(by('Net profit').kind, 'grand')
+assert.deepEqual(by('Gross profit % of sales').values, [60, 60, null]); assert.equal(by('Gross profit % of sales').kind, 'pct')
+assert.equal(by('Net profit % of sales').total, 31.43, 'total % = total net / total sales')
+assert.deepEqual(ml.map(l => l.kind).slice(-2), ['pct', 'pct'])
+const loss = monthlyLines(accts, [m({ '6000': 300 })])
+assert.equal(loss.find(l => l.kind === 'grand').label, 'Net loss')
+assert.deepEqual(loss.find(l => l.kind === 'grand').values, [-300])
+assert.deepEqual(loss.find(l => l.label === 'Net profit % of sales').values, [null], 'no sales: % is null')
+assert.equal(loss.find(l => l.label === 'Net profit % of sales').total, null)
+assert.deepEqual(monthlyLines(accts, []).find(l => l.kind === 'grand').values, [], 'no months: empty vectors')
+// service charge and other income: shown in their own blocks, kept out of gross profit and the sales base
+const full = [
+  ...accts,
+  { code: '4900', name: 'Other income', type: 'income' },
+]
+const rich = monthlyLines(full, [m({ '4000': -1000, '4100': -100, '4900': -50, '5000': 400, '6000': 300 })])
+const rb = label => rich.find(l => l.label === label)
+assert.equal(rb('Service charge').kind, 'head'); assert.deepEqual(rb('Total service charge').values, [100])
+assert.equal(rb('Other income').kind, 'head'); assert.deepEqual(rb('Total other income').values, [50])
+assert.deepEqual(rb('Service charge 10%').values, [100]); assert.deepEqual(rb('Total sales').values, [1000], 'service charge is not sales')
+assert.deepEqual(rb('Gross profit').values, [600], 'service and other income stay out of gross profit')
+assert.deepEqual(rb('Net profit').values, [450], 'net = gross 600 + service 100 + other 50 - opex 300')
+assert.deepEqual(rb('Gross profit % of sales').values, [60], 'service is not in the sales base')
+assert.deepEqual(rb('Net profit % of sales').values, [45])
+assert.deepEqual(rich.map(l => l.label).filter(l => l.startsWith('Total')),
+  ['Total sales', 'Total cost of sales', 'Total service charge', 'Total other income', 'Total operating expenses'], 'blocks in statement order')
+console.log('report math ok')
+// --- excel cells (slice D) ---
+const { toSheet } = await import('./src/excel.ts')
+const sheet = toSheet([
+  ['Code', 'Account', 'Debit'],
+  ['1100', 'A very long account name that goes on and on and on and on and on', 1234567.5],
+  ['', 'Total', 0],
+])
+assert.deepEqual(sheet.data[0][0], { value: 'Code', type: String, fontWeight: 'bold' }, 'header is bold')
+assert.deepEqual(sheet.data[1][2], { value: 1234567.5, type: Number, format: '#,##0.00', align: 'right' }, 'money cell')
+assert.equal(sheet.data[2][0], null, 'empty string is an empty cell')
+assert.deepEqual(sheet.data[2][1], { value: 'Total', type: String }, 'body text is plain')
+assert.deepEqual(sheet.data[2][2], { value: 0, type: Number, format: '#,##0.00', align: 'right' }, 'zero stays a number cell')
+assert.deepEqual(sheet.columns.map(c => c.width), [8, 48, 14], 'widths: clamped low, clamped high, "1,234,567.50" + 2')
+assert.deepEqual(toSheet([['Qty', 3]]).data[0][1], { value: 3, type: Number, format: '#,##0.00', align: 'right', fontWeight: 'bold' }, 'header numbers are bold too')
+assert.deepEqual(toSheet([['x', NaN]]).data[0][1], { value: 'NaN', type: String, fontWeight: 'bold' }, 'non-finite becomes text')
+assert.deepEqual(toSheet([]), { data: [], columns: [] })
+console.log('excel cells ok')

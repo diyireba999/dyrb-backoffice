@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { accountTotals, addDays, dmy, downloadCsv, round2, rm, todayMY, useAccounts, type Account } from '../lib'
+import { accountTotals, addDays, dmy, downloadExcel, round2, rm, todayMY, useAccounts, type Account } from '../lib'
 import { Empty, ReportBar, Ready } from '../ui'
 import { comparePeriod, shiftMonths, type CompareMode } from '../dashboard-math'
+import { change, fig, monthlyLines, plSection } from '../report-math'
 
 // Net debit (debit minus credit) per account for entries dated within [from, to].
 // Second value: null once loaded, 'loading', or the error message.
@@ -28,7 +29,7 @@ export function TrialBalance() {
   const rows = accounts.map(a => [a, round2(net.get(a.code) ?? 0)] as const).filter(([, v]) => v !== 0)
   const dr = rows.reduce((s, [, v]) => s + (v > 0 ? v : 0), 0)
   const cr = rows.reduce((s, [, v]) => s + (v < 0 ? -v : 0), 0)
-  const csv = () => downloadCsv(`trial-balance-${asAt}.csv`, [['Code', 'Account', 'Debit', 'Credit'],
+  const csv = () => downloadExcel(`trial-balance-${asAt}.xlsx`, [['Code', 'Account', 'Debit', 'Credit'],
     ...rows.map(([a, v]) => [a.code, a.name, v > 0 ? v : '', v < 0 ? -v : '']), ['', 'Total', round2(dr), round2(cr)]])
 
   return (
@@ -60,25 +61,15 @@ const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v)
 
 const COMPARE_LABEL: Record<CompareMode, string> = { prev: 'Previous period', year: 'Same period last year', none: 'No comparison' }
 
-// Statement figures: no "RM" on every cell, negatives in brackets.
-const fig = (v: number) => {
-  const s = Math.abs(v).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  return round2(v) < 0 ? `(${s})` : s
-}
-const change = (cur: number, prev: number) => {
-  if (round2(prev) === 0) return round2(cur) === 0 ? '' : 'new'
-  const p = ((cur - prev) / Math.abs(prev)) * 100
-  return `${p > 0 ? '+' : ''}${p.toFixed(1)}%`
-}
-
 type Figures = { cur: number; prev: number }
 type Line = { kind: 'head'; label: string } | ({ kind: 'item' | 'sub' | 'total' | 'grand'; label: string; code?: string } & Figures)
 
 const ROW_STYLE = {
-  item: '',
-  sub: 'font-semibold [&>td]:border-t [&>td]:border-slate-300',
-  total: 'font-semibold bg-slate-50',
-  grand: 'font-bold [&>td]:border-t-2 [&>td]:!border-b-4 [&>td]:border-double [&>td]:border-slate-800',
+  item: 'bg-white hover:bg-slate-50',
+  sub: 'bg-white hover:bg-slate-50 font-semibold [&>td]:border-t [&>td]:border-slate-300',
+  total: 'bg-slate-50 font-semibold',
+  grand: 'bg-white hover:bg-slate-50 font-bold [&>td]:border-t-2 [&>td]:!border-b-4 [&>td]:border-double [&>td]:border-slate-800',
+  pct: 'bg-white hover:bg-slate-50 text-xs text-slate-500',
 }
 
 function StatementTable({ lines, curLabel, prevLabel, pctOf }: {
@@ -88,8 +79,8 @@ function StatementTable({ lines, curLabel, prevLabel, pctOf }: {
   const pct = (v: number, base: number) => base ? `${((v / base) * 100).toFixed(1)}%` : ''
   const cols = 2 + (prevLabel ? 2 : 0) + (pctOf ? (prevLabel ? 2 : 1) : 0)
   return (
-    <div className="card overflow-x-auto p-0 print:overflow-visible print:rounded-none print:border-0 print:shadow-none">
-      <table className="print:text-[10.5px] print:[&_td]:py-1 print:[&_th]:py-1.5">
+    <div className="card overflow-x-auto p-0">
+      <table>
         <thead>
           <tr>
             <th>RM</th>
@@ -102,10 +93,10 @@ function StatementTable({ lines, curLabel, prevLabel, pctOf }: {
         </thead>
         <tbody>
           {lines.map((l, i) => l.kind === 'head'
-            ? <tr key={i}><td colSpan={cols} className="pt-5 text-xs font-bold uppercase tracking-wide text-slate-600 print:pt-3">{l.label}</td></tr>
+            ? <tr key={i}><td colSpan={cols} className="group-head pt-5 text-xs font-bold uppercase tracking-wide text-slate-600">{l.label}</td></tr>
             : (
               <tr key={i} className={`${ROW_STYLE[l.kind]} ${l.kind === 'grand' && round2(l.cur) < 0 ? 'text-rose-700' : ''}`}>
-                <td className={l.kind === 'item' ? 'pl-6' : ''}>
+                <td className={l.kind === 'item' ? 'pl-6 print-indent' : ''}>
                   {l.code && <span className="mr-2 font-mono text-xs text-slate-400">{l.code}</span>}{l.label}
                 </td>
                 <td className="text-right">{fig(l.cur)}</td>
@@ -171,11 +162,11 @@ export function ProfitAndLoss() {
 
   const by = (f: (a: Account) => boolean, sign: number) => group(accounts.filter(f), cur, prev, sign)
   // Service charge is shown on its own, so the margins are measured on food and drink only.
-  const sales = by(a => a.type === 'income' && a.code < '4100', -1)
-  const service = by(a => a.type === 'income' && a.code >= '4100' && a.code < '4900', -1)
-  const other = by(a => a.type === 'income' && a.code >= '4900', -1)
-  const cost = by(a => a.type === 'expense' && a.code < '6000', 1)
-  const opex = by(a => a.type === 'expense' && a.code >= '6000', 1)
+  const sales = by(a => plSection(a) === 'sales', -1)
+  const service = by(a => plSection(a) === 'service', -1)
+  const other = by(a => plSection(a) === 'other', -1)
+  const cost = by(a => plSection(a) === 'cost', 1)
+  const opex = by(a => plSection(a) === 'opex', 1)
   const gross = { cur: sales.cur - cost.cur, prev: sales.prev - cost.prev }
   const profit = { cur: gross.cur + service.cur + other.cur - opex.cur, prev: gross.prev + service.prev + other.prev - opex.prev }
 
@@ -190,13 +181,13 @@ export function ProfitAndLoss() {
   ]
   const curLabel = `${dmy(from)} – ${dmy(to)}`
   const prevLabel = cmp ? `${dmy(cmp[0])} – ${dmy(cmp[1])}` : null
-  const csv = () => downloadCsv(`profit-and-loss-${from}-${to}.csv`, linesCsv(lines, curLabel, prevLabel))
+  const csv = () => downloadExcel(`profit-and-loss-${from}-${to}.xlsx`, linesCsv(lines, curLabel, prevLabel))
   const monthStart = todayMY().slice(0, 8) + '01'
   const setRange = (f: string, t: string) => { setFrom(f); setTo(t) }
 
   return (
     <div className="space-y-4">
-      <ReportBar title="Profit & Loss Statement" period={`For the period ${dmy(from)} to ${dmy(to)}`} onCsv={csv}>
+      <ReportBar title="Profit & Loss Statement" period={`For the period ${dmy(from)} to ${dmy(to)}`} onCsv={curState === null && (!cmp || prevState === null) ? csv : undefined}>
         <div className="w-40"><label>From</label><input type="date" value={from} onChange={e => setFrom(e.target.value)} /></div>
         <div className="w-40"><label>To</label><input type="date" value={to} onChange={e => setTo(e.target.value)} /></div>
         <div className="w-52"><label>Compare with</label>
@@ -212,9 +203,9 @@ export function ProfitAndLoss() {
       </ReportBar>
       <Ready states={[curState, cmp ? prevState : null]}>
       <Tiles compare={!!cmp} tiles={[['Sales', sales], ['Gross profit', gross], ['Operating expenses', opex], [round2(profit.cur) < 0 ? 'Net loss' : 'Net profit', profit]]} />
-      <div className="max-w-4xl print:max-w-none">
+      <div className="max-w-4xl">
         <StatementTable lines={lines} curLabel={curLabel} prevLabel={prevLabel} pctOf={sales} />
-        <p className="muted mt-2 print:text-[9px]">% is of food and drink sales. Service charge is passed on to staff, so it is left out of the margins.</p>
+        <p className="muted mt-2">% is of food and drink sales. Service charge is passed on to staff, so it is left out of the margins.</p>
       </div>
       </Ready>
     </div>
@@ -271,11 +262,11 @@ export function BalanceSheet() {
   ]
   const curLabel = dmy(asAt)
   const prevLabel = compare ? dmy(prevAt) : null
-  const csv = () => downloadCsv(`balance-sheet-${asAt}.csv`, linesCsv(lines, curLabel, prevLabel))
+  const csv = () => downloadExcel(`balance-sheet-${asAt}.xlsx`, linesCsv(lines, curLabel, prevLabel))
 
   return (
     <div className="space-y-4">
-      <ReportBar title="Balance Sheet" period={`As at ${dmy(asAt)}`} onCsv={csv}>
+      <ReportBar title="Balance Sheet" period={`As at ${dmy(asAt)}`} onCsv={[s1, s3, ...(compare ? [s2, s4] : [])].every(s => s === null) ? csv : undefined}>
         <div className="w-44"><label>As at</label><input type="date" value={asAt} onChange={e => setAsAt(e.target.value)} /></div>
         <label className="flex items-center gap-2 pb-2.5 text-[13px] font-normal text-slate-700">
           <input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} />
@@ -284,11 +275,84 @@ export function BalanceSheet() {
       </ReportBar>
       <Ready states={[s1, s3, ...(compare ? [s2, s4] : [])]}>
       <Tiles compare={compare} tiles={[['Total assets', totalAssets], ['Total liabilities', totalLiab], ['Equity', totalEquity], ['Working capital', working]]} />
-      <div className="max-w-4xl print:max-w-none">
+      <div className="max-w-4xl">
         <StatementTable lines={lines} curLabel={curLabel} prevLabel={prevLabel} />
-        <p className="muted mt-2 print:text-[9px]">Working capital is current assets less current liabilities: what is left to run the business day to day.</p>
+        <p className="muted mt-2">Working capital is current assets less current liabilities: what is left to run the business day to day.</p>
       </div>
       {!balanced && <p className="alert-error">Assets do not equal liabilities + equity. Please tell the developer.</p>}
+      </Ready>
+    </div>
+  )
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const lastDayOf = (ym: string) => addDays(shiftMonths(ym + '-01', 1), -1)
+
+// Every month of one year side by side. Twelve account_totals calls in parallel;
+// months after today stay blank.
+export function MonthlyPl() {
+  const accounts = useAccounts(true)
+  const thisYear = todayMY().slice(0, 4)
+  const [year, setYear] = useState(thisYear)
+  const [months, setMonths] = useState<(Map<string, number> | null)[]>([])
+  const [state, setState] = useState<string | null>('loading')
+  useEffect(() => {
+    let stale = false
+    setState('loading')
+    const loaded = year === thisYear ? Number(todayMY().slice(5, 7)) : year < thisYear ? 12 : 0
+    Promise.all(MONTHS.map((_, i) => {
+      if (i >= loaded) return null
+      const ym = `${year}-${String(i + 1).padStart(2, '0')}`
+      return accountTotals(`${ym}-01`, lastDayOf(ym))
+    })).then(ms => { if (!stale) { setMonths(ms); setState(null) } },
+      (e: Error) => { if (!stale) setState(e.message) })
+    return () => { stale = true }
+  }, [year, thisYear])
+
+  const lines = monthlyLines(accounts, months)
+  const years = Array.from({ length: 5 }, (_, i) => String(Number(thisYear) - i))
+  const cell = (v: number | null, isPct: boolean) => v === null ? '' : isPct ? `${v.toFixed(1).replace(/^-0\.0$/, '0.0')}%` : fig(v)
+  const excel = () => downloadExcel(`monthly-pl-${year}.xlsx`, [
+    ['Code', 'Account', ...MONTHS, 'Total'],
+    ...lines.map(l => l.kind === 'head' ? ['', l.label.toUpperCase()]
+      : [l.code ?? '', l.label, ...l.values.map(v => v ?? ''), l.total ?? '']),
+  ])
+
+  return (
+    <div className="space-y-4 print-landscape">
+      <ReportBar title="Monthly Profit & Loss" period={`Year ${year}`} onCsv={state === null ? excel : undefined}>
+        <div className="w-32"><label>Year</label>
+          <select value={year} onChange={e => setYear(e.target.value)}>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+      </ReportBar>
+      <Ready states={[state]}>
+        <div className="card overflow-x-auto p-0">
+          <table className="min-w-[1100px] print:min-w-0">
+            <thead>
+              <tr>
+                <th className="sticky left-0 z-10">RM</th>
+                {MONTHS.map(m => <th key={m} className="text-right">{m}</th>)}
+                <th className="text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l, i) => l.kind === 'head'
+                ? <tr key={i} className="bg-white"><td colSpan={14} className="group-head pt-5 text-xs font-bold uppercase tracking-wide text-slate-600">{l.label}</td></tr>
+                : (
+                  <tr key={i} className={`${ROW_STYLE[l.kind]} ${l.kind === 'grand' && l.total !== null && l.total < 0 ? 'text-rose-700' : ''}`}>
+                    <td className={`sticky left-0 z-10 bg-inherit ${l.kind === 'item' ? 'pl-6 print-indent' : ''}`}>
+                      {l.code && <span className="mr-2 font-mono text-xs text-slate-400">{l.code}</span>}{l.label}
+                    </td>
+                    {l.values.map((v, j) => <td key={j} className="text-right">{cell(v, l.kind === 'pct')}</td>)}
+                    <td className="text-right">{cell(l.total, l.kind === 'pct')}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="muted mt-2">% is of food and drink sales. Service charge is passed on to staff, so it is left out of the margins.</p>
       </Ready>
     </div>
   )

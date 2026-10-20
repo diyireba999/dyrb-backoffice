@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Pencil, Plus, Trash2, XCircle } from 'lucide-react'
-import { MONEY_ACCOUNTS, MONEY_NAMES, addDays, dmy, isDirector, downloadCsv, openReceipt, rm, round2, supabase, todayMY, useAccounts, useSuppliers, type Role } from '../lib'
+import { MONEY_ACCOUNTS, MONEY_NAMES, addDays, dmy, isDirector, downloadExcel, openReceipt, rm, round2, supabase, todayMY, useAccounts, useSuppliers, type Role } from '../lib'
 import { AccountSelect, Empty, Pill, ReportBar } from '../ui'
 import { confirmDialog, toast } from '../feedback'
 import { PageActions, submittedAgain, useEscape } from '../page'
@@ -498,12 +498,12 @@ export function ApAging() {
   const list = [...bySupplier.entries()].sort((a, b) => a[0].localeCompare(b[0]))
   const totals = BUCKETS.map((_, i) => list.reduce((s, [, b]) => s + b[i], 0))
   const grand = totals.reduce((s, v) => s + v, 0)
-  const csv = () => downloadCsv(`ap-aging-${asAt}.csv`, [['Supplier', ...BUCKETS, 'Total'],
+  const csv = () => downloadExcel(`ap-aging-${asAt}.xlsx`, [['Supplier', ...BUCKETS, 'Total'],
     ...list.map(([name, b]) => [name, ...b.map(round2), round2(b.reduce((s, v) => s + v, 0))]),
     ['Total', ...totals.map(round2), round2(grand)]])
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 print-landscape">
       <ReportBar title="Supplier Aging (AP)" period={`As at ${dmy(asAt)}`} onCsv={csv}>
         <div className="w-40"><label>As at</label><input type="date" value={asAt} onChange={e => setAsAt(e.target.value)} /></div>
       </ReportBar>

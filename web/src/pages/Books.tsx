@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Paperclip, Trash2 } from 'lucide-react'
-import { EDITABLE_SOURCES, MONEY_ACCOUNTS, accountTotals, dmy, docTotal, downloadCsv, isCostAccount, isDirector, loadDocuments, openReceipt, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, type Account, type DocRow } from '../lib'
+import { EDITABLE_SOURCES, MONEY_ACCOUNTS, accountTotals, dmy, docTotal, downloadExcel, isCostAccount, isDirector, loadDocuments, openReceipt, postJournal, rm, round2, supabase, todayMY, updateJournal, useAccounts, type Account, type DocRow } from '../lib'
 import { AccountSelect, Empty, ReportBar, MonthInput } from '../ui'
 import { DocumentList } from '../DocumentList'
 import { confirmDialog, toast } from '../feedback'
@@ -391,7 +391,7 @@ export function JournalListing({ isOwner }: { isOwner: boolean }) {
     setRows(rs => rs.filter(x => x.id !== r.id))
   }
 
-  const csv = () => downloadCsv(`journal-${month}.csv`, [
+  const csv = () => downloadExcel(`journal-${month}.xlsx`, [
     ['Date', 'Doc No', 'Description', 'Ref', 'Account', 'Debit', 'Credit'],
     ...rows.flatMap(r => r.journal_lines.map(l => [dmy(r.date), r.doc_no, r.description, r.reference ?? '', `${l.account} ${l.accounts.name}`, l.debit || '', l.credit || ''])),
   ])
@@ -399,7 +399,7 @@ export function JournalListing({ isOwner }: { isOwner: boolean }) {
   return (
     <div className="space-y-4">
       <ReportBar title="Journal Listing" period={doc ?? month} onCsv={csv}>
-        {doc && <div className="flex h-8 items-center gap-2 rounded-lg bg-brand-soft px-3 text-[13px] text-brand-dark">
+        {doc && <div className="flex h-8 items-center gap-2 rounded-lg bg-slate-100 px-3 text-[13px] text-slate-700">
           Showing <b className="font-mono">{doc}</b>
           <button className="link" onClick={() => setParams({})}>Show all</button>
         </div>}

@@ -4,6 +4,7 @@ import type { DayAmount, MonthStatus } from './dashboard-math'
 export type { MonthStatus }
 import { supplierInvoiceCategory } from './dashboard-math'
 import { toast } from './feedback'
+import { toSheet } from './excel'
 
 // Count requests in flight so the UI can say "Loading…" instead of an empty
 // "No invoices" while the data is still on its way.
@@ -115,13 +116,15 @@ export function useSuppliers() {
   return { list, load }
 }
 
-// Opens in Excel. Quotes every cell so commas in descriptions are safe.
-export function downloadCsv(filename: string, rows: (string | number)[][]) {
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n')
-  const url = URL.createObjectURL(new Blob([String.fromCharCode(0xfeff) + csv], { type: 'text/csv' }))
-  const a = Object.assign(document.createElement('a'), { href: url, download: filename })
-  a.click()
-  URL.revokeObjectURL(url)
+// One Excel file per report: bold header, money cells formatted, columns sized to content.
+export async function downloadExcel(filename: string, rows: (string | number)[][]) {
+  try {
+    const { data, columns } = toSheet(rows)
+    const { default: writeXlsxFile } = await import('write-excel-file/browser')  // loaded on first export only
+    await writeXlsxFile(data, { columns, sheet: 'Report' }).toFile(filename)
+  } catch (e) {
+    toast('Could not make the Excel file: ' + (e instanceof Error ? e.message : String(e)), { kind: 'error' })
+  }
 }
 
 export const monthStart = () => todayMY().slice(0, 8) + '01'

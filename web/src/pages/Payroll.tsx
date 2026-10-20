@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Download, FileText, Pencil, Plus, Printer, RefreshCw, Trash2, XCircle } from 'lucide-react'
-import { dmy, downloadCsv, isDirector, isOffice, MONEY_ACCOUNTS, MONEY_NAMES, rm, round2, supabase, todayMY, useAccounts, type Profile, type Role } from '../lib'
+import { dmy, downloadExcel, isDirector, isOffice, MONEY_ACCOUNTS, MONEY_NAMES, rm, round2, supabase, todayMY, useAccounts, type Profile, type Role } from '../lib'
 import { Empty, ReportBar, MonthInput, useCompany } from '../ui'
 import { confirmDialog, toast } from '../feedback'
 import { PageActions, submittedAgain, useEscape } from '../page'
@@ -628,7 +628,7 @@ export function PayrollRun({ role }: { role: Role }) {
   }
 
   const total = (k: keyof Payslip) => slips.reduce((s, p) => s + n(p[k] as number), 0)
-  const csv = () => downloadCsv(`payroll-${run?.month}.csv`, [
+  const csv = () => downloadExcel(`payroll-${run?.month}.xlsx`, [
     ['Staff', 'Bank', 'Account', 'Basic', 'OT', 'Allowance', 'Service charge', 'Gross', 'EPF (staff)', 'SOCSO (staff)', 'EIS (staff)', 'PCB', 'Other', 'Advance recovery', 'Net pay', 'EPF (employer)', 'SOCSO (employer)', 'EIS (employer)'],
     ...slips.map(p => [p.name, p.bank_name ?? '', p.bank_account ?? '', n(p.basic), n(p.ot_amount), n(p.allowance), n(p.service_charge), n(p.gross),
       n(p.epf_employee), n(p.socso_employee), n(p.eis_employee), n(p.pcb), n(p.other_deduction), n(p.advance_recovery), n(p.net_pay), n(p.epf_employer), n(p.socso_employer), n(p.eis_employer)]),
@@ -687,7 +687,7 @@ export function PayrollRun({ role }: { role: Role }) {
 
   return (
     <div className="space-y-4">
-      <div className="summary-only space-y-4">
+      <div className="summary-only print-landscape space-y-4">
       <div className="no-print card flex flex-wrap items-end gap-3">
         <div className="w-56"><label>Payroll month</label>
           <select value={runId ?? ''} onChange={e => setRunId(Number(e.target.value))}>
@@ -825,7 +825,7 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
     window.addEventListener('afterprint', () => document.body.classList.remove('printing-slips'), { once: true })
     setTimeout(() => window.print())  // let the payslips render first
   }
-  const csv = () => downloadCsv(`payslips${slips.length === 1 ? '-' + slips[0].name : ''}-${slips[0]?.month.slice(0, 7)}.csv`, [
+  const csv = () => downloadExcel(`payslips${slips.length === 1 ? '-' + slips[0].name : ''}-${slips[0]?.month.slice(0, 7)}.xlsx`, [
     ['Month', 'Staff', 'Staff no.', 'IC / passport', 'Position', 'Bank', 'Account', 'Basic', 'OT hours', 'OT', 'Allowance', 'Service charge', 'Unpaid leave',
       'Gross', 'EPF (staff)', 'SOCSO (staff)', 'EIS (staff)', 'PCB', 'Advance recovery', 'Other', 'Net pay', 'EPF (employer)', 'SOCSO (employer)', 'EIS (employer)', 'Status'],
     ...slips.map(p => [p.month.slice(0, 7), p.name, p.employee_no ?? '', p.id_no ?? '', p.position ?? '', p.bank_name ?? '', p.bank_account ?? '',
@@ -857,8 +857,8 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
       </div>
       {show && (
         <div className="mt-4 space-y-4">
-          {slips.map(p => (
-            <div key={p.id} className="card break-inside-avoid print:break-after-page">
+          {slips.map((p, i) => (
+            <div key={p.id} className={`card break-inside-avoid ${i % 2 ? 'print:break-after-page' : i < slips.length - 1 ? 'cut-line' : ''}`}>
               <div className="flex items-start justify-between border-b border-slate-200 pb-3">
                 <div className="flex items-center gap-3">
                   <img src="/logo.png" alt="" className="size-10 rounded-lg object-contain" />
@@ -894,9 +894,9 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
                   </dl>
                 </div>
               </div>
-              <div className="mt-4 flex items-center justify-between rounded-xl bg-brand-soft px-4 py-3">
-                <span className="font-semibold text-brand-dark">Net pay</span>
-                <span className="text-lg font-bold text-brand-dark tabular-nums">{rm(p.net_pay)}</span>
+              <div className="mt-4 flex items-center justify-between rounded-xl bg-slate-100 px-4 py-3">
+                <span className="font-semibold text-slate-900">Net pay</span>
+                <span className="text-lg font-bold text-slate-900 tabular-nums">{rm(p.net_pay)}</span>
               </div>
               {p.note && <p className="mt-3 text-xs text-slate-500"><span className="font-medium">Attendance:</span> {p.note.replace('Pro-rated', 'Employed')}</p>}
               {stillOwed(p) > 0 &&
@@ -963,13 +963,13 @@ export function PayrollYear() {
     net: list.reduce((s, p) => s + n(p.net_pay), 0),
   })).sort((a, b) => a.name.localeCompare(b.name))
 
-  const csv = () => downloadCsv(`payroll-year-${year}.csv`, [
+  const csv = () => downloadExcel(`payroll-year-${year}.xlsx`, [
     ['Staff', 'IC / passport', 'Tax no.', 'EPF no.', 'Months paid', 'Gross pay', 'EPF (staff)', 'SOCSO (staff)', 'PCB', 'Net paid'],
     ...rows.map(r => [r.name, r.id_no ?? '', r.tax_no ?? '', r.epf_no ?? '', r.months, round2(r.gross), round2(r.epf), round2(r.socso), round2(r.pcb), round2(r.net)]),
   ])
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 print-landscape">
       <ReportBar title="Payroll Yearly Summary" period={year} onCsv={csv}>
         <div className="w-32"><label>Year</label><input type="number" min="2020" max="2100" value={year} onChange={e => setYear(e.target.value)} /></div>
       </ReportBar>

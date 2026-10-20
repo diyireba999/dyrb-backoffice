@@ -3,13 +3,13 @@ import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react
 import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BookOpen, BookText, CalendarClock, ChevronDown, ChevronRight, FileText, HandCoins, KeyRound, LayoutDashboard,
   Building2, ListChecks, ListTree, LogOut, Menu, NotebookPen, Plus, Repeat, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, CreditCard, IdCard, Package, Tags, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
-  type LucideIcon,
+  Columns3, type LucideIcon,
 } from 'lucide-react'
 import { isOffice, loginEmail, supabase, type Profile, type Role } from './lib'
 import { JournalListing, OfficialReceipt, PaymentVoucher, Transfer } from './pages/Books'
 import { AccountLedger, BankReconciliation, ChartOfAccounts, JournalEntry } from './pages/Ledger'
 import { ApAging, PurchaseInvoices, Suppliers, SupplierPayments } from './pages/Purchase'
-import { BalanceSheet, ProfitAndLoss, TrialBalance } from './pages/Reports'
+import { BalanceSheet, MonthlyPl, ProfitAndLoss, TrialBalance } from './pages/Reports'
 import { Users, CompanyDetails } from './pages/Admin'
 import { Claims } from './pages/Claims'
 import { Dashboard } from './pages/Dashboard'
@@ -62,6 +62,7 @@ const PAGES: Page[] = [
   { to: '/gl/ledger', label: 'All accounts', subtitle: 'Transactions and running balance of one account', icon: BookText, group: 'Books', section: 'Ledger', roles: OFFICE },
   { to: '/cash/book', label: 'Cash & bank', subtitle: 'Cash and bank movements with running balance', icon: Wallet, group: 'Books', section: 'Ledger', roles: OFFICE },
   { to: '/reports/pl', label: 'Profit & Loss', subtitle: 'Sales, costs and profit for a period', icon: TrendingUp, group: 'Books', section: 'Reports', roles: REPORTS },
+  { to: '/reports/monthly', label: 'Monthly P&L', subtitle: 'Each month of the year side by side', icon: Columns3, group: 'Books', section: 'Reports', roles: REPORTS },
   { to: '/reports/bs', label: 'Balance sheet', subtitle: 'What the business owns and owes', icon: PieChart, group: 'Books', section: 'Reports', roles: REPORTS },
   { to: '/reports/tb', label: 'Trial balance', subtitle: 'All account balances; debit equals credit', icon: Scale, group: 'Books', section: 'Reports', roles: REPORTS },
 
@@ -318,6 +319,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
                 <Route path="/reports/tb" element={<TrialBalance />} />
                 <Route path="/reports/pl" element={<ProfitAndLoss />} />
                 <Route path="/reports/bs" element={<BalanceSheet />} />
+                <Route path="/reports/monthly" element={<MonthlyPl />} />
               </>}
               {office && <>
                 <Route path="/month-end" element={<MonthEnd />} />
