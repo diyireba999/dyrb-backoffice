@@ -18,6 +18,7 @@ export function toSheet(rows: (string | number)[][]): { data: Cell[][]; columns:
     const text = typeof v === 'number' ? moneyText(v) : String(v)
     widths[c] = Math.max(widths[c] ?? 0, text.length)
     const bold = r === 0 ? { fontWeight: 'bold' as const } : {}
+    if (typeof v === 'number' && !Number.isFinite(v)) return { value: String(v), type: String, ...bold }
     if (typeof v === 'number') return { value: v, type: Number, format: MONEY, align: 'right', ...bold }
     if (v === '') return null
     return { value: v, type: String, ...bold }

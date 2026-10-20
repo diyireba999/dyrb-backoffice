@@ -119,8 +119,12 @@ export function useSuppliers() {
 
 // One Excel file per report: bold header, money cells formatted, columns sized to content.
 export async function downloadExcel(filename: string, rows: (string | number)[][]) {
-  const { data, columns } = toSheet(rows)
-  await writeXlsxFile(data, { columns, sheet: 'Report' }).toFile(filename)
+  try {
+    const { data, columns } = toSheet(rows)
+    await writeXlsxFile(data, { columns, sheet: 'Report' }).toFile(filename)
+  } catch (e) {
+    toast('Could not make the Excel file: ' + (e instanceof Error ? e.message : String(e)), { kind: 'error' })
+  }
 }
 
 export const monthStart = () => todayMY().slice(0, 8) + '01'
