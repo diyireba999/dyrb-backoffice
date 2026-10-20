@@ -86,7 +86,7 @@ Turn on two-step login for each account once created — this system holds salar
 - **Excel** buttons give real `.xlsx` workbooks with formatted money columns.
 - **Salary advance form**: on the Staff Advance list, the printer icon on a row prints a one-page agreement (details, amount in words, terms, two signature lines) for the staff member to sign.
 - After saving a voucher, receipt, transfer, invoice or journal, the list comes back with the new row highlighted; press **Save & add another** to stay on the form. Esc closes a form.
-- **Daily close:** on Sales › Upload, drop the Zeoniq Bill Summary, the Zeoniq Product Sales file and the Fiuu listing together (or one at a time). The screen works out which is which, shows every day and payout, and one **Post** button posts them all. Remove a file with the × on its chip.
+- **Daily close:** on Sales › Upload, drop the Zeoniq Bill Summary, the Zeoniq Product Sales file and the Fiuu listing together (or one at a time). The screen works out which is which, shows every day and payout, and one **Post** button posts them all. Remove a file with the × on its chip. Both Fiuu exports work: the transaction listing (with settlement dates) and the newer multi-sheet Settlement Report (SETTLEMENT LIST + TRANSACTION LIST); for the report the screen works out which card payments each payout covers, so gross, fee and net per payout come out the same way.
 - **Paying suppliers:** tick the invoices to pay and the full amount fills in; type a smaller figure for a part payment.
 
 ## Run on this computer (optional, for testing changes)

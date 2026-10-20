@@ -73,6 +73,7 @@ export type FileKind = 'bill' | 'items' | 'fiuu'
 // "Item:" group rows or its Item Qty column (it also has a Net Total column, so that
 // test comes last).
 export function detectFile(input: unknown): FileKind | null {
+  if (isFiuuReport(input)) return 'fiuu'
   const rows = toRows(input)
   const cell = (v: unknown) => String(v ?? '').trim()
   const first = (rows[0] ?? []).map(cell)
@@ -204,11 +205,108 @@ export type Settlement = {
 
 const dateOnly = (v: unknown, order: DateOrder = 'dmy') => {
   const s = String(v ?? '').trim()
+  const iso = s.match(/^(\d{4}-\d{2}-\d{2})/)            // 2026-10-01 10:55:18
+  if (iso) return iso[1]
   const m = s.match(/^(\d{2})-(\d{2})-(\d{4})/)          // 22-09-2026 13:49:21
   return m ? `${m[3]}-${m[2]}-${m[1]}` : isoDate(s.split(' ')[0], order)
 }
 
+// ---- Fiuu settlement report: one workbook, a sheet per list ----
+// The newer export from the Fiuu portal. SETTLEMENT LIST has one row per payout
+// (Amount = what the card payments came to after the card fee, Settle Amount =
+// what reached the bank, Channels = the card types paid together); TRANSACTION
+// LIST has every card payment with Bill Amt (gross) and Actual Amt (after the
+// fee) but no settlement date. Fiuu pays each channel group in date order, so
+// walking the payments in time until they add up to a payout tells which
+// payments it covers, and so the gross and the fee per payout.
+const sheetNamed = (input: unknown, name: string): unknown[][] | null => {
+  if (!Array.isArray(input)) return null
+  const s = (input as { sheet?: unknown; data?: unknown }[])
+    .find(x => x && !Array.isArray(x) && String(x.sheet ?? '').trim().toUpperCase() === name)
+  return s && Array.isArray(s.data) ? s.data as unknown[][] : null
+}
+export const isFiuuReport = (input: unknown) =>
+  sheetNamed(input, 'SETTLEMENT LIST') !== null && sheetNamed(input, 'TRANSACTION LIST') !== null
+
+function parseFiuuReport(input: unknown) {
+  const pays = sheetNamed(input, 'SETTLEMENT LIST') ?? [], txs = sheetNamed(input, 'TRANSACTION LIST') ?? []
+  const header = (rows: unknown[][]) => (rows[0] ?? []).map(c => String(c ?? '').trim())
+  const ph = header(pays), th = header(txs)
+  const pc = { date: ph.indexOf('Date'), amount: ph.indexOf('Amount'), net: ph.indexOf('Settle Amount'), channels: ph.indexOf('Channels') }
+  const tc = { date: th.indexOf('Date'), channel: th.indexOf('Channel'), gross: th.indexOf('Bill Amt'), actual: th.indexOf('Actual Amt'), status: th.indexOf('Status') }
+  if (Object.values(pc).some(i => i < 0) || Object.values(tc).some(i => i < 0)) throw new Error('This does not look like a Fiuu settlement report.')
+
+  type Tx = { at: string; date: string; channel: string; gross: number; actual: number }
+  let skipped = 0
+  const settled: Tx[] = []
+  for (const row of txs.slice(1)) {
+    if (!row || !String(row[tc.gross] ?? '').trim()) continue
+    if (String(row[tc.status] ?? '').toLowerCase() !== 'settled') { skipped++; continue }
+    const at = String(row[tc.date] ?? '').trim()
+    settled.push({ at, date: dateOnly(at), channel: String(row[tc.channel] ?? '').trim() || 'Card', gross: num(row[tc.gross]), actual: num(row[tc.actual]) })
+  }
+  type Payout = { at: string; settleDate: string; amount: number; net: number; channels: string[] }
+  const payouts: Payout[] = pays.slice(1).filter(r => r && String(r[pc.net] ?? '').trim()).map(r => ({
+    at: String(r[pc.date] ?? '').trim(), settleDate: dateOnly(r[pc.date]), amount: num(r[pc.amount]), net: num(r[pc.net]),
+    channels: String(r[pc.channels] ?? '').split(',').map(c => c.trim()).filter(Boolean),
+  }))
+  // Payouts that share a channel list are one stream (cards and e-wallets; MyDebit and DuitNow).
+  const groups = new Map<string, Payout[]>()
+  for (const p of payouts) { const k = p.channels.join(','); groups.set(k, [...(groups.get(k) ?? []), p]) }
+  const groupOf = (channel: string) => [...groups.entries()].find(([, ps]) => ps[0].channels.includes(channel))?.[0]
+
+  const byDay = new Map<string, Settlement>()
+  let pending = settled.filter(t => groupOf(t.channel) === undefined).length  // no payout stream for that channel yet
+  for (const [key, ps] of groups) {
+    const ts = settled.filter(t => groupOf(t.channel) === key).sort((a, b) => a.at.localeCompare(b.at))
+    let i = 0
+    for (const p of [...ps].sort((a, b) => a.at.localeCompare(b.at))) {
+      let acc = 0
+      const mine: Tx[] = []
+      while (i < ts.length && acc < round2(p.amount) - 0.005) { acc = round2(acc + ts[i].actual); mine.push(ts[i]); i++ }
+      if (Math.abs(acc - round2(p.amount)) > 0.005) {
+        throw new Error(`The payout of ${p.settleDate} (${p.amount.toFixed(2)}) does not add up from the transaction list. Ask Fiuu for the transaction listing with settlement dates instead.`)
+      }
+      const gross = round2(mine.reduce((s, t) => s + t.gross, 0))
+      const brands: Brand[] = []
+      for (const t of mine) {
+        const fee = round2(t.gross - t.actual)
+        const b = brands.find(x => x.brand === t.channel)
+        if (b) { b.count++; b.gross = round2(b.gross + t.gross); b.fee = round2(b.fee + fee) }
+        else brands.push({ brand: t.channel, count: 1, gross: t.gross, fee })
+      }
+      // Fiuu's extra fees (Apple Pay and the like) are on the payout, not on a card
+      // type; they go on the biggest card type so the fee lines still add up.
+      const extra = round2(p.amount - p.net)
+      if (extra && brands.length) {
+        const big = brands.reduce((a, b) => (b.gross > a.gross ? b : a))
+        big.fee = round2(big.fee + extra)
+      }
+      const d = byDay.get(p.settleDate) ?? { settleDate: p.settleDate, count: 0, gross: 0, fee: 0, net: 0, brands: [] }
+      d.count += mine.length
+      d.gross = round2(d.gross + gross)
+      d.net = round2(d.net + p.net)
+      d.fee = round2(d.gross - d.net)
+      for (const b of brands) {
+        const have = d.brands.find(x => x.brand === b.brand)
+        if (have) { have.count += b.count; have.gross = round2(have.gross + b.gross); have.fee = round2(have.fee + b.fee) }
+        else d.brands.push({ ...b })
+      }
+      byDay.set(p.settleDate, d)
+    }
+    pending += ts.length - i  // paid by card, not paid out within this report
+  }
+  const byTakingDay = new Map<string, number>()
+  for (const t of settled) byTakingDay.set(t.date, round2((byTakingDay.get(t.date) ?? 0) + t.gross))
+  return {
+    settlements: [...byDay.values()].sort((a, b) => a.settleDate.localeCompare(b.settleDate)),
+    takings: [...byTakingDay.entries()].sort().map(([date, gross]) => ({ date, gross })),
+    pending, skipped,
+  }
+}
+
 export function parseFiuu(input: unknown) {
+  if (isFiuuReport(input)) return parseFiuuReport(input)
   const rows = toRows(input)
   const head = (rows[0] ?? []).map(c => String(c ?? '').trim())
   const col = (name: string) => head.indexOf(name)

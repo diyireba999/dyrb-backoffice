@@ -145,6 +145,48 @@ assert.equal(detectFile([{ data: billRows }]), 'bill', 'per-sheet wrapper shape'
 assert.equal(detectFile(itemRows.slice(0, 2)), 'items', 'empty Product Sales export is still Product Sales')
 console.log('detect file ok')
 
+// --- Fiuu settlement report (multi-sheet workbook) ---
+const { parseFiuu } = await import('./src/zeoniq.ts')
+const PAY_HEAD = ['Date', 'Merchant Ref ID', 'Bank Account', 'Currency', 'Amount', 'GST', 'Deduct', 'Token Amount', 'Token GST', 'Mass Payment', 'Extra Fees', 'Settle Amount', 'Channels', 'Trading Name', 'Address']
+const TX_HEAD = ['Date', 'Channel', 'Transaction ID', 'Order ID', 'Billing Name', 'Transaction Currency', 'Bill Amt', 'Actual Amt', 'Status', 'Settlement Ref No.']
+const pay = (date, amount, extra, net, channels) => [date, 'M', 'B', 'MYR', amount, '0.00', '0.00', '0.00', '0.00', '0.00', extra, net, channels, 'T', 'A']
+const tx = (date, channel, gross, actual, status = 'settled') => [date, channel, '1', '9', 'Card Payment', 'MYR', gross, actual, status, 'M']
+const report = (payRows, txRows) => [
+  { sheet: 'SETTLEMENT LIST', data: [PAY_HEAD, ...payRows] },
+  { sheet: 'DEDUCT LIST', data: [['Merchant Ref ID', 'Total Deduct'], ['M', '0.00']] },
+  { sheet: 'TRANSACTION LIST', data: [TX_HEAD, ...txRows] },
+]
+const book = report([
+  pay('2026-10-02 10:21:26', '355.39', '0.00', '355.39', 'MyDebit Card Present,DuitNow QR Offline'),
+  pay('2026-10-02 11:13:20', '300.00', '0.20', '299.80', 'Mastercard,Visa'),
+  pay('2026-10-05 11:10:15', '100.00', '0.00', '100.00', 'Mastercard,Visa'),
+], [
+  tx('2026-10-01 23:53:42', 'MyDebit Card Present', '198.00', '195.03'),
+  tx('2026-10-01 03:10:44', 'MyDebit Card Present', '162.80', '160.36'),   // out of order in the file
+  tx('2026-10-01 19:01:17', 'Mastercard', '200.00', '197.00'),
+  tx('2026-10-01 21:05:29', 'Visa', '105.00', '103.00'),
+  tx('2026-10-02 22:00:00', 'Visa', '101.50', '100.00'),
+  tx('2026-10-03 22:00:00', 'Visa', '50.00', '49.25'),                     // no payout for it yet
+  tx('2026-10-03 23:00:00', 'Visa', '20.00', '19.70', 'refunded'),         // not settled
+])
+assert.equal(detectFile(book), 'fiuu', 'the settlement report is a Fiuu file')
+const fr = parseFiuu(book)
+const r2 = n => Math.round(n * 100) / 100
+assert.deepEqual(fr.settlements.map(s => [s.settleDate, s.count, s.gross, s.fee, s.net]),
+  [['2026-10-02', 4, 665.8, 10.61, 655.19], ['2026-10-05', 1, 101.5, 1.5, 100]], 'two payouts on one day merge; gross from Bill Amt, net from Settle Amount')
+const day2 = fr.settlements[0]
+assert.deepEqual(day2.brands.find(b => b.brand === 'MyDebit Card Present'), { brand: 'MyDebit Card Present', count: 2, gross: 360.8, fee: 5.41 })
+assert.deepEqual(day2.brands.find(b => b.brand === 'Mastercard'), { brand: 'Mastercard', count: 1, gross: 200, fee: 3.2 }, 'extra fee lands on the biggest card type')
+assert.deepEqual(day2.brands.find(b => b.brand === 'Visa'), { brand: 'Visa', count: 1, gross: 105, fee: 2 })
+assert.equal(r2(day2.brands.reduce((s, b) => s + b.fee, 0)), day2.fee, 'brand fees add up to the payout fee')
+assert.equal(r2(day2.brands.reduce((s, b) => s + b.gross, 0)), day2.gross, 'brand takings add up to the payout gross')
+assert.equal(fr.pending, 1); assert.equal(fr.skipped, 1)
+assert.deepEqual(fr.takings, [{ date: '2026-10-01', gross: 665.8 }, { date: '2026-10-02', gross: 101.5 }, { date: '2026-10-03', gross: 50 }], 'takings per sale day, settled rows only')
+assert.throws(() => parseFiuu(report([pay('2026-10-02 10:21:26', '999.00', '0.00', '999.00', 'Visa')], [tx('2026-10-01 20:00:00', 'Visa', '100.00', '98.50')])),
+  /does not add up/, 'a payout the payments cannot make is refused')
+assert.equal(parseFiuu(report([], [])).settlements.length, 0, 'empty report')
+console.log('fiuu report ok')
+
 // --- report math (slice D) ---
 const { plSection, fig, change, monthlyLines } = await import('./src/report-math.ts')
 assert.equal(plSection({ code: '4000', type: 'income' }), 'sales')
