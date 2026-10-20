@@ -37,8 +37,6 @@ export const forgetCompany = () => { companyCache = null }
 export function ReportBar({ title, period, onCsv, children }: {
   title: string; period: string; onCsv?: () => void; children?: React.ReactNode
 }) {
-  const company = useCompany()
-  const printed = new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', dateStyle: 'medium', timeStyle: 'short' })
   return (
     <>
       <PageActions>
@@ -46,6 +44,16 @@ export function ReportBar({ title, period, onCsv, children }: {
         {onCsv && <button className="btn-light" onClick={onCsv}><Download className="size-4" />Excel</button>}
       </PageActions>
       {children && <div className="no-print flex flex-wrap items-end gap-3">{children}</div>}
+      <Letterhead title={title} period={period} />
+    </>
+  )
+}
+
+// Print-only header: logo, company details, the document title and when it was printed.
+export function Letterhead({ title, period }: { title: string; period: string }) {
+  const company = useCompany()
+  const printed = new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur', dateStyle: 'medium', timeStyle: 'short' })
+  return (
       <div className="hidden print:block">
         <div className="flex items-start justify-between gap-6 border-b-2 border-slate-800 pb-3">
           <div className="flex items-start gap-3">
@@ -64,7 +72,6 @@ export function ReportBar({ title, period, onCsv, children }: {
           </div>
         </div>
       </div>
-    </>
   )
 }
 

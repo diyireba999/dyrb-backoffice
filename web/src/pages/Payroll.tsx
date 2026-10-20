@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Download, FileText, Pencil, Plus, Printer, RefreshCw, Trash2, XCircle } from 'lucide-react'
 import { dmy, downloadExcel, isDirector, isOffice, MONEY_ACCOUNTS, MONEY_NAMES, rm, round2, supabase, todayMY, useAccounts, type Profile, type Role } from '../lib'
-import { Empty, ReportBar, MonthInput, useCompany } from '../ui'
+import { Empty, Letterhead, ReportBar, MonthInput, useCompany } from '../ui'
 import { confirmDialog, toast } from '../feedback'
-import { PageActions, submittedAgain, useEscape } from '../page'
+import { PageActions, printDocument, submittedAgain, useEscape } from '../page'
+import { ringgitInWords } from '../money-words'
 
 type Employee = {
   id: number; profile_id: string | null; employee_no: string | null; name: string; id_no: string | null
@@ -172,7 +173,7 @@ export function Employees({ role }: { role: Role }) {
 
 // ---------------------------------------------------------------- Staff advances
 
-type Advance = { id: number; employee_id: number; date: string; amount: number; note: string | null; outstanding: number }
+type Advance = { id: number; employee_id: number; date: string; amount: number; note: string | null; outstanding: number; journal_id: number }
 
 const blankAdvance = { employee: '', date: todayMY(), amount: '', from: MONEY_ACCOUNTS[0], note: '' }
 
@@ -184,6 +185,7 @@ export function StaffAdvances({ role }: { role: Role }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [highlight, setHighlight] = useState(0)
+  const [printing, setPrinting] = useState<{ adv: Advance; doc: string; from: string } | null>(null)
   const first = useRef<HTMLSelectElement>(null)
   const canEdit = role === 'owner' || role === 'accountant'
   const nameOf = (id: number) => employees.find(e => e.id === id)?.name ?? '—'
@@ -225,6 +227,17 @@ export function StaffAdvances({ role }: { role: Role }) {
     if (!again) setMode('list')
     else setTimeout(() => first.current?.focus(), 0)
     load()
+  }
+
+  // The signed paper: the advance's document number and where the money came from
+  // are on its journal, then the form prints on its own.
+  async function printForm(a: Advance) {
+    const { data, error } = await supabase.from('journals').select('doc_no, journal_lines(account, credit)').eq('id', a.journal_id).single()
+    if (error) return toast('Could not load the advance: ' + error.message, { kind: 'error' })
+    const j = data as unknown as { doc_no: string; journal_lines: { account: string; credit: number }[] }
+    const from = j.journal_lines.find(l => Number(l.credit) > 0)?.account ?? ''
+    setPrinting({ adv: a, doc: j.doc_no, from: MONEY_NAMES[from] ?? from })
+    printDocument()
   }
 
   async function remove(a: Advance) {
@@ -271,7 +284,7 @@ export function StaffAdvances({ role }: { role: Role }) {
   return (
     <div className="space-y-4">
       {canEdit && <PageActions><button className="btn" onClick={startNew}><Plus className="size-4" />New advance</button></PageActions>}
-      <div className="card overflow-x-auto p-0">
+      <div className="print-page card overflow-x-auto p-0">
         {sorted.length === 0 && <Empty text="No salary advances yet." />}
         {sorted.length > 0 && <table>
           <thead><tr><th>Date</th><th>Staff</th><th className="text-right">Amount</th><th className="text-right">Outstanding</th><th>Note</th><th></th></tr></thead>
@@ -283,7 +296,8 @@ export function StaffAdvances({ role }: { role: Role }) {
                 <td className="text-right">{rm(a.amount)}</td>
                 <td className={`text-right ${Number(a.outstanding) > 0 ? 'font-semibold text-rose-600' : 'text-slate-400'}`}>{rm(a.outstanding)}</td>
                 <td className="text-slate-600">{a.note}</td>
-                <td className="text-right">
+                <td className="whitespace-nowrap text-right">
+                  <button title="Print form" aria-label="Print the agreement form" className="btn-ghost px-1.5" onClick={() => printForm(a)}><Printer className="size-4" /></button>
                   {canEdit && Number(a.outstanding) === Number(a.amount) &&
                     <button title="Remove" className="btn-ghost px-1.5 hover:bg-red-50 hover:text-red-600" onClick={() => remove(a)}><Trash2 className="size-4" /></button>}
                 </td>
@@ -291,6 +305,50 @@ export function StaffAdvances({ role }: { role: Role }) {
             ))}
           </tbody>
         </table>}
+      </div>
+      {printing && <AdvanceForm adv={printing.adv} doc={printing.doc} from={printing.from} employee={employees.find(e => e.id === printing.adv.employee_id)} />}
+    </div>
+  )
+}
+
+// The paper a staff member signs for a salary advance. Print-only, A4 portrait.
+function AdvanceForm({ adv, doc, from, employee }: { adv: Advance; doc: string; from: string; employee?: Employee }) {
+  const company = useCompany()
+  const month = monthLabelOf(adv.date.slice(0, 7))
+  const rows: [string, string][] = [
+    ['Staff name', employee?.name ?? ''],
+    ['Staff no.', employee?.employee_no ?? '—'],
+    ['IC / Passport no.', employee?.id_no ?? '—'],
+    ['Position', employee?.position ?? '—'],
+    ['Date of advance', dmy(adv.date)],
+    ['Amount', `${rm(adv.amount)}  (${ringgitInWords(adv.amount)})`],
+    ['Paid from', from],
+    ...(adv.note ? [['Note', adv.note] as [string, string]] : []),
+  ]
+  return (
+    <div className="print-doc hidden print:block">
+      <Letterhead title="Salary Advance Agreement" period={`${doc} · ${dmy(adv.date)}`} />
+      <table className="mt-6 w-full text-[13px]">
+        <tbody>
+          {rows.map(([k, v]) => <tr key={k}><td className="w-44 py-2 font-medium text-slate-600">{k}</td><td className="py-2">{v}</td></tr>)}
+        </tbody>
+      </table>
+      <div className="mt-6 space-y-3 text-[13px] leading-relaxed">
+        <p>I, <b>{employee?.name}</b>, confirm that I have received a salary advance of <b>{rm(adv.amount)}</b> from {company.name} on {dmy(adv.date)}.</p>
+        <p>I agree that this amount will be deducted from my salary for <b>{month}</b>. If it is more than my pay for that month, the balance will be deducted from the following month(s) until it is fully repaid.</p>
+        <p>If my employment ends before the advance is fully repaid, the balance is due on my last day of work and may be deducted from my final pay.</p>
+      </div>
+      <div className="mt-14 grid grid-cols-2 gap-16 text-[13px]">
+        <div>
+          <div className="border-t border-slate-800 pt-1 font-medium">Received by (staff)</div>
+          <div className="mt-3 text-slate-600">Name: {employee?.name}</div>
+          <div className="mt-2 text-slate-600">Date: ____________________</div>
+        </div>
+        <div>
+          <div className="border-t border-slate-800 pt-1 font-medium">Approved by (for {company.name})</div>
+          <div className="mt-3 text-slate-600">Name: ____________________</div>
+          <div className="mt-2 text-slate-600">Date: ____________________</div>
+        </div>
       </div>
     </div>
   )
@@ -687,7 +745,7 @@ export function PayrollRun({ role }: { role: Role }) {
 
   return (
     <div className="space-y-4">
-      <div className="summary-only print-landscape space-y-4">
+      <div className="print-page print-landscape space-y-4">
       <div className="no-print card flex flex-wrap items-end gap-3">
         <div className="w-56"><label>Payroll month</label>
           <select value={runId ?? ''} onChange={e => setRunId(Number(e.target.value))}>
@@ -819,12 +877,7 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
   const paidText = (p: Payslip) => p.status === 'draft' ? 'Draft — not approved, not paid'
     : p.paid_on ? `Paid on ${dmy(p.paid_on)}` : `Not paid yet (pay date ${dmy(p.pay_date)})`
   // Print only the payslips, not the summary above them.
-  function print() {
-    setShow(true)
-    document.body.classList.add('printing-slips')
-    window.addEventListener('afterprint', () => document.body.classList.remove('printing-slips'), { once: true })
-    setTimeout(() => window.print())  // let the payslips render first
-  }
+  function print() { setShow(true); printDocument() }
   const csv = () => downloadExcel(`payslips${slips.length === 1 ? '-' + slips[0].name : ''}-${slips[0]?.month.slice(0, 7)}.xlsx`, [
     ['Month', 'Staff', 'Staff no.', 'IC / passport', 'Position', 'Bank', 'Account', 'Basic', 'OT hours', 'OT', 'Allowance', 'Service charge', 'Unpaid leave',
       'Gross', 'EPF (staff)', 'SOCSO (staff)', 'EIS (staff)', 'PCB', 'Advance recovery', 'Other', 'Net pay', 'EPF (employer)', 'SOCSO (employer)', 'EIS (employer)', 'Status'],
@@ -843,7 +896,7 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
   }
   if (all.length === 0) return null
   return (
-    <div ref={box} className="slips-only scroll-mt-4">
+    <div ref={box} className="print-doc scroll-mt-4">
       <div className="no-print card flex flex-wrap items-end gap-3">
         {staff.length > 1 && <div className="w-56"><label>Payslip for</label>
           <select value={who} onChange={e => { setWho(e.target.value); if (e.target.value) setShow(true) }}>

@@ -84,6 +84,7 @@ Turn on two-step login for each account once created — this system holds salar
 - **Monthly P&L** (Books › Reports) shows every month of the year side by side with group totals and margin %; it prints landscape and exports to Excel like the other reports.
 - **Print / PDF** on any report uses the browser's print dialog (choose "Save as PDF" for a file). Wide tables (Monthly P&L, payroll, supplier aging) print landscape by themselves; payslips print two to a page with a cut line.
 - **Excel** buttons give real `.xlsx` workbooks with formatted money columns.
+- **Salary advance form**: on the Staff Advance list, the printer icon on a row prints a one-page agreement (details, amount in words, terms, two signature lines) for the staff member to sign.
 - After saving a voucher, receipt, transfer, invoice or journal, the list comes back with the new row highlighted; press **Save & add another** to stay on the form. Esc closes a form.
 - **Daily close:** on Sales › Upload, drop the Zeoniq Bill Summary, the Zeoniq Product Sales file and the Fiuu listing together (or one at a time). The screen works out which is which, shows every day and payout, and one **Post** button posts them all. Remove a file with the × on its chip.
 - **Paying suppliers:** tick the invoices to pay and the full amount fills in; type a smaller figure for a part payment.

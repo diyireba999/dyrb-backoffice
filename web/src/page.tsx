@@ -24,5 +24,13 @@ export function useEscape(onEscape: () => void) {
 }
 
 // Which submit button was pressed: <button name="again"> is "Save & add another".
+// Print one document (payslips, a signed form) instead of the page around it:
+// `.print-doc` parts show and `.print-page` parts hide while `printing-doc` is on <body>.
+export function printDocument() {
+  document.body.classList.add('printing-doc')
+  window.addEventListener('afterprint', () => document.body.classList.remove('printing-doc'), { once: true })
+  setTimeout(() => window.print())  // let the document render first
+}
+
 export const submittedAgain = (e: React.FormEvent) =>
   ((e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.name === 'again'

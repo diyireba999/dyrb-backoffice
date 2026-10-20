@@ -94,10 +94,10 @@
   .print-landscape { page: landscape; }
   /* Payslips: two per page, a dashed cut line under the first. */
   .cut-line { border-bottom: 1px dashed #94a3b8; padding-bottom: 4mm; margin-bottom: 4mm; }
-  .slips-only .card { font-size: 12px; line-height: 1.35; }
-  /* Payroll: the summary and the payslips print separately. */
-  body:not(.printing-slips) .slips-only { display: none !important; }
-  body.printing-slips .summary-only { display: none !important; }
+  .print-doc .card { font-size: 12px; line-height: 1.35; }
+  /* printDocument(): a document (payslips, a signed form) prints on its own. */
+  body:not(.printing-doc) .print-doc { display: none !important; }
+  body.printing-doc .print-page { display: none !important; }
 }
 @page {
   size: A4;
