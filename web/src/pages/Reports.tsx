@@ -311,7 +311,7 @@ export function MonthlyPl() {
 
   const lines = monthlyLines(accounts, months)
   const years = Array.from({ length: 5 }, (_, i) => String(Number(thisYear) - i))
-  const cell = (v: number | null, isPct: boolean) => v === null ? '' : isPct ? `${v.toFixed(1).replace(/^-0.0$/, '0.0')}%` : fig(v)
+  const cell = (v: number | null, isPct: boolean) => v === null ? '' : isPct ? `${v.toFixed(1).replace(/^-0\.0$/, '0.0')}%` : fig(v)
   const excel = () => downloadExcel(`monthly-pl-${year}.xlsx`, [
     ['Code', 'Account', ...MONTHS, 'Total'],
     ...lines.map(l => l.kind === 'head' ? ['', l.label.toUpperCase()]

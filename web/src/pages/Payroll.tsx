@@ -858,7 +858,7 @@ function Payslips({ slips: all, advanceMap, focus }: { slips: Payslip[]; advance
       {show && (
         <div className="mt-4 space-y-4">
           {slips.map((p, i) => (
-            <div key={p.id} className={`card break-inside-avoid ${i % 2 ? 'print:break-after-page' : 'cut-line'}`}>
+            <div key={p.id} className={`card break-inside-avoid ${i % 2 ? 'print:break-after-page' : i < slips.length - 1 ? 'cut-line' : ''}`}>
               <div className="flex items-start justify-between border-b border-slate-200 pb-3">
                 <div className="flex items-center gap-3">
                   <img src="/logo.png" alt="" className="size-10 rounded-lg object-contain" />
