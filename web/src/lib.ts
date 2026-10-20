@@ -4,7 +4,6 @@ import type { DayAmount, MonthStatus } from './dashboard-math'
 export type { MonthStatus }
 import { supplierInvoiceCategory } from './dashboard-math'
 import { toast } from './feedback'
-import writeXlsxFile from 'write-excel-file/browser'
 import { toSheet } from './excel'
 
 // Count requests in flight so the UI can say "Loading…" instead of an empty
@@ -121,6 +120,7 @@ export function useSuppliers() {
 export async function downloadExcel(filename: string, rows: (string | number)[][]) {
   try {
     const { data, columns } = toSheet(rows)
+    const { default: writeXlsxFile } = await import('write-excel-file/browser')  // loaded on first export only
     await writeXlsxFile(data, { columns, sheet: 'Report' }).toFile(filename)
   } catch (e) {
     toast('Could not make the Excel file: ' + (e instanceof Error ? e.message : String(e)), { kind: 'error' })
