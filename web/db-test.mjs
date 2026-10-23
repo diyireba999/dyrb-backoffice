@@ -845,7 +845,7 @@ catch (e) { console.log(e.message.includes('Not allowed') ? 'staff blocked from 
 await db.exec(`update profiles set role='owner'`)
 
 // ---- 033: cash flows are the other side of every entry that touched cash or bank ----
-for (const f of ['024_investor.sql', '033_cash_flows.sql'])
+for (const f of ['033_cash_flows.sql'])
   await db.exec(fs.readFileSync(new URL('../supabase/' + f, import.meta.url), 'utf8'))
 await db.query(`select post_journal('2031-01-05','cash sales','manual',null,null,'[{"account":"1000","debit":100},{"account":"4000","credit":100}]'::jsonb)`)
 await db.query(`select post_journal('2031-01-06','rent','manual',null,null,'[{"account":"6100","debit":50},{"account":"1100","credit":50}]'::jsonb)`)
