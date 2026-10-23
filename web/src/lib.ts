@@ -145,6 +145,13 @@ export async function accountTotals(from: string | null, to: string) {
     .map(r => [r.code, Number(r.debit) - Number(r.credit)]))
 }
 
+// Money in (+) and out (−) per counterpart account, from every entry that touched cash or bank.
+export async function cashFlows(from: string, to: string) {
+  const { data, error } = await supabase.rpc('cash_flows', { p_from: from, p_to: to })
+  if (error) throw new Error('Could not total the cash flows: ' + error.message)
+  return new Map(((data ?? []) as { code: string; amount: number }[]).map(r => [r.code, Number(r.amount)]))
+}
+
 // Documents typed in by hand. Anything else is changed on the screen that made it.
 export const EDITABLE_SOURCES = ['manual', 'pv', 'or', 'jv', 'transfer']
 

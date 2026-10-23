@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import {
-  ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BookOpen, BookText, CalendarClock, ChevronDown, ChevronRight, FileText, HandCoins, KeyRound, LayoutDashboard,
+  ArrowDownLeft, ArrowDownUp, ArrowLeftRight, ArrowUpRight, BookOpen, BookText, CalendarClock, ChevronDown, ChevronRight, FileText, HandCoins, KeyRound, LayoutDashboard,
   Building2, ListChecks, ListTree, LogOut, Menu, NotebookPen, Plus, Repeat, Search as SearchIcon, Settings2, CalendarDays, CloudUpload, CreditCard, IdCard, Package, Tags, Wallet2, PieChart, Receipt, Scale, SquareCheckBig, TrendingUp, Truck, Users as UsersIcon, Wallet, X,
   Columns3, type LucideIcon,
 } from 'lucide-react'
@@ -9,7 +9,7 @@ import { isOffice, loginEmail, supabase, type Profile, type Role } from './lib'
 import { JournalListing, OfficialReceipt, PaymentVoucher, Transfer } from './pages/Books'
 import { AccountLedger, BankReconciliation, ChartOfAccounts, JournalEntry } from './pages/Ledger'
 import { ApAging, PurchaseInvoices, Suppliers, SupplierPayments } from './pages/Purchase'
-import { BalanceSheet, MonthlyPl, ProfitAndLoss, TrialBalance } from './pages/Reports'
+import { BalanceSheet, CashFlow, MonthlyPl, ProfitAndLoss, TrialBalance } from './pages/Reports'
 import { Users, CompanyDetails } from './pages/Admin'
 import { Claims } from './pages/Claims'
 import { Dashboard } from './pages/Dashboard'
@@ -64,6 +64,7 @@ const PAGES: Page[] = [
   { to: '/reports/pl', label: 'Profit & Loss', subtitle: 'Sales, costs and profit for a period', icon: TrendingUp, group: 'Books', section: 'Reports', roles: REPORTS },
   { to: '/reports/monthly', label: 'Monthly P&L', subtitle: 'Each month of the year side by side', icon: Columns3, group: 'Books', section: 'Reports', roles: REPORTS },
   { to: '/reports/bs', label: 'Balance sheet', subtitle: 'What the business owns and owes', icon: PieChart, group: 'Books', section: 'Reports', roles: REPORTS },
+  { to: '/reports/cashflow', label: 'Cash flow', subtitle: 'Where the money came from and where it went', icon: ArrowDownUp, group: 'Books', section: 'Reports', roles: REPORTS },
   { to: '/reports/tb', label: 'Trial balance', subtitle: 'All account balances; debit equals credit', icon: Scale, group: 'Books', section: 'Reports', roles: REPORTS },
 
   { to: '/gl/accounts', label: 'Chart of accounts', subtitle: 'Account list and balances', icon: ListTree, group: 'Setup', roles: OFFICE },
@@ -320,6 +321,7 @@ function Shell({ profile, onPassword }: { profile: Profile; onPassword: () => vo
                 <Route path="/reports/pl" element={<ProfitAndLoss />} />
                 <Route path="/reports/bs" element={<BalanceSheet />} />
                 <Route path="/reports/monthly" element={<MonthlyPl />} />
+                <Route path="/reports/cashflow" element={<CashFlow />} />
               </>}
               {office && <>
                 <Route path="/month-end" element={<MonthEnd />} />

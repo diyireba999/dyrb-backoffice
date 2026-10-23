@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { accountTotals, addDays, dmy, downloadExcel, round2, rm, todayMY, useAccounts, type Account } from '../lib'
+import { accountTotals, addDays, cashFlows, dmy, downloadExcel, MONEY_ACCOUNTS, round2, rm, todayMY, useAccounts, type Account } from '../lib'
 import { Empty, ReportBar, Ready } from '../ui'
 import { comparePeriod, shiftMonths, type CompareMode } from '../dashboard-math'
 import { change, fig, monthlyLines, plSection } from '../report-math'
@@ -149,6 +149,17 @@ function Tiles({ tiles, compare }: { tiles: [string, Figures][]; compare: boolea
 // shown only up to today would leave them out.
 const monthEnd = () => addDays(shiftMonths(todayMY().slice(0, 8) + '01', 1), -1)
 
+function QuickRanges({ set }: { set: (from: string, to: string) => void }) {
+  const monthStart = todayMY().slice(0, 8) + '01'
+  return (
+    <div className="flex flex-wrap gap-2">
+      <button className="btn-ghost" onClick={() => set(monthStart, monthEnd())}>This month</button>
+      <button className="btn-ghost" onClick={() => set(shiftMonths(monthStart, -1), addDays(monthStart, -1))}>Last month</button>
+      <button className="btn-ghost" onClick={() => set(yearStart(), monthEnd())}>Year to date</button>
+    </div>
+  )
+}
+
 export function ProfitAndLoss() {
   const accounts = useAccounts(true)
   const [params] = useSearchParams()
@@ -182,8 +193,6 @@ export function ProfitAndLoss() {
   const curLabel = `${dmy(from)} – ${dmy(to)}`
   const prevLabel = cmp ? `${dmy(cmp[0])} – ${dmy(cmp[1])}` : null
   const csv = () => downloadExcel(`profit-and-loss-${from}-${to}.xlsx`, linesCsv(lines, curLabel, prevLabel))
-  const monthStart = todayMY().slice(0, 8) + '01'
-  const setRange = (f: string, t: string) => { setFrom(f); setTo(t) }
 
   return (
     <div className="space-y-4">
@@ -195,11 +204,7 @@ export function ProfitAndLoss() {
             {(Object.keys(COMPARE_LABEL) as CompareMode[]).map(k => <option key={k} value={k}>{COMPARE_LABEL[k]}</option>)}
           </select>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="btn-ghost" onClick={() => setRange(monthStart, monthEnd())}>This month</button>
-          <button className="btn-ghost" onClick={() => setRange(shiftMonths(monthStart, -1), addDays(monthStart, -1))}>Last month</button>
-          <button className="btn-ghost" onClick={() => setRange(yearStart(), monthEnd())}>Year to date</button>
-        </div>
+        <QuickRanges set={(f, t) => { setFrom(f); setTo(t) }} />
       </ReportBar>
       <Ready states={[curState, cmp ? prevState : null]}>
       <Tiles compare={!!cmp} tiles={[['Sales', sales], ['Gross profit', gross], ['Operating expenses', opex], [round2(profit.cur) < 0 ? 'Net loss' : 'Net profit', profit]]} />
@@ -280,6 +285,69 @@ export function BalanceSheet() {
         <p className="muted mt-2">Working capital is current assets less current liabilities: what is left to run the business day to day.</p>
       </div>
       {!balanced && <p className="alert-error">Assets do not equal liabilities + equity. Please tell the developer.</p>}
+      </Ready>
+    </div>
+  )
+}
+
+// Where the money came from and where it went: the other side of every entry
+// that touched cash or bank. Opening cash + money in − money out must equal
+// closing cash; the page says so if it does not.
+export function CashFlow() {
+  const accounts = useAccounts(true)
+  const [from, setFrom] = useState(todayMY().slice(0, 8) + '01')
+  const [to, setTo] = useState(monthEnd())
+  const [flows, setFlows] = useState<Map<string, number>>(new Map())
+  const [flowState, setFlowState] = useState<string | null>('loading')
+  useEffect(() => {
+    let stale = false
+    setFlowState('loading')
+    cashFlows(from, to).then(m => { if (!stale) { setFlows(m); setFlowState(null) } },
+      (e: Error) => { if (!stale) setFlowState(e.message) })
+    return () => { stale = true }
+  }, [from, to])
+  const [openNet, s1] = useNet(null, isDate(from) ? addDays(from, -1) : from)
+  const [closeNet, s2] = useNet(null, to)
+  const cashOf = (m: Map<string, number>) => round2(MONEY_ACCOUNTS.reduce((s, c) => s + (m.get(c) ?? 0), 0))
+  const opening = cashOf(openNet), closing = cashOf(closeNet)
+
+  const f = (v: number): Figures => ({ cur: round2(v), prev: 0 })
+  const rows = accounts.map(a => ({ a, v: round2(flows.get(a.code) ?? 0) })).filter(r => r.v !== 0)
+  const item = (r: typeof rows[number]) => ({ kind: 'item' as const, code: r.a.code, label: r.a.name, cur: Math.abs(r.v), prev: 0 })
+  const ins = rows.filter(r => r.v > 0).sort((x, y) => y.v - x.v).map(item)
+  const outs = rows.filter(r => r.v < 0).sort((x, y) => x.v - y.v).map(item)
+  const totalIn = ins.reduce((s, l) => s + l.cur, 0)
+  const totalOut = outs.reduce((s, l) => s + l.cur, 0)
+  const net = totalIn - totalOut
+  const lines: Line[] = [
+    { kind: 'head', label: 'Money in' }, ...ins, { kind: 'sub', label: 'Total money in', ...f(totalIn) },
+    { kind: 'head', label: 'Money out' }, ...outs, { kind: 'sub', label: 'Total money out', ...f(totalOut) },
+    { kind: 'total', label: round2(net) < 0 ? 'Net cash decrease' : 'Net cash increase', ...f(net) },
+    { kind: 'item', label: 'Cash and bank at start', ...f(opening) },
+    { kind: 'grand', label: 'Cash and bank at end', ...f(opening + net) },
+  ]
+  const curLabel = `${dmy(from)} – ${dmy(to)}`
+  const states = [flowState, s1, s2]
+  const csv = () => downloadExcel(`cash-flow-${from}-${to}.xlsx`, linesCsv(lines, curLabel, null))
+
+  return (
+    <div className="space-y-4">
+      <ReportBar title="Cash Flow Statement" period={`For the period ${dmy(from)} to ${dmy(to)}`} onCsv={states.every(s => s === null) ? csv : undefined}>
+        <div className="w-40"><label>From</label><input type="date" value={from} onChange={e => setFrom(e.target.value)} /></div>
+        <div className="w-40"><label>To</label><input type="date" value={to} onChange={e => setTo(e.target.value)} /></div>
+        <QuickRanges set={(f, t) => { setFrom(f); setTo(t) }} />
+      </ReportBar>
+      <Ready states={states}>
+      <Tiles compare={false} tiles={[['Cash and bank at start', f(opening)], ['Money in', f(totalIn)], ['Money out', f(totalOut)], ['Cash and bank at end', f(closing)]]} />
+      <div className="max-w-4xl">
+        {rows.length === 0
+          ? <div className="card p-0"><Empty text="No cash or bank movements in this period." /></div>
+          : <StatementTable lines={lines} curLabel={curLabel} prevLabel={null} />}
+        <p className="muted mt-2">Each line is the other side of an entry that touched cash or bank: what the money was received for, or what it was spent on.
+          Money in from an account "to be settled" is card or e-wallet sales paid into the bank. Money out to an account "payable" or "owed" is that debt being paid.
+          Moves between cash and bank are left out.</p>
+      </div>
+      {round2(opening + net) !== closing && <p className="alert-error">Opening cash plus the flows does not equal closing cash. Please tell the developer.</p>}
       </Ready>
     </div>
   )

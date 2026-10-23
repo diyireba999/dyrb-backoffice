@@ -843,3 +843,21 @@ await db.exec(`update profiles set role='staff'`)
 try { await db.query(`select month_status('2025-06-01')`); console.log('FAIL: staff read month_status') }
 catch (e) { console.log(e.message.includes('Not allowed') ? 'staff blocked from month_status ok' : 'FAIL wrong error ' + e.message) }
 await db.exec(`update profiles set role='owner'`)
+
+// ---- 033: cash flows are the other side of every entry that touched cash or bank ----
+for (const f of ['024_investor.sql', '033_cash_flows.sql'])
+  await db.exec(fs.readFileSync(new URL('../supabase/' + f, import.meta.url), 'utf8'))
+await db.query(`select post_journal('2031-01-05','cash sales','manual',null,null,'[{"account":"1000","debit":100},{"account":"4000","credit":100}]'::jsonb)`)
+await db.query(`select post_journal('2031-01-06','rent','manual',null,null,'[{"account":"6100","debit":50},{"account":"1100","credit":50}]'::jsonb)`)
+await db.query(`select post_journal('2031-01-07','bank in cash','manual',null,null,'[{"account":"1100","debit":30},{"account":"1000","credit":30}]'::jsonb)`)
+await db.query(`select post_journal('2031-01-08','card payout','manual',null,null,'[{"account":"1100","debit":98},{"account":"6200","debit":2},{"account":"1200","credit":100}]'::jsonb)`)
+await db.query(`select post_journal('2031-01-09','bill on credit','manual',null,null,'[{"account":"5000","debit":70},{"account":"2000","credit":70}]'::jsonb, ${sup})`)
+const cf = Object.fromEntries((await db.query(`select code, amount::float a from cash_flows('2031-01-01', '2031-01-31')`)).rows.map(r => [r.code, r.a]))
+const cfWant = { '4000': 100, '6100': -50, '6200': -2, '1200': 100 }
+console.log(JSON.stringify(cf, Object.keys(cf).sort()) === JSON.stringify(cfWant, Object.keys(cfWant).sort()) ? 'cash flows ok' : 'FAIL cash flows ' + JSON.stringify(cf))
+const cfSum = Object.values(cf).reduce((s, v) => s + v, 0)
+const cashMove = (await db.query(`select sum(debit - credit)::float n from journal_lines l join journals j on j.id = l.journal_id where j.date between '2031-01-01' and '2031-01-31' and l.account in ('1000','1010','1100')`)).rows[0].n
+console.log(cfSum === cashMove ? 'cash flows add up to the cash change ok' : `FAIL cash flows sum ${cfSum} vs ${cashMove}`)
+await db.exec(`update profiles set role='staff'`)
+console.log((await db.query(`select count(*)::int c from cash_flows('2031-01-01', '2031-01-31')`)).rows[0].c === 0 ? 'staff get no cash flows ok' : 'FAIL staff cash flows')
+await db.exec(`update profiles set role='owner'`)
