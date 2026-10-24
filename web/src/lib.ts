@@ -138,18 +138,16 @@ export const addDays = (iso: string, days: number) => {
 
 // Net debit (debit minus credit) per account code, summed in the database.
 export async function accountTotals(from: string | null, to: string) {
+  return new Map([...await accountMovements(from, to)].map(([code, m]) => [code, m.debit - m.credit]))
+}
+
+// Total debit and total credit per account, kept apart, for entries dated within [from, to].
+export async function accountMovements(from: string | null, to: string) {
   const { data, error } = await supabase.rpc('account_totals', { p_from: from, p_to: to })
   // Thrown, not swallowed: a failed load must never show as RM 0.00.
   if (error) throw new Error('Could not total the accounts: ' + error.message)
   return new Map(((data ?? []) as { code: string; debit: number; credit: number }[])
-    .map(r => [r.code, Number(r.debit) - Number(r.credit)]))
-}
-
-// Money in (+) and out (−) per counterpart account, from every entry that touched cash or bank.
-export async function cashFlows(from: string, to: string) {
-  const { data, error } = await supabase.rpc('cash_flows', { p_from: from, p_to: to })
-  if (error) throw new Error('Could not total the cash flows: ' + error.message)
-  return new Map(((data ?? []) as { code: string; amount: number }[]).map(r => [r.code, Number(r.amount)]))
+    .map(r => [r.code, { debit: Number(r.debit), credit: Number(r.credit) }]))
 }
 
 // Documents typed in by hand. Anything else is changed on the screen that made it.
