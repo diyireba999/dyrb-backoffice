@@ -348,8 +348,6 @@ export function CashFlow() {
         {rows.length === 0
           ? <div className="card p-0"><Empty text="No money movements in this period." /></div>
           : <StatementTable lines={lines} curLabel={curLabel} prevLabel={null} />}
-        <p className="muted mt-2">Money in is what customers paid for, by cash, card or e-wallet. Money out is what was paid for, whether from cash, bank or by the director.
-          Stock purchases is food, drink and liquor bought, whether paid at once or settled with the supplier later. "Accrued Expenses" is an earlier bill being settled. Banking cash in, Fiuu paying out and repaying the director are moves between pockets and are left out.</p>
       </div>
       {round2(net) !== moneyChange && <p className="alert-error">Money in less money out does not equal the change in cash, bank, Fiuu, e-wallet and the director account. Please tell the developer.</p>}
       </Ready>
