@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { accountMovements, accountTotals, addDays, dmy, downloadExcel, isDirector, MONEY_ACCOUNTS, round2, rm, todayMY, useAccounts, type Account } from '../lib'
+import { accountTotals, addDays, cashFlows, dmy, downloadExcel, isDirector, round2, rm, todayMY, useAccounts, type Account } from '../lib'
 import { Empty, ReportBar, Ready } from '../ui'
 import { comparePeriod, shiftMonths, type CompareMode } from '../dashboard-math'
 import { change, fig, monthlyLines, plSection } from '../report-math'
@@ -290,60 +290,42 @@ export function BalanceSheet() {
   )
 }
 
-// Where the money went: the profit for the period, then every balance that
-// tied money up (stock, equipment, card money not yet settled, debts paid down)
-// or freed it (director funding, bills not yet paid). By double entry these add
-// up exactly to the change in cash and bank; the page says so if they do not.
+// Money in and money out: the other side of every entry that touched cash,
+// bank, Fiuu, e-wallet or the director. The flows must add up to the change in
+// those balances; the page says so if they do not.
+const PAY_ACCOUNTS = (a: Account) => ['1000', '1010', '1100', '1200', '1210'].includes(a.code) || isDirector(a.code)
+
 export function CashFlow() {
   const accounts = useAccounts(true)
   const [from, setFrom] = useState(todayMY().slice(0, 8) + '01')
   const [to, setTo] = useState(monthEnd())
-  const [moves, setMoves] = useState<Map<string, { debit: number; credit: number }>>(new Map())
-  const [s0, setS0] = useState<string | null>('loading')
+  const [flows, setFlows] = useState<Map<string, number>>(new Map())
+  const [flowState, setFlowState] = useState<string | null>('loading')
   useEffect(() => {
     let stale = false
-    setS0('loading')
-    accountMovements(from, to).then(m => { if (!stale) { setMoves(m); setS0(null) } },
-      (e: Error) => { if (!stale) setS0(e.message) })
+    setFlowState('loading')
+    cashFlows(from, to).then(m => { if (!stale) { setFlows(m); setFlowState(null) } },
+      (e: Error) => { if (!stale) setFlowState(e.message) })
     return () => { stale = true }
   }, [from, to])
-  const period = new Map([...moves].map(([code, m]) => [code, m.debit - m.credit]))
-  const [openNet, s1] = useNet(null, isDate(from) ? addDays(from, -1) : from)
-  const [closeNet, s2] = useNet(null, to)
-  const isMoney = (a: Account) => MONEY_ACCOUNTS.includes(a.code)
-  const cashOf = (m: Map<string, number>) => round2(accounts.filter(isMoney).reduce((s, a) => s + (m.get(a.code) ?? 0), 0))
-  const opening = cashOf(openNet), closing = cashOf(closeNet)
+  const [period, periodState] = useNet(from, to)
+  const moneyChange = round2(accounts.filter(PAY_ACCOUNTS).reduce((s, a) => s + (period.get(a.code) ?? 0), 0))
 
   const f = (v: number): Figures => ({ cur: round2(v), prev: 0 })
-  const none = new Map<string, number>()
-  const income = group(accounts.filter(a => a.type === 'income'), period, none, -1)
-  const expenses = group(accounts.filter(a => a.type === 'expense'), period, none, 1)
-  const profit = income.cur - expenses.cur
-  // Cash effect of every other balance: an asset going up or a liability going
-  // down took money; the reverse gave money. The director's account is not
-  // netted: what they paid this period and what was paid back are shown apart.
-  const tiedItems = accounts.filter(a => !isMoney(a) && a.type !== 'income' && a.type !== 'expense').flatMap(a => {
-    const m = moves.get(a.code)
-    if (!m) return []
-    const item = (label: string, v: number) => ({ kind: 'item' as const, code: a.code, label, cur: round2(v), prev: 0 })
-    const items = isDirector(a.code)
-      ? [item(`${a.name} – paid by director`, m.credit), item(`${a.name} – paid back to director`, -m.debit)]
-      : [item(a.name, m.credit - m.debit)]
-    return items.filter(l => l.cur !== 0)
-  })
-  const tied = { items: tiedItems, cur: tiedItems.reduce((s, l) => s + l.cur, 0), prev: 0 }
-  const net = profit + tied.cur
+  const rows = accounts.map(a => ({ a, v: round2(flows.get(a.code) ?? 0) })).filter(r => r.v !== 0)
+  const item = (r: typeof rows[number]) => ({ kind: 'item' as const, code: r.a.code, label: r.a.name, cur: Math.abs(r.v), prev: 0 })
+  const ins = rows.filter(r => r.v > 0).sort((x, y) => y.v - x.v).map(item)
+  const outs = rows.filter(r => r.v < 0).sort((x, y) => x.v - y.v).map(item)
+  const totalIn = ins.reduce((s, l) => s + l.cur, 0)
+  const totalOut = outs.reduce((s, l) => s + l.cur, 0)
+  const net = totalIn - totalOut
   const lines: Line[] = [
-    ...block('Sales and income', income, 'Total sales and income'),
-    ...block('Costs and expenses', expenses, 'Total costs and expenses'),
-    { kind: 'total', label: round2(profit) < 0 ? 'Loss for the period' : 'Profit for the period', ...f(profit) },
-    ...block('Money tied up or freed', tied, 'Total tied up or freed'),
-    { kind: 'total', label: round2(net) < 0 ? 'Net cash decrease' : 'Net cash increase', ...f(net) },
-    { kind: 'item', label: 'Cash and bank at start', ...f(opening) },
-    { kind: 'grand', label: 'Cash and bank at end', ...f(opening + net) },
+    { kind: 'head', label: 'Money in' }, ...ins, { kind: 'sub', label: 'Total money in', ...f(totalIn) },
+    { kind: 'head', label: 'Money out' }, ...outs, { kind: 'sub', label: 'Total money out', ...f(totalOut) },
+    { kind: 'grand', label: round2(net) < 0 ? 'More out than in' : 'More in than out', ...f(net) },
   ]
   const curLabel = `${dmy(from)} – ${dmy(to)}`
-  const states = [s0, s1, s2]
+  const states = [flowState, periodState]
   const csv = () => downloadExcel(`cash-flow-${from}-${to}.xlsx`, linesCsv(lines, curLabel, null))
 
   return (
@@ -354,17 +336,15 @@ export function CashFlow() {
         <QuickRanges set={(f, t) => { setFrom(f); setTo(t) }} />
       </ReportBar>
       <Ready states={states}>
-      <Tiles compare={false} tiles={[['Cash and bank at start', f(opening)], [round2(profit) < 0 ? 'Loss for the period' : 'Profit for the period', f(profit)], ['Money tied up or freed', f(tied.cur)], ['Cash and bank at end', f(closing)]]} />
+      <Tiles compare={false} tiles={[['Money in', f(totalIn)], ['Money out', f(totalOut)], [round2(net) < 0 ? 'More out than in' : 'More in than out', f(net)]]} />
       <div className="max-w-4xl">
-        {moves.size === 0
-          ? <div className="card p-0"><Empty text="No entries in this period." /></div>
+        {rows.length === 0
+          ? <div className="card p-0"><Empty text="No money movements in this period." /></div>
           : <StatementTable lines={lines} curLabel={curLabel} prevLabel={null} />}
-        <p className="muted mt-2">Sales and expenses are shown as they were earned and incurred, whoever paid. The middle section says where the difference went:
-          a figure in brackets is money tied up (more stock or equipment, card and e-wallet money Fiuu has not paid over yet, staff advances, suppliers or accruals paid down);
-          a plain figure is money freed (the director paying bills or putting money in, bills not yet paid, card money from before now settled).
-          Profit plus this section equals the change in cash and bank.</p>
+        <p className="muted mt-2">Money in is what customers paid for, by cash, card or e-wallet. Money out is what was paid for, whether from cash, bank or by the director.
+          A line such as "Suppliers Owed" or "Accrued Expenses" is an earlier bill being settled. Banking cash in, Fiuu paying out and repaying the director are moves between pockets and are left out.</p>
       </div>
-      {round2(opening + net) !== closing && <p className="alert-error">Profit plus the movements does not equal the change in cash and bank. Please tell the developer.</p>}
+      {round2(net) !== moneyChange && <p className="alert-error">Money in less money out does not equal the change in cash, bank, Fiuu, e-wallet and the director account. Please tell the developer.</p>}
       </Ready>
     </div>
   )
