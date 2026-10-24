@@ -852,8 +852,9 @@ await db.query(`select post_journal('2031-01-06','rent','manual',null,null,'[{"a
 await db.query(`select post_journal('2031-01-07','bank in cash','manual',null,null,'[{"account":"1100","debit":30},{"account":"1000","credit":30}]'::jsonb)`)
 await db.query(`select post_journal('2031-01-08','card payout','manual',null,null,'[{"account":"1100","debit":98},{"account":"6200","debit":2},{"account":"1200","credit":100}]'::jsonb)`)
 await db.query(`select post_journal('2031-01-09','bill on credit','manual',null,null,'[{"account":"5000","debit":70},{"account":"2000","credit":70}]'::jsonb, ${sup})`)
+await db.query(`select post_journal('2031-01-10','director paid gas','manual',null,null,'[{"account":"6100","debit":20},{"account":"2500","credit":20}]'::jsonb)`)
 const cf = Object.fromEntries((await db.query(`select code, amount::float a from cash_flows('2031-01-01', '2031-01-31')`)).rows.map(r => [r.code, r.a]))
-const cfWant = { '4000': 100, '6100': -50, '6200': -2, '1200': 100 }
+const cfWant = { '4000': 100, '6100': -70, '6200': -2, '1200': 100, '2500': 20 }
 console.log(JSON.stringify(cf, Object.keys(cf).sort()) === JSON.stringify(cfWant, Object.keys(cfWant).sort()) ? 'cash flows ok' : 'FAIL cash flows ' + JSON.stringify(cf))
 const cfSum = Object.values(cf).reduce((s, v) => s + v, 0)
 const cashMove = (await db.query(`select sum(debit - credit)::float n from journal_lines l join journals j on j.id = l.journal_id where j.date between '2031-01-01' and '2031-01-31' and l.account in ('1000','1010','1100')`)).rows[0].n

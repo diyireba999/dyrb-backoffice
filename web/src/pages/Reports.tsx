@@ -345,7 +345,7 @@ export function CashFlow() {
           : <StatementTable lines={lines} curLabel={curLabel} prevLabel={null} />}
         <p className="muted mt-2">Each line is the other side of an entry that touched cash or bank: what the money was received for, or what it was spent on.
           Money in from an account "to be settled" is card or e-wallet sales paid into the bank. Money out to an account "payable" or "owed" is that debt being paid.
-          Moves between cash and bank are left out.</p>
+          Bills the director paid from their own pocket are money out too, with the same amount in under Owed to Director. Moves between cash and bank are left out.</p>
       </div>
       {round2(opening + net) !== closing && <p className="alert-error">Opening cash plus the flows does not equal closing cash. Please tell the developer.</p>}
       </Ready>
