@@ -864,3 +864,10 @@ console.log(cfSum === moneyMove ? 'cash flows add up to the money change ok' : `
 await db.exec(`update profiles set role='staff'`)
 console.log((await db.query(`select count(*)::int c from cash_flows('2031-01-01', '2031-01-31')`)).rows[0].c === 0 ? 'staff get no cash flows ok' : 'FAIL staff cash flows')
 await db.exec(`update profiles set role='owner'`)
+
+// ---- 034: days before the first sales upload are not "missing" ----
+await db.exec(fs.readFileSync(new URL('../supabase/034_opening_day.sql', import.meta.url), 'utf8'))
+const may = (await db.query(`select month_status('2025-05-01') s`)).rows[0].s
+console.log(may.days_missing.length === 0 ? 'nothing missing before the bar opened ok' : 'FAIL opening day ' + may.days_missing.length)
+const jun = (await db.query(`select month_status('2025-06-01') s`)).rows[0].s
+console.log(jun.days_missing.includes('2025-06-02') && !jun.days_missing.includes('2025-06-01') ? 'missing days after opening still listed ok' : 'FAIL after opening ' + JSON.stringify(jun.days_missing))
