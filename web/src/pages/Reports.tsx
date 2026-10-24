@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { accountTotals, addDays, cashFlows, dmy, downloadExcel, isDirector, round2, rm, todayMY, useAccounts, type Account } from '../lib'
+import { accountTotals, addDays, cashFlows, dmy, downloadExcel, isCostAccount, isDirector, round2, rm, todayMY, useAccounts, type Account } from '../lib'
 import { Empty, ReportBar, Ready } from '../ui'
 import { comparePeriod, shiftMonths, type CompareMode } from '../dashboard-math'
 import { change, fig, monthlyLines, plSection } from '../report-math'
@@ -312,8 +312,15 @@ export function CashFlow() {
   const moneyChange = round2(accounts.filter(PAY_ACCOUNTS).reduce((s, a) => s + (period.get(a.code) ?? 0), 0))
 
   const f = (v: number): Figures => ({ cur: round2(v), prev: 0 })
-  const rows = accounts.map(a => ({ a, v: round2(flows.get(a.code) ?? 0) })).filter(r => r.v !== 0)
-  const item = (r: typeof rows[number]) => ({ kind: 'item' as const, code: r.a.code, label: r.a.name, cur: Math.abs(r.v), prev: 0 })
+  // Food, drink and liquor bought is one line, whether it was paid for at once,
+  // went to the shelf first, or was settled with the supplier later.
+  const isStock = (code: string) => code === '2000' || code.startsWith('14') || isCostAccount(code)
+  const stock = round2([...flows].filter(([c]) => isStock(c)).reduce((s, [, v]) => s + v, 0))
+  const rows = [
+    ...accounts.filter(a => !isStock(a.code)).map(a => ({ code: a.code as string | undefined, label: a.name, v: round2(flows.get(a.code) ?? 0) })),
+    { code: undefined, label: 'Stock purchases (food, drink, liquor)', v: stock },
+  ].filter(r => r.v !== 0)
+  const item = (r: typeof rows[number]) => ({ kind: 'item' as const, code: r.code, label: r.label, cur: Math.abs(r.v), prev: 0 })
   const ins = rows.filter(r => r.v > 0).sort((x, y) => y.v - x.v).map(item)
   const outs = rows.filter(r => r.v < 0).sort((x, y) => x.v - y.v).map(item)
   const totalIn = ins.reduce((s, l) => s + l.cur, 0)
@@ -342,7 +349,7 @@ export function CashFlow() {
           ? <div className="card p-0"><Empty text="No money movements in this period." /></div>
           : <StatementTable lines={lines} curLabel={curLabel} prevLabel={null} />}
         <p className="muted mt-2">Money in is what customers paid for, by cash, card or e-wallet. Money out is what was paid for, whether from cash, bank or by the director.
-          A line such as "Suppliers Owed" or "Accrued Expenses" is an earlier bill being settled. Banking cash in, Fiuu paying out and repaying the director are moves between pockets and are left out.</p>
+          Stock purchases is food, drink and liquor bought, whether paid at once or settled with the supplier later. "Accrued Expenses" is an earlier bill being settled. Banking cash in, Fiuu paying out and repaying the director are moves between pockets and are left out.</p>
       </div>
       {round2(net) !== moneyChange && <p className="alert-error">Money in less money out does not equal the change in cash, bank, Fiuu, e-wallet and the director account. Please tell the developer.</p>}
       </Ready>
