@@ -6,6 +6,7 @@ import { AccountSelect, Empty, ReportBar, MonthInput } from '../ui'
 import { DocumentList } from '../DocumentList'
 import { confirmDialog, toast } from '../feedback'
 import { submittedAgain, useEscape } from '../page'
+import { calc } from '../calc'
 
 const money = (a: Account) => MONEY_ACCOUNTS.includes(a.code)
 // 1200 card and 1210 e-wallet hold money already taken but not yet in the bank.
@@ -61,10 +62,14 @@ export function PaymentVoucher() {
     load()
   }
 
+  // The amount box is a calculator: "12.50 + 8 + 30" totals the receipts.
+  const typed = calc(f.amount)
+  const isSum = /[+\-*/x×÷(]/i.test(f.amount.trim().slice(1))
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    const amount = round2(Number(f.amount))
-    if (!(amount > 0)) return setError('Enter an amount')
+    const amount = round2(typed ?? 0)
+    if (!(amount > 0)) return setError('Enter an amount, or a sum like 12.50 + 8')
     setBusy(true); setError('')
     const again = submittedAgain(e)
     try {
@@ -116,7 +121,10 @@ export function PaymentVoucher() {
             filter={a => (a.type === 'expense' && !isCostAccount(a.code)) || a.code === '3100' || (a.type === 'asset' && a.code >= '1300')
               || ['2100', '2300', '2310', '2320', '2330', '2340', '2600'].includes(a.code) || isDirector(a.code)} />
         </div>
-        <div><label>Amount (RM)</label><input type="number" step="0.01" min="0" inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} required /></div>
+        <div><label>Amount (RM)</label>
+          <input inputMode="decimal" value={f.amount} onChange={e => set('amount', e.target.value)} placeholder="12.50 + 8 + 30" required />
+          {isSum && <p className={`mt-1 text-xs ${typed === null ? 'text-rose-700' : 'text-slate-500'}`}>{typed === null ? 'Cannot work that sum out' : `= ${rm(typed)}`}</p>}
+        </div>
         <div><label>Paid from</label>
           <select value={f.from} onChange={e => set('from', e.target.value)}>
             {accounts.filter(money).map(a => <option key={a.code} value={a.code}>{a.code} · {a.name}</option>)}
