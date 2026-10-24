@@ -329,7 +329,7 @@ export function CashFlow() {
   const lines: Line[] = [
     { kind: 'head', label: 'Money in' }, ...ins, { kind: 'sub', label: 'Total money in', ...f(totalIn) },
     { kind: 'head', label: 'Money out' }, ...outs, { kind: 'sub', label: 'Total money out', ...f(totalOut) },
-    { kind: 'grand', label: round2(net) < 0 ? 'More out than in' : 'More in than out', ...f(net) },
+    { kind: 'grand', label: round2(net) < 0 ? 'Net cash outflow' : 'Net cash inflow', ...f(net) },
   ]
   const curLabel = `${dmy(from)} – ${dmy(to)}`
   const states = [flowState, periodState]
@@ -343,7 +343,7 @@ export function CashFlow() {
         <QuickRanges set={(f, t) => { setFrom(f); setTo(t) }} />
       </ReportBar>
       <Ready states={states}>
-      <Tiles compare={false} tiles={[['Money in', f(totalIn)], ['Money out', f(totalOut)], [round2(net) < 0 ? 'More out than in' : 'More in than out', f(net)]]} />
+      <Tiles compare={false} tiles={[['Money in', f(totalIn)], ['Money out', f(totalOut)], [round2(net) < 0 ? 'Net cash outflow' : 'Net cash inflow', f(net)]]} />
       <div className="max-w-4xl">
         {rows.length === 0
           ? <div className="card p-0"><Empty text="No money movements in this period." /></div>
