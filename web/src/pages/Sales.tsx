@@ -69,8 +69,8 @@ function FiuuCheck({ takings, inBooks }: { takings: { date: string; gross: numbe
       <h3 className="font-semibold">Check only — nothing here is posted</h3>
       <p className="muted">
         Card sales reach your books from the Zeoniq Bill Summary, not from Fiuu. This compares the two.
-        A card paid after midnight may sit on the day before on the POS, so a difference that cancels out between
-        two days is normal.
+        A card paid before 6am counts as the night before, the same way the POS keeps the whole night on one day.
+        The first and last day of the file can differ, since the night before and the night after are not in it.
       </p>
       <table className="mt-3">
         <thead><tr><th>Day of sale</th><th className="text-right">Fiuu says</th><th className="text-right">In your books (POS)</th><th className="text-right">Difference</th></tr></thead>

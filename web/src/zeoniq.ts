@@ -211,6 +211,16 @@ const dateOnly = (v: unknown, order: DateOrder = 'dmy') => {
   const m = s.match(/^(\d{2})-(\d{2})-(\d{4})/)          // 22-09-2026 13:49:21
   return m ? `${m[3]}-${m[2]}-${m[1]}` : isoDate(s.split(' ')[0], order)
 }
+// The bar trades past midnight and the POS keeps the whole night on one day, so a
+// card paid before 06:00 belongs to the day before. Fiuu stamps the calendar day.
+const DAY_STARTS = 6
+const saleDay = (v: unknown) => {
+  const day = dateOnly(v)
+  const hour = Number(String(v ?? '').match(/ (\d{2}):/)?.[1] ?? DAY_STARTS)
+  if (!day || hour >= DAY_STARTS) return day
+  const d = new Date(day + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
 
 // ---- Fiuu settlement report: one workbook, a sheet per list ----
 // The newer export from the Fiuu portal. SETTLEMENT LIST has one row per payout
@@ -244,7 +254,7 @@ function parseFiuuReport(input: unknown) {
     if (!row || !String(row[tc.gross] ?? '').trim()) continue
     if (String(row[tc.status] ?? '').toLowerCase() !== 'settled') { skipped++; continue }
     const at = String(row[tc.date] ?? '').trim()
-    settled.push({ at, date: dateOnly(at), channel: String(row[tc.channel] ?? '').trim() || 'Card', gross: num(row[tc.gross]), actual: num(row[tc.actual]) })
+    settled.push({ at, date: saleDay(at), channel: String(row[tc.channel] ?? '').trim() || 'Card', gross: num(row[tc.gross]), actual: num(row[tc.actual]) })
   }
   type Payout = { at: string; settleDate: string; amount: number; net: number; channels: string[] }
   const payouts: Payout[] = pays.slice(1).filter(r => r && String(r[pc.net] ?? '').trim()).map(r => ({
@@ -350,7 +360,7 @@ export function parseFiuu(input: unknown) {
   if (cDate >= 0) {
     for (const row of rows.slice(1)) {
       if (cStatus >= 0 && String(row[cStatus]).toLowerCase() !== 'settled') continue
-      const d = dateOnly(row[cDate])
+      const d = saleDay(row[cDate])
       if (d) byTakingDay.set(d, round2((byTakingDay.get(d) ?? 0) + num(row[cGross])))
     }
   }
