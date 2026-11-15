@@ -75,7 +75,6 @@ insert into accounts (code, name, type) values
   ('5000', 'Food Cost', 'expense'),
   ('5010', 'Beverage Cost', 'expense'),
   ('5020', 'Liquor Cost', 'expense'),
-  ('5100', 'Packaging & Consumables', 'expense'),
   ('6000', 'Salaries & Wages', 'expense'),
   ('6010', 'EPF - Employer', 'expense'),
   ('6020', 'SOCSO - Employer', 'expense'),
@@ -90,6 +89,7 @@ insert into accounts (code, name, type) values
   ('6400', 'Repairs & Maintenance', 'expense'),
   ('6500', 'Marketing & Promotion', 'expense'),
   ('6600', 'Cleaning & Pest Control', 'expense'),
+  ('6650', 'Packaging & Consumables', 'expense'),
   ('6700', 'POS & Software Subscriptions', 'expense'),
   ('6800', 'Transport & Delivery', 'expense'),
   ('6900', 'Other Expenses', 'expense');

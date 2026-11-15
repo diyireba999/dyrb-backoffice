@@ -194,7 +194,7 @@ export function Dashboard({ profile }: { profile: Profile }) {
       const enoughHistory = monthsCovered >= 2
       const fixed = (codeSum('6000', '7000') - cardFees) / monthsCovered
       // Cost of sales is 5000-5999 throughout this screen (matches the gross-profit
-      // figure above), which includes 5100 Packaging & Consumables — it scales with sales.
+      // figure above). Packaging & Consumables is a running cost (6650), not cost of sales.
       const v = variableRate({ costOfSales: codeSum('5000', '6000'), cardFees, sales: -codeSum('4000', '4100') })
       // A net credit across 6000-6999 (e.g. a large refund) makes `fixed` zero or negative.
       // Feeding that into breakEven() would draw the rule off the bottom of the chart and

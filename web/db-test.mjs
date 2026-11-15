@@ -139,7 +139,7 @@ catch (e) { console.log('fiuu mismatch rejected:', e.message) }
 // ---- 008: director's account ----
 await db.exec(fs.readFileSync(new URL('../supabase/008_director.sql', import.meta.url), 'utf8'))
 const sup3 = (await db.query(`insert into suppliers (name) values ('Ice Supplier') returning id`)).rows[0].id
-const inv3 = (await db.query(`select create_purchase_invoice(${sup3}, 'INV-77', '2026-09-20', '2026-10-20', 'Ice', '[{"account":"5100","amount":180}]'::jsonb) id`)).rows[0].id
+const inv3 = (await db.query(`select create_purchase_invoice(${sup3}, 'INV-77', '2026-09-20', '2026-10-20', 'Ice', '[{"account":"6650","amount":180}]'::jsonb) id`)).rows[0].id
 await db.query(`select pay_supplier(${sup3}, '2026-09-25', '2500', 'director paid', '[{"invoice_id":${inv3},"amount":180}]'::jsonb)`)
 const owedDirector = Number((await db.query(`select coalesce(sum(credit - debit), 0)::float d from journal_lines where account='2500'`)).rows[0].d)
 const supOwing = Number((await db.query(`select outstanding::float o from purchase_invoice_status where id=${inv3}`)).rows[0].o)
@@ -332,9 +332,9 @@ await db.exec(`update profiles set role='owner'`)
 // An unpaid purchase invoice can be corrected; a paid one cannot.
 const supE = (await db.query(`insert into suppliers (name) values ('Edit Test Supplier') returning id`)).rows[0].id
 const invE = (await db.query(`select create_purchase_invoice(${supE}, 'A1', '2026-10-12', '2026-11-12',
-  'Napkins', '[{"account":"5100","amount":100}]'::jsonb) id`)).rows[0].id
+  'Napkins', '[{"account":"6650","amount":100}]'::jsonb) id`)).rows[0].id
 await db.query(`select update_purchase_invoice(${invE}, 'A2', '2026-10-13', '2026-11-13',
-  'Napkins and straws', '[{"account":"5100","amount":80},{"account":"6900","amount":15}]'::jsonb)`)
+  'Napkins and straws', '[{"account":"6650","amount":80},{"account":"6900","amount":15}]'::jsonb)`)
 const pie = (await db.query(`select pi.invoice_no, pi.total::float total, pi.due_date::text due,
   j.description, j.doc_no,
   (select sum(l.credit)::float from journal_lines l where l.journal_id=pi.journal_id and l.account='2000') owed
@@ -352,7 +352,7 @@ catch (e) { console.log('edit to cost account rejected:', e.message.split(' —'
 const payE = (await db.query(`select pay_supplier(${supE}, '2026-10-20', '1100', 'CHQ1',
   '[{"invoice_id":${invE},"amount":40}]'::jsonb) id`)).rows[0].id
 try { await db.query(`select update_purchase_invoice(${invE}, 'A3', '2026-10-13', '2026-11-13',
-  'x', '[{"account":"5100","amount":80}]'::jsonb)`)
+  'x', '[{"account":"6650","amount":80}]'::jsonb)`)
   console.log('FAIL: paid invoice edited') }
 catch (e) { console.log('paid invoice edit rejected:', e.message) }
 
@@ -376,7 +376,7 @@ catch (e) { console.log('over-payment on edit rejected:', e.message) }
 // A supplier payment funded from a director account can be edited.
 const supDir = (await db.query(`insert into suppliers (name) values ('Dir Test Supplier') returning id`)).rows[0].id
 const invDir = (await db.query(`select create_purchase_invoice(${supDir}, 'DIR1', '2026-10-15', '2026-11-15',
-  'Director purchase', '[{"account":"5100","amount":200}]'::jsonb) id`)).rows[0].id
+  'Director purchase', '[{"account":"6650","amount":200}]'::jsonb) id`)).rows[0].id
 const payDir = (await db.query(`select pay_supplier(${supDir}, '2026-10-20', '2500', 'DIRPAY',
   '[{"invoice_id":${invDir},"amount":200}]'::jsonb) id`)).rows[0].id
 await db.query(`select update_supplier_payment(${payDir}, '2026-10-22', '2500', 'DIRPAY2',
@@ -389,18 +389,18 @@ console.log(dirpay.date === '2026-10-22' && dirpay.reference === 'DIRPAY2'
 // Deactivated account rejects purchase invoice edit.
 const supDeact = (await db.query(`insert into suppliers (name) values ('Deact Test Supplier') returning id`)).rows[0].id
 const invDeact = (await db.query(`select create_purchase_invoice(${supDeact}, 'DEACT1', '2026-10-15', '2026-11-15',
-  'Test deactivation', '[{"account":"5100","amount":50}]'::jsonb) id`)).rows[0].id
-await db.exec(`update accounts set active=false where code='5100'`)
+  'Test deactivation', '[{"account":"6650","amount":50}]'::jsonb) id`)).rows[0].id
+await db.exec(`update accounts set active=false where code='6650'`)
 try { await db.query(`select update_purchase_invoice(${invDeact}, 'DEACT2', '2026-10-13', '2026-11-13',
-  'x', '[{"account":"5100","amount":80}]'::jsonb)`)
+  'x', '[{"account":"6650","amount":80}]'::jsonb)`)
   console.log('FAIL: deactivated account accepted on invoice edit') }
 catch (e) { console.log('deactivated account on invoice edit rejected:', e.message) }
-await db.exec(`update accounts set active=true where code='5100'`)
+await db.exec(`update accounts set active=true where code='6650'`)
 
 // Deactivated account rejects supplier payment edit.
 const supPayDeact = (await db.query(`insert into suppliers (name) values ('Pay Deact Test Supplier') returning id`)).rows[0].id
 const invPayDeact = (await db.query(`select create_purchase_invoice(${supPayDeact}, 'PAYDEACT1', '2026-10-15', '2026-11-15',
-  'Test pay deactivation', '[{"account":"5100","amount":100}]'::jsonb) id`)).rows[0].id
+  'Test pay deactivation', '[{"account":"6650","amount":100}]'::jsonb) id`)).rows[0].id
 const payPayDeact = (await db.query(`select pay_supplier(${supPayDeact}, '2026-10-20', '1100', 'CHQ_DEACT',
   '[{"invoice_id":${invPayDeact},"amount":100}]'::jsonb) id`)).rows[0].id
 await db.exec(`update accounts set active=false where code='1100'`)
@@ -460,7 +460,7 @@ console.log(delRecGone === 0 ? 'reconciled entry deleted after unticking ok' : '
 // A purchase invoice ticked on the bank reconciliation cannot be cancelled.
 const supRecPi = (await db.query(`insert into suppliers (name) values ('Recon Test Supplier') returning id`)).rows[0].id
 const invRecPi = (await db.query(`select create_purchase_invoice(${supRecPi}, 'RECON1', '2026-10-17', '2026-11-17',
-  'Recon test', '[{"account":"5100","amount":40}]'::jsonb) id`)).rows[0].id
+  'Recon test', '[{"account":"6650","amount":40}]'::jsonb) id`)).rows[0].id
 const invRecPiJournal = (await db.query(`select journal_id from purchase_invoices where id=${invRecPi}`)).rows[0].journal_id
 const invRecPiLine = (await db.query(`select id from journal_lines where journal_id=${invRecPiJournal} and account='2000'`)).rows[0].id
 await db.query(`select set_cleared(array[${invRecPiLine}]::bigint[], '2026-10-31')`)
@@ -471,7 +471,7 @@ await db.query(`select set_cleared(array[${invRecPiLine}]::bigint[], null)`)
 // A supplier payment ticked on the bank reconciliation cannot be cancelled.
 const supRecSp = (await db.query(`insert into suppliers (name) values ('Recon Pay Supplier') returning id`)).rows[0].id
 const invRecSp = (await db.query(`select create_purchase_invoice(${supRecSp}, 'RECON2', '2026-10-17', '2026-11-17',
-  'Recon pay test', '[{"account":"5100","amount":60}]'::jsonb) id`)).rows[0].id
+  'Recon pay test', '[{"account":"6650","amount":60}]'::jsonb) id`)).rows[0].id
 const payRecSp = (await db.query(`select pay_supplier(${supRecSp}, '2026-10-18', '1100', 'RECONPAY',
   '[{"invoice_id":${invRecSp},"amount":60}]'::jsonb) id`)).rows[0].id
 const payRecSpJournal = (await db.query(`select journal_id from supplier_payments where id=${payRecSp}`)).rows[0].journal_id
