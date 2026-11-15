@@ -335,6 +335,16 @@ export function parseFiuu(input: unknown) {
     else d.brands.push({ brand: brandName, count: 1, gross: round2(gross), fee: round2(fee) })
     byDay.set(settleDate, d)
   }
+  // Fiuu rounds fee and net per row, so a day's fee + net can miss gross by a cent.
+  // The bank gets the net, so the cent goes on the biggest card type's fee.
+  for (const d of byDay.values()) {
+    const extra = round2(d.gross - d.net - d.fee)
+    if (extra && d.brands.length) {
+      const big = d.brands.reduce((a, b) => (b.gross > a.gross ? b : a))
+      big.fee = round2(big.fee + extra)
+      d.fee = round2(d.fee + extra)
+    }
+  }
   // Takings per day of sale, to compare with the POS card figures.
   const byTakingDay = new Map<string, number>()
   if (cDate >= 0) {
